@@ -9,8 +9,7 @@
         h1, h2, h3 { text-align: center; margin-top: 20px; }
         .container { margin-top: 20px; }
         .table { margin-top: 20px; width: 50%; margin-left: auto; margin-right: auto; }
-        .plots { display: flex; justify-content: space-around; margin-top: 20px; }
-        .plot { width: 45%; }
+        .plot { margin: 20px auto; display: block; width: 60%; }
         .verdict { text-align: center; font-size: 1.5em; margin-top: 30px; }
         .verdict span { font-weight: bold; }
         .details { text-align: center; margin-top: 10px; font-size: 0.9em; }
@@ -31,10 +30,8 @@
     </div>
 
     <h2>Plots</h2>
-    <div class="plots">
-        <img src="{{ box_plot }}" alt="Box Plot" class="plot">
-        <img src="{{ scatter_plot }}" alt="Scatter Plot" class="plot">
-    </div>
+    <img src="{{ box_plot }}" alt="Box Plot" class="plot">
+    <img src="{{ scatter_plot }}" alt="Scatter Plot" class="plot">
 
     <div class="details">
         <p><span>Script Version:</span> {{ version }}</p>

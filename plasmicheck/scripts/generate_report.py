@@ -59,8 +59,7 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, human_
         f.write(html_content)
 
     # Convert HTML to PDF
-    pdf_report = f"{output_folder}/report.pdf"
-    HTML(html_report).write_pdf(pdf_report)
+    HTML(html_report).write_pdf(f"{output_folder}/report.pdf")
 
 def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
@@ -79,7 +78,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a visualized HTML/PDF report from alignment comparison results")
     parser.add_argument("reads_assignment_file", help="Reads assignment file (reads_assignment.tsv)")
     parser.add_argument("summary_file", help="Summary file (summary.tsv)")
-    parser.add.argument("output_folder", help="Folder to write the report and plots")
+    parser.add_argument("output_folder", help="Folder to write the report and plots")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
     parser.add.argument("--human_fasta", default="None", help="Human reference FASTA file")
     parser.add.argument("--plasmid_gb", default="None", help="GenBank plasmid file")
