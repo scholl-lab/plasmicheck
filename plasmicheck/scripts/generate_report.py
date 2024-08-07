@@ -1,0 +1,89 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from jinja2 import Environment, FileSystemLoader
+from weasyprint import HTML
+from datetime import datetime
+
+# Configuration variable for the default threshold
+DEFAULT_THRESHOLD = 1.0
+VERSION = "0.1.0"
+
+def load_data(reads_assignment_file, summary_file):
+    reads_df = pd.read_csv(reads_assignment_file, sep='\t')
+    summary_df = pd.read_csv(summary_file, sep='\t')
+    return reads_df, summary_df
+
+def generate_plots(reads_df, output_folder):
+    # Box plot
+    plt.figure(figsize=(6, 4))
+    sns.boxplot(data=reads_df, x='AssignedTo', y='PlasmidScore')
+    plt.title('Box Plot of Plasmid Scores by Assignment')
+    plt.savefig(f"{output_folder}/box_plot.png")
+    plt.close()
+
+    # Scatter plot
+    plt.figure(figsize=(6, 4))
+    sns.scatterplot(data=reads_df, x='PlasmidScore', y='HumanScore', hue='AssignedTo')
+    plt.title('Scatter Plot of Plasmid vs. Human Scores by Assignment')
+    plt.savefig(f"{output_folder}/scatter_plot.png")
+    plt.close()
+
+def generate_report(summary_df, output_folder, verdict, ratio, threshold, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
+    # Load the template
+    env = Environment(loader=FileSystemLoader('templates'))
+    template = env.get_template('report_template.html')
+
+    # Determine verdict color
+    verdict_color = "green" if "not contaminated" in verdict else "red"
+
+    # Render the template
+    html_content = template.render(
+        summary_df=summary_df.to_html(classes='table table-striped'),
+        box_plot="box_plot.png",
+        scatter_plot="scatter_plot.png",
+        verdict=verdict,
+        ratio=f"{ratio:.2f}",
+        threshold=threshold,
+        verdict_color=verdict_color,
+        version=VERSION,
+        human_fasta=human_fasta,
+        plasmid_gb=plasmid_gb,
+        sequencing_file=sequencing_file,
+        run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+
+    # Save HTML report
+    html_report = f"{output_folder}/report.html"
+    with open(html_report, 'w') as f:
+        f.write(html_content)
+
+    # Convert HTML to PDF
+    pdf_report = f"{output_folder}/report.pdf"
+    HTML(html_report).write_pdf(pdf_report)
+
+def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
+    reads_df, summary_df = load_data(reads_assignment_file, summary_file)
+    generate_plots(reads_df, output_folder)
+
+    # Determine contamination verdict
+    plasmid_count = summary_df[summary_df['Category'] == 'Plasmid']['Count'].values[0]
+    human_count = summary_df[summary_df['Category'] == 'Human']['Count'].values[0]
+    ratio = plasmid_count / human_count if human_count != 0 else float('inf')
+    verdict = "Sample is contaminated with plasmid DNA" if ratio > threshold else "Sample is not contaminated with plasmid DNA"
+
+    generate_report(summary_df, output_folder, verdict, ratio, threshold, human_fasta, plasmid_gb, sequencing_file)
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate a visualized HTML/PDF report from alignment comparison results")
+    parser.add_argument("reads_assignment_file", help="Reads assignment file (reads_assignment.tsv)")
+    parser.add_argument("summary_file", help="Summary file (summary.tsv)")
+    parser.add.argument("output_folder", help="Folder to write the report and plots")
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add.argument("--human_fasta", default="None", help="Human reference FASTA file")
+    parser.add.argument("--plasmid_gb", default="None", help="GenBank plasmid file")
+    parser.add.argument("--sequencing_file", default="None", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
+
+    args = parser.parse_args()
+    main(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, args.human_fasta, args.plasmid_gb, args.sequencing_file)

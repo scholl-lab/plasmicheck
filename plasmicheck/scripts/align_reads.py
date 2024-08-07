@@ -1,0 +1,35 @@
+import subprocess
+
+def align_reads(reference_index, input_file, output_bam, alignment_type, file_type, fastq2=None):
+    if alignment_type not in ['human', 'plasmid']:
+        raise ValueError("alignment_type must be 'human' or 'plasmid'")
+    
+    if file_type == "bam":
+        command = f"samtools fasta {input_file} | minimap2 -t 8 -ax sr {reference_index} - | samtools view -h -F 4 - | samtools sort -o {output_bam}"
+    elif file_type == "interleaved_fastq":
+        command = f"minimap2 -t 8 -ax sr {reference_index} {input_file} | samtools view -h -F 4 - | samtools sort -o {output_bam}"
+    elif file_type == "paired_fastq":
+        if fastq2 is None:
+            raise ValueError("Second FASTQ file must be provided for paired FASTQ input")
+        command = f"minimap2 -t 8 -ax sr {reference_index} {input_file} {fastq2} | samtools view -h -F 4 - | samtools sort -o {output_bam}"
+    else:
+        raise ValueError("file_type must be 'bam', 'interleaved_fastq', or 'paired_fastq'")
+    
+    # Run the alignment command
+    subprocess.run(command, shell=True, check=True)
+    
+    # Generate the BAI index
+    subprocess.run(f"samtools index {output_bam}", shell=True, check=True)
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Align reads to a reference genome and generate a BAI index")
+    parser.add_argument("reference_index", help="Minimap2 index for the reference genome")
+    parser.add_argument("input_file", help="Input file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
+    parser.add_argument("output_bam", help="Output BAM file for alignment")
+    parser.add_argument("alignment_type", help="Type of alignment: 'human' or 'plasmid'")
+    parser.add_argument("file_type", help="Type of input file: 'bam', 'interleaved_fastq', or 'paired_fastq'")
+    parser.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
+    args = parser.parse_args()
+
+    align_reads(args.reference_index, args.input_file, args.output_bam, args.alignment_type, args.file_type, args.fastq2)

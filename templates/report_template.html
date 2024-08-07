@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PlasmiCheck Report</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body { margin: 20px; }
+        h1, h2, h3 { text-align: center; margin-top: 20px; }
+        .container { margin-top: 20px; }
+        .table { margin-top: 20px; width: 50%; margin-left: auto; margin-right: auto; }
+        .plots { display: flex; justify-content: space-around; margin-top: 20px; }
+        .plot { width: 45%; }
+        .verdict { text-align: center; font-size: 1.5em; margin-top: 30px; }
+        .verdict span { font-weight: bold; }
+        .details { text-align: center; margin-top: 10px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <h1>PlasmiCheck Report</h1>
+
+    <div class="verdict" style="color: {{ verdict_color }}">
+        <p><span>Verdict:</span> {{ verdict }}</p>
+        <p><span>Plasmid to Human Ratio:</span> {{ ratio }}</p>
+        <p><span>Threshold for Contamination:</span> {{ threshold }}</p>
+    </div>
+
+    <h2>Summary</h2>
+    <div class="container">
+        {{ summary_df|safe }}
+    </div>
+
+    <h2>Plots</h2>
+    <div class="plots">
+        <img src="{{ box_plot }}" alt="Box Plot" class="plot">
+        <img src="{{ scatter_plot }}" alt="Scatter Plot" class="plot">
+    </div>
+
+    <div class="details">
+        <p><span>Script Version:</span> {{ version }}</p>
+        <p><span>Human Reference File:</span> {{ human_fasta }}</p>
+        <p><span>Plasmid GenBank File:</span> {{ plasmid_gb }}</p>
+        <p><span>Sequencing File:</span> {{ sequencing_file }}</p>
+        <p><span>Run Date:</span> {{ run_date }}</p>
+    </div>
+</body>
+</html>
