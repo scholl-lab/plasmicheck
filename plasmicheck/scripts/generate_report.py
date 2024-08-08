@@ -96,13 +96,13 @@ def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_T
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Generate a visualized HTML/PDF report from alignment comparison results")
-    parser.add_argument("reads_assignment_file", help="Reads assignment file (reads_assignment.tsv)")
-    parser.add_argument("summary_file", help="Summary file (summary.tsv)")
-    parser.add_argument("output_folder", help="Folder to write the report and plots")
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
-    parser.add_argument("--human_fasta", default="None", help="Human reference FASTA file")
-    parser.add_argument("--plasmid_gb", default="None", help="GenBank plasmid file")
-    parser.add_argument("--sequencing_file", default="None", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
+    parser.add_argument("-r", "--reads_assignment_file", help="Reads assignment file (reads_assignment.tsv)", required=True)
+    parser.add_argument("-s", "--summary_file", help="Summary file (summary.tsv)", required=True)
+    parser.add_argument("-o", "--output_folder", help="Folder to write the report and plots", required=True)
+    parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("-hf", "--human_fasta", default="None", help="Human reference FASTA file")
+    parser.add_argument("-pg", "--plasmid_gb", default="None", help="GenBank plasmid file")
+    parser.add_argument("-sf", "--sequencing_file", default="None", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
 
     args = parser.parse_args()
     command_line = ' '.join(sys.argv)

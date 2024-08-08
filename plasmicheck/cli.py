@@ -1,5 +1,3 @@
-# cli.py
-
 import argparse
 import sys
 import shutil
@@ -51,71 +49,71 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
 
     # Convert Command
     parser_convert = subparsers.add_parser("convert", help="Convert a plasmid file to a FASTA file and optionally generate a shifted reference")
-    parser_convert.add_argument("input_file", help="Input plasmid file")
-    parser_convert.add_argument("output_file", help="Output FASTA file")
-    parser_convert.add_argument("file_type", choices=['genbank', 'xdna'], help="Type of input file: 'genbank' or 'xdna'")
-    parser_convert.add_argument("--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
-    parser_convert.add_argument("--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
-    parser_convert.add_argument("--overwrite", action="store_true", help="Overwrite existing output file")
+    parser_convert.add_argument("-i", "--input_file", help="Input plasmid file", required=True)
+    parser_convert.add_argument("-o", "--output_file", help="Output FASTA file", required=True)
+    parser_convert.add_argument("-t", "--file_type", choices=['genbank', 'xdna'], help="Type of input file: 'genbank' or 'xdna'", required=True)
+    parser_convert.add_argument("-sb", "--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
+    parser_convert.add_argument("-g", "--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
+    parser_convert.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output file")
 
     # Index Command
     parser_index = subparsers.add_parser("index", help="Create Minimap2 and Samtools indexes for a FASTA file")
-    parser_index.add_argument("fasta_file", help="FASTA file to index")
-    parser_index.add_argument("--overwrite", action="store_true", help="Overwrite existing index files")
+    parser_index.add_argument("-f", "--fasta_file", help="FASTA file to index", required=True)
+    parser_index.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing index files")
 
     # Align Command
     parser_align = subparsers.add_parser("align", help="Align reads to a reference and generate a BAI index")
-    parser_align.add_argument("reference_index", help="Minimap2 index for the reference genome")
-    parser_align.add_argument("input_file", help="Input file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
-    parser_align.add_argument("output_bam", help="Output BAM file for alignment")
-    parser_align.add_argument("alignment_type", help="Type of alignment: 'human' or 'plasmid'")
-    parser_align.add_argument("file_type", help="Type of input file: 'bam', 'interleaved_fastq', or 'paired_fastq'")
-    parser_align.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
+    parser_align.add_argument("-r", "--reference_index", help="Minimap2 index for the reference genome", required=True)
+    parser_align.add_argument("-i", "--input_file", help="Input file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)", required=True)
+    parser_align.add_argument("-o", "--output_bam", help="Output BAM file for alignment", required=True)
+    parser_align.add_argument("-a", "--alignment_type", help="Type of alignment: 'human' or 'plasmid'", required=True)
+    parser_align.add_argument("-t", "--file_type", help="Type of input file: 'bam', 'interleaved_fastq', or 'paired_fastq'", required=True)
+    parser_align.add_argument("-f2", "--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
 
     # Compare Command
     parser_compare = subparsers.add_parser("compare", help="Compare alignments and assign reads")
-    parser_compare.add_argument("plasmid_bam", help="BAM file for plasmid alignment")
-    parser_compare.add_argument("human_bam", help="BAM file for human alignment")
-    parser_compare.add_argument("output_basename", help="Basename for output files")
-    parser_compare.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_compare.add_argument("-p", "--plasmid_bam", help="BAM file for plasmid alignment", required=True)
+    parser_compare.add_argument("-m", "--human_bam", help="BAM file for human alignment", required=True)
+    parser_compare.add_argument("-o", "--output_basename", help="Basename for output files", required=True)
+    parser_compare.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     # Spliced Command
     parser_spliced = subparsers.add_parser("spliced", help="Perform spliced alignment and extract human reference regions")
-    parser_spliced.add_argument("output_fasta", help="Output FASTA file for the extracted human reference regions")
-    parser_spliced.add_argument("human_index", help="Minimap2 index for the human reference genome")
-    parser_spliced.add_argument("plasmid_fasta", help="FASTA file of the plasmid reference")
-    parser_spliced.add_argument("output_bam", help="Output BAM file for the spliced alignment")
-    parser_spliced.add_argument("--human_fasta", help="FASTA file of the human reference genome", default=None)
-    parser_spliced.add_argument("--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
+    parser_spliced.add_argument("-o", "--output_fasta", help="Output FASTA file for the extracted human reference regions", required=True)
+    parser_spliced.add_argument("-i", "--human_index", help="Minimap2 index for the human reference genome", required=True)
+    parser_spliced.add_argument("-p", "--plasmid_fasta", help="FASTA file of the plasmid reference", required=True)
+    parser_spliced.add_argument("-b", "--output_bam", help="Output BAM file for the spliced alignment", required=True)
+    parser_spliced.add_argument("-hf", "--human_fasta", help="FASTA file of the human reference genome", default=None)
+    parser_spliced.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
 
     # Pipeline Command
     parser_pipeline = subparsers.add_parser("pipeline", help="Run the full pipeline to detect and quantify plasmid DNA contamination in sequencing data")
-    parser_pipeline.add_argument("human_fasta", help="Human reference FASTA file")
-    parser_pipeline.add_argument("plasmid_file", help="Plasmid file (GenBank or xDNA)")
-    parser_pipeline.add_argument("sequencing_file", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
-    parser_pipeline.add_argument("output_folder", help="Folder to write all outputs and intermediate files")
-    parser_pipeline.add_argument("plasmid_file_type", choices=['genbank', 'xdna'], help="Type of plasmid file: 'genbank' or 'xdna'")
-    parser_pipeline.add_argument("sequencing_file_type", choices=['bam', 'interleaved_fastq', 'paired_fastq'], help="Type of sequencing file: 'bam', 'interleaved_fastq', or 'paired_fastq'")
-    parser_pipeline.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
-    parser_pipeline.add_argument("--keep_intermediate", action="store_true", help="Keep intermediate files (default: delete them)")
-    parser_pipeline.add_argument("--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
-    parser_pipeline.add_argument("--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
-    parser_pipeline.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
-    parser_pipeline.add_argument("--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
-    parser_pipeline.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_pipeline.add_argument("-hf", "--human_fasta", help="Human reference FASTA file", required=True)
+    parser_pipeline.add_argument("-p", "--plasmid_file", help="Plasmid file (GenBank or xDNA)", required=True)
+    parser_pipeline.add_argument("-s", "--sequencing_file", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)", required=True)
+    parser_pipeline.add_argument("-o", "--output_folder", help="Folder to write all outputs and intermediate files", required=True)
+    parser_pipeline.add_argument("-pt", "--plasmid_file_type", choices=['genbank', 'xdna'], help="Type of plasmid file: 'genbank' or 'xdna'", required=True)
+    parser_pipeline.add_argument("-st", "--sequencing_file_type", choices=['bam', 'interleaved_fastq', 'paired_fastq'], help="Type of sequencing file: 'bam', 'interleaved_fastq', or 'paired_fastq'", required=True)
+    parser_pipeline.add_argument("-f2", "--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
+    parser_pipeline.add_argument("-k", "--keep_intermediate", action="store_true", help="Keep intermediate files (default: delete them)")
+    parser_pipeline.add_argument("-sb", "--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
+    parser_pipeline.add_argument("-g", "--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
+    parser_pipeline.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output files")
+    parser_pipeline.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
+    parser_pipeline.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     # Report Command
     parser_report = subparsers.add_parser("report", help="Generate a visualized HTML/PDF report from alignment comparison results")
-    parser_report.add_argument("reads_assignment_file", help="Reads assignment file (reads_assignment.tsv)")
-    parser_report.add_argument("summary_file", help="Summary file (summary.tsv)")
-    parser_report.add_argument("output_folder", help="Folder to write the report and plots")
-    parser_report.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_report.add_argument("-r", "--reads_assignment_file", help="Reads assignment file (reads_assignment.tsv)", required=True)
+    parser_report.add_argument("-s", "--summary_file", help="Summary file (summary.tsv)", required=True)
+    parser_report.add_argument("-o", "--output_folder", help="Folder to write the report and plots", required=True)
+    parser_report.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     # Summary Reports Command
     parser_summary_reports = subparsers.add_parser("summary_reports", help="Generate summary reports for multiple samples and plasmids.")
-    parser_summary_reports.add_argument("input_dir", help="Directory containing compare outputs")
-    parser_summary_reports.add_argument("output_dir", help="Directory to save the plots")
-    parser_summary_reports.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_summary_reports.add_argument("-i", "--input_dir", help="Directory containing compare outputs", required=True)
+    parser_summary_reports.add_argument("-o", "--output_dir", help="Directory to save the plots", required=True)
+    parser_summary_reports.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     args = parser.parse_args()
 
@@ -141,7 +139,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         spanned_regions = spliced_alignment(args.human_index, args.plasmid_fasta, args.output_bam, args.padding)
         extract_human_reference(args.human_fasta, spanned_regions, args.output_fasta)
     elif args.command == "pipeline":
-        from .scripts.run_pipeline import run_pipeline, DEFAULT_THRESHOLD
+        from .scripts.run_pipeline import run_pipeline
         run_pipeline(args.human_fasta, args.plasmid_file, args.sequencing_file, args.output_folder, args.plasmid_file_type, args.sequencing_file_type, args.fastq2, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold)
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report

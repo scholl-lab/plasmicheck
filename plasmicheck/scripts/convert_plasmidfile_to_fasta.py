@@ -71,12 +71,12 @@ def convert_plasmidfile_to_fasta(input_file, output_file, file_type, shift_bases
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Convert a plasmid file (GenBank or xDNA) to a FASTA file and optionally generate a shifted reference")
-    parser.add_argument("input_file", help="Input plasmid file")
-    parser.add_argument("output_file", help="Output FASTA file")
-    parser.add.argument("file_type", choices=['genbank', 'xdna'], help="Type of input file: 'genbank' or 'xdna'")
-    parser.add_argument("--shift_bases", type=int, default=DEFAULT_SHIFT_BASES, help="Number of bases to shift in the shifted reference")
-    parser.add_argument("--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output file")
+    parser.add_argument("-i", "--input_file", help="Input plasmid file", required=True)
+    parser.add_argument("-o", "--output_file", help="Output FASTA file", required=True)
+    parser.add_argument("-t", "--file_type", choices=['genbank', 'xdna'], help="Type of input file: 'genbank' or 'xdna'", required=True)
+    parser.add_argument("-sb", "--shift_bases", type=int, default=DEFAULT_SHIFT_BASES, help="Number of bases to shift in the shifted reference")
+    parser.add_argument("-g", "--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
+    parser.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output file")
     args = parser.parse_args()
 
     convert_plasmidfile_to_fasta(args.input_file, args.output_file, args.file_type, args.shift_bases, args.generate_shifted, args.overwrite)

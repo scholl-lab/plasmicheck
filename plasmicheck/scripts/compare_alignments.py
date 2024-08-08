@@ -83,10 +83,10 @@ def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAUL
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Compare alignments and assign reads to plasmid or human reference")
-    parser.add_argument("plasmid_bam", help="BAM file for plasmid alignment")
-    parser.add_argument("human_bam", help="BAM file for human alignment")
-    parser.add_argument("output_basename", help="Basename for output files")
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("-p", "--plasmid_bam", help="BAM file for plasmid alignment", required=True)
+    parser.add_argument("-m", "--human_bam", help="BAM file for human alignment", required=True)
+    parser.add_argument("-o", "--output_basename", help="Basename for output files", required=True)
+    parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
     args = parser.parse_args()
 
     compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)

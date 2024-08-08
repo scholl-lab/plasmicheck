@@ -132,9 +132,9 @@ def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Merge and generate summary reports for multiple samples and plasmids.")
-    parser.add_argument("input_dir", help="Directory containing compare outputs")
-    parser.add_argument("output_dir", help="Directory to save the plots and reports")
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("-i", "--input_dir", help="Directory containing compare outputs", required=True)
+    parser.add_argument("-o", "--output_dir", help="Directory to save the plots and reports", required=True)
+    parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     args = parser.parse_args()
     main(args.input_dir, args.output_dir, args.threshold)

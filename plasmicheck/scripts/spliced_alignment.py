@@ -58,12 +58,12 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Perform spliced alignment and extract human reference regions")
-    parser.add_argument("output_fasta", help="Output FASTA file for the extracted human reference regions")
-    parser.add_argument("human_index", help="Minimap2 index for the human reference genome")
-    parser.add_argument("plasmid_fasta", help="FASTA file of the plasmid reference")
-    parser.add_argument("output_bam", help="Output BAM file for the spliced alignment")
-    parser.add_argument("--human_fasta", help="FASTA file of the human reference genome", default=None)
-    parser.add_argument("--padding", type=int, default=PADDING_DEFAULT, help=f"Padding to add to both sides of the spanned regions (default: {PADDING_DEFAULT})")
+    parser.add_argument("-o", "--output_fasta", help="Output FASTA file for the extracted human reference regions", required=True)
+    parser.add_argument("-i", "--human_index", help="Minimap2 index for the human reference genome", required=True)
+    parser.add_argument("-p", "--plasmid_fasta", help="FASTA file of the plasmid reference", required=True)
+    parser.add_argument("-b", "--output_bam", help="Output BAM file for the spliced alignment", required=True)
+    parser.add_argument("-hf", "--human_fasta", help="FASTA file of the human reference genome", default=None)
+    parser.add_argument("-d", "--padding", type=int, default=PADDING_DEFAULT, help=f"Padding to add to both sides of the spanned regions (default: {PADDING_DEFAULT})")
 
     args = parser.parse_args()
 

@@ -31,8 +31,8 @@ def create_indexes(fasta_file, overwrite=False):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Create Minimap2 and Samtools indexes for a FASTA file")
-    parser.add_argument("fasta_file", help="FASTA file to index")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing index files")
+    parser.add_argument("-f", "--fasta_file", help="FASTA file to index", required=True)
+    parser.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing index files")
     args = parser.parse_args()
 
     create_indexes(args.fasta_file, args.overwrite)

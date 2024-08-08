@@ -32,12 +32,12 @@ def align_reads(reference_index, input_file, output_bam, alignment_type, file_ty
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Align reads to a reference genome and generate a BAI index")
-    parser.add_argument("reference_index", help="Minimap2 index for the reference genome")
-    parser.add_argument("input_file", help="Input file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
-    parser.add_argument("output_bam", help="Output BAM file for alignment")
-    parser.add_argument("alignment_type", help="Type of alignment: 'human' or 'plasmid'")
-    parser.add_argument("file_type", help="Type of input file: 'bam', 'interleaved_fastq', or 'paired_fastq'")
-    parser.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
+    parser.add_argument("-r", "--reference_index", help="Minimap2 index for the reference genome", required=True)
+    parser.add_argument("-i", "--input_file", help="Input file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)", required=True)
+    parser.add_argument("-o", "--output_bam", help="Output BAM file for alignment", required=True)
+    parser.add_argument("-a", "--alignment_type", help="Type of alignment: 'human' or 'plasmid'", required=True)
+    parser.add_argument("-t", "--file_type", help="Type of input file: 'bam', 'interleaved_fastq', or 'paired_fastq'", required=True)
+    parser.add_argument("-f2", "--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
     args = parser.parse_args()
 
     align_reads(args.reference_index, args.input_file, args.output_bam, args.alignment_type, args.file_type, args.fastq2)

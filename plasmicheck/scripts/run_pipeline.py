@@ -1,3 +1,5 @@
+# run_pipeline.py
+
 import os
 import subprocess
 import re
@@ -77,19 +79,19 @@ def run_pipeline(human_fasta, plasmid_file, sequencing_file, output_folder, plas
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Run the full pipeline to detect and quantify plasmid DNA contamination in sequencing data")
-    parser.add_argument("human_fasta", help="Human reference FASTA file")
-    parser.add_argument("plasmid_file", help="Plasmid file (GenBank or xDNA)")
-    parser.add.argument("sequencing_file", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
-    parser.add_argument("output_folder", help="Folder to write all outputs and intermediate files")
-    parser.add.argument("plasmid_file_type", choices=['genbank', 'xdna'], help="Type of plasmid file: 'genbank' or 'xdna'")
-    parser.add.argument("sequencing_file_type", choices=['bam', 'interleaved_fastq', 'paired_fastq'], help="Type of sequencing file: 'bam', 'interleaved_fastq', or 'paired_fastq'")
-    parser.add.argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
-    parser.add.argument("--keep_intermediate", action="store_true", help="Keep intermediate files (default: delete them)")
-    parser.add.argument("--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
-    parser.add.argument("--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
-    parser.add.argument("--overwrite", action="store_true", help="Overwrite existing output files")
-    parser.add.argument("--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
-    parser.add.argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("-hf", "--human_fasta", help="Human reference FASTA file", required=True)
+    parser.add_argument("-p", "--plasmid_file", help="Plasmid file (GenBank or xDNA)", required=True)
+    parser.add_argument("-s", "--sequencing_file", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)", required=True)
+    parser.add_argument("-o", "--output_folder", help="Folder to write all outputs and intermediate files", required=True)
+    parser.add_argument("-pt", "--plasmid_file_type", choices=['genbank', 'xdna'], help="Type of plasmid file: 'genbank' or 'xdna'", required=True)
+    parser.add_argument("-st", "--sequencing_file_type", choices=['bam', 'interleaved_fastq', 'paired_fastq'], help="Type of sequencing file: 'bam', 'interleaved_fastq', or 'paired_fastq'", required=True)
+    parser.add_argument("-f2", "--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
+    parser.add_argument("-k", "--keep_intermediate", action="store_true", help="Keep intermediate files (default: delete them)")
+    parser.add_argument("-sb", "--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
+    parser.add_argument("-g", "--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
+    parser.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output files")
+    parser.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
+    parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     args = parser.parse_args()
 
