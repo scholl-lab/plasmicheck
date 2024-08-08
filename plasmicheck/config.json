@@ -9,7 +9,7 @@
         "clipping_penalty": 1,
         "mismatch_penalty": 1
     },
-    "version": "0.6.0",
+    "version": "0.7.0",
     "plot_size": {
         "width": 6,
         "height": 4
@@ -25,5 +25,22 @@
     "conversion": {
         "input_formats": ["genbank", "xdna"],
         "output_formats": ["fasta", "genbank"]
+    },
+    "plot_summary": {
+        "figsize": {
+            "width": 10,
+            "height": 6
+        },
+        "colors": {
+            "not_contaminated": "lightblue",
+            "contaminated": "orange"
+        },
+        "linewidths": 0.5,
+        "linecolor": "gray",
+        "title": "Heatmap of Contamination Ratios by Sample and Plasmid",
+        "xticks_rotation": 45,
+        "xticks_ha": "right",
+        "yticks_rotation": 0,
+        "output_filename": "contamination_heatmap.png"
     }
 }

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PlasmiCheck Summary Report</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.min.css">
+    <style>
+        body { margin: 20px; }
+        h1, h2, h3 { text-align: center; margin-top: 20px; }
+        .container { margin-top: 20px; }
+        .table-container { width: 80%; margin: 20px auto; }
+        .plot { margin: 20px auto; display: block; width: 60%; }
+    </style>
+</head>
+<body>
+    <h1>PlasmiCheck Summary Report</h1>
+
+    <h2>Plots</h2>
+    <img src="{{ plot_image }}" alt="Heatmap Plot" class="plot">
+
+    <h2>Summary</h2>
+    <div class="table-container">
+        {{ combined_df|safe }}
+    </div>
+
+    <h2>Verdicts</h2>
+    <div class="table-container">
+        {{ verdict_df|safe }}
+    </div>
+
+    <h2>Ratios</h2>
+    <div class="table-container">
+        {{ ratio_df|safe }}
+    </div>
+
+    <div class="details">
+        <p><span>Threshold for Contamination:</span> {{ threshold }}</p>
+        <p><span>Script Version:</span> {{ version }}</p>
+        <p><span>Run Date:</span> {{ run_date }}</p>
+        <p><span>Command Line:</span> {{ command_line }}</p>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
+    <script src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('table').DataTable();
+        });
+    </script>
+</body>
+</html>

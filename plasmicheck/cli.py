@@ -1,3 +1,5 @@
+# cli.py
+
 import argparse
 import sys
 import shutil
@@ -109,6 +111,12 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_report.add_argument("output_folder", help="Folder to write the report and plots")
     parser_report.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
+    # Summary Reports Command
+    parser_summary_reports = subparsers.add_parser("summary_reports", help="Generate summary reports for multiple samples and plasmids.")
+    parser_summary_reports.add_argument("input_dir", help="Directory containing compare outputs")
+    parser_summary_reports.add_argument("output_dir", help="Directory to save the plots")
+    parser_summary_reports.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+
     args = parser.parse_args()
 
     check_requirements()
@@ -139,6 +147,9 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         from .scripts.generate_report import main as generate_report
         command_line = ' '.join(sys.argv)
         generate_report(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, command_line)
+    elif args.command == "summary_reports":
+        from .scripts.generate_summary_reports import main as generate_summary_reports
+        generate_summary_reports(args.input_dir, args.output_dir, args.threshold)
     else:
         parser.print_help()
 
