@@ -1,17 +1,25 @@
 import subprocess
+import json
+import os
+
+# Load configuration from JSON file
+with open(os.path.join(os.path.dirname(__file__), '..', 'config.json'), 'r') as config_file:
+    config = json.load(config_file)
+
+MINIMAP2_THREADS = config['alignment']['minimap2_threads']
 
 def align_reads(reference_index, input_file, output_bam, alignment_type, file_type, fastq2=None):
     if alignment_type not in ['human', 'plasmid']:
         raise ValueError("alignment_type must be 'human' or 'plasmid'")
     
     if file_type == "bam":
-        command = f"samtools fasta {input_file} | minimap2 -t 8 -ax sr {reference_index} - | samtools view -h -F 4 - | samtools sort -o {output_bam}"
+        command = f"samtools fasta {input_file} | minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} - | samtools view -h -F 4 - | samtools sort -o {output_bam}"
     elif file_type == "interleaved_fastq":
-        command = f"minimap2 -t 8 -ax sr {reference_index} {input_file} | samtools view -h -F 4 - | samtools sort -o {output_bam}"
+        command = f"minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} {input_file} | samtools view -h -F 4 - | samtools sort -o {output_bam}"
     elif file_type == "paired_fastq":
         if fastq2 is None:
             raise ValueError("Second FASTQ file must be provided for paired FASTQ input")
-        command = f"minimap2 -t 8 -ax sr {reference_index} {input_file} {fastq2} | samtools view -h -F 4 - | samtools sort -o {output_bam}"
+        command = f"minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} {input_file} {fastq2} | samtools view -h -F 4 - | samtools sort -o {output_bam}"
     else:
         raise ValueError("file_type must be 'bam', 'interleaved_fastq', or 'paired_fastq'")
     

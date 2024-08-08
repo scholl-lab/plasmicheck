@@ -1,17 +1,29 @@
 import os
 import subprocess
 import re
+import json
 from .convert_gb_to_fasta import convert_gb_to_fasta
 from .create_indexes import create_indexes
 from .spliced_alignment import spliced_alignment, extract_human_reference
 from .align_reads import align_reads
 from .compare_alignments import compare_alignments
-from .generate_report import main as generate_report, DEFAULT_THRESHOLD
+from .generate_report import main as generate_report
+
+# Resolve the path to config.json in the parent directory of the current script
+config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
+
+# Load configuration from JSON file
+with open(config_path, 'r') as config_file:
+    config = json.load(config_file)
+
+DEFAULT_THRESHOLD = config['default_threshold']
+DEFAULT_SHIFT_BASES = config['shift_bases']
+DEFAULT_PADDING = config['padding']
 
 def sanitize_filename(filename):
     return re.sub(r'[^a-zA-Z0-9_-]', '_', filename)
 
-def run_pipeline(human_fasta, plasmid_gb, sequencing_file, output_folder, file_type, fastq2=None, keep_intermediate=True, shift_bases=500, generate_shifted=False, overwrite=False, padding=1000, threshold=DEFAULT_THRESHOLD):
+def run_pipeline(human_fasta, plasmid_gb, sequencing_file, output_folder, file_type, fastq2=None, keep_intermediate=True, shift_bases=DEFAULT_SHIFT_BASES, generate_shifted=False, overwrite=False, padding=DEFAULT_PADDING, threshold=DEFAULT_THRESHOLD):
     bam_basename = sanitize_filename(os.path.splitext(os.path.basename(sequencing_file))[0])
     gb_basename = sanitize_filename(os.path.splitext(os.path.basename(plasmid_gb))[0])
     output_subfolder = os.path.join(output_folder, bam_basename, gb_basename)
@@ -74,10 +86,10 @@ if __name__ == "__main__":
     parser.add_argument("file_type", help="Type of input file: 'bam', 'interleaved_fastq', or 'paired_fastq'")
     parser.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
     parser.add_argument("--keep_intermediate", action="store_true", help="Keep intermediate files (default: delete them)")
-    parser.add_argument("--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
+    parser.add_argument("--shift_bases", type=int, default=DEFAULT_SHIFT_BASES, help=f"Number of bases to shift in the shifted reference (default: {DEFAULT_SHIFT_BASES})")
     parser.add_argument("--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
-    parser.add_argument("--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
+    parser.add_argument("--padding", type=int, default=DEFAULT_PADDING, help=f"Padding to add to both sides of the spanned regions (default: {DEFAULT_PADDING})")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     args = parser.parse_args()

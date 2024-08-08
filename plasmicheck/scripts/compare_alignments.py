@@ -1,9 +1,18 @@
 import pysam
+import json
+import os
+
+# Resolve the path to config.json in the parent directory of the current script
+config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
+
+# Load configuration from JSON file
+with open(config_path, 'r') as config_file:
+    config = json.load(config_file)
 
 # Configuration variables for scoring
-MATE_BONUS = 10
-CLIPPING_PENALTY = 1
-MISMATCH_PENALTY = 1
+MATE_BONUS = config['scoring']['mate_bonus']
+CLIPPING_PENALTY = config['scoring']['clipping_penalty']
+MISMATCH_PENALTY = config['scoring']['mismatch_penalty']
 
 def calculate_alignment_score(read):
     """
@@ -67,8 +76,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Compare alignments and assign reads to plasmid or human reference")
     parser.add_argument("plasmid_bam", help="BAM file for plasmid alignment")
-    parser.add_argument("human_bam", help="BAM file for human alignment")
-    parser.add_argument("output_basename", help="Basename for output files")
+    parser.add.argument("human_bam", help="BAM file for human alignment")
+    parser.add.argument("output_basename", help="Basename for output files")
     args = parser.parse_args()
 
     compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename)

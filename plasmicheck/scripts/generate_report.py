@@ -4,10 +4,19 @@ import seaborn as sns
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from datetime import datetime
+import json
+import os
 
-# Configuration variable for the default threshold
-DEFAULT_THRESHOLD = 1.0
-VERSION = "0.1.0"
+# Resolve the path to config.json in the parent directory of the current script
+config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
+
+# Load configuration from JSON file
+with open(config_path, 'r') as config_file:
+    config = json.load(config_file)
+
+DEFAULT_THRESHOLD = config['default_threshold']
+VERSION = config['version']
+PLOT_SIZE = config['plot_size']
 
 def load_data(reads_assignment_file, summary_file):
     reads_df = pd.read_csv(reads_assignment_file, sep='\t')
@@ -16,14 +25,14 @@ def load_data(reads_assignment_file, summary_file):
 
 def generate_plots(reads_df, output_folder):
     # Box plot
-    plt.figure(figsize=(6, 4))
+    plt.figure(figsize=(PLOT_SIZE['width'], PLOT_SIZE['height']))
     sns.boxplot(data=reads_df, x='AssignedTo', y='PlasmidScore')
     plt.title('Box Plot of Plasmid Scores by Assignment')
     plt.savefig(f"{output_folder}/box_plot.png")
     plt.close()
 
     # Scatter plot
-    plt.figure(figsize=(6, 4))
+    plt.figure(figsize=(PLOT_SIZE['width'], PLOT_SIZE['height']))
     sns.scatterplot(data=reads_df, x='PlasmidScore', y='HumanScore', hue='AssignedTo')
     plt.title('Scatter Plot of Plasmid vs. Human Scores by Assignment')
     plt.savefig(f"{output_folder}/scatter_plot.png")
@@ -80,9 +89,9 @@ if __name__ == "__main__":
     parser.add_argument("summary_file", help="Summary file (summary.tsv)")
     parser.add_argument("output_folder", help="Folder to write the report and plots")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
-    parser.add.argument("--human_fasta", default="None", help="Human reference FASTA file")
-    parser.add.argument("--plasmid_gb", default="None", help="GenBank plasmid file")
-    parser.add.argument("--sequencing_file", default="None", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
+    parser.add_argument("--human_fasta", default="None", help="Human reference FASTA file")
+    parser.add_argument("--plasmid_gb", default="None", help="GenBank plasmid file")
+    parser.add_argument("--sequencing_file", default="None", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
 
     args = parser.parse_args()
     main(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, args.human_fasta, args.plasmid_gb, args.sequencing_file)
