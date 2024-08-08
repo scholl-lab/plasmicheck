@@ -24,21 +24,31 @@ def load_data(reads_assignment_file, summary_file):
     return reads_df, summary_df
 
 def generate_plots(reads_df, output_folder):
+    # Number of reads for each assignment category
+    counts = reads_df['AssignedTo'].value_counts().to_dict()
+
     # Box plot
     plt.figure(figsize=(PLOT_SIZE['width'], PLOT_SIZE['height']))
     sns.boxplot(data=reads_df, x='AssignedTo', y='PlasmidScore')
-    plt.title('Box Plot of Plasmid Scores by Assignment')
+    plt.title(f"Box Plot of Plasmid Scores by Assignment\n(Total Reads: {len(reads_df)})")
+    plt.xlabel("Assigned To")
+    plt.ylabel("Plasmid Score")
+    for category, count in counts.items():
+        plt.text(category, 0, f'N={count}', ha='center', va='bottom')
     plt.savefig(f"{output_folder}/box_plot.png")
     plt.close()
 
     # Scatter plot
     plt.figure(figsize=(PLOT_SIZE['width'], PLOT_SIZE['height']))
     sns.scatterplot(data=reads_df, x='PlasmidScore', y='HumanScore', hue='AssignedTo')
-    plt.title('Scatter Plot of Plasmid vs. Human Scores by Assignment')
+    plt.title(f"Scatter Plot of Plasmid vs. Human Scores by Assignment\n(Total Reads: {len(reads_df)})")
+    plt.xlabel("Plasmid Score")
+    plt.ylabel("Human Score")
+    plt.legend(title='Assigned To', loc='best')
     plt.savefig(f"{output_folder}/scatter_plot.png")
     plt.close()
 
-def generate_report(summary_df, output_folder, verdict, ratio, threshold, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
+def generate_report(summary_df, output_folder, verdict, ratio, threshold, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
     # Load the template
     env = Environment(loader=FileSystemLoader('templates'))
     template = env.get_template('report_template.html')
@@ -59,7 +69,8 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, human_
         human_fasta=human_fasta,
         plasmid_gb=plasmid_gb,
         sequencing_file=sequencing_file,
-        run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        command_line=command_line
     )
 
     # Save HTML report
@@ -70,7 +81,7 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, human_
     # Convert HTML to PDF
     HTML(html_report).write_pdf(f"{output_folder}/report.pdf")
 
-def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
+def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, human_fasta="None", plasmid_gb="None", sequencing_file="None", command_line=""):
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
     generate_plots(reads_df, output_folder)
 
@@ -80,7 +91,7 @@ def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_T
     ratio = plasmid_count / human_count if human_count != 0 else float('inf')
     verdict = "Sample is contaminated with plasmid DNA" if ratio > threshold else "Sample is not contaminated with plasmid DNA"
 
-    generate_report(summary_df, output_folder, verdict, ratio, threshold, human_fasta, plasmid_gb, sequencing_file)
+    generate_report(summary_df, output_folder, verdict, ratio, threshold, command_line, human_fasta, plasmid_gb, sequencing_file)
 
 if __name__ == "__main__":
     import argparse
@@ -94,4 +105,5 @@ if __name__ == "__main__":
     parser.add_argument("--sequencing_file", default="None", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
 
     args = parser.parse_args()
-    main(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, args.human_fasta, args.plasmid_gb, args.sequencing_file)
+    command_line = ' '.join(sys.argv)
+    main(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, args.human_fasta, args.plasmid_gb, args.sequencing_file, command_line)
