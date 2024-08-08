@@ -1,8 +1,13 @@
+import json
 from setuptools import setup, find_packages
+
+# Load configuration from JSON file
+with open('config.json', 'r') as config_file:
+    config = json.load(config_file)
 
 setup(
     name="plasmicheck",
-    version="0.3.0",
+    version=config['version'],
     packages=find_packages(),
     install_requires=[
         "biopython",

@@ -5,12 +5,14 @@ import json
 import os
 
 # Load configuration from JSON file
-with open(os.path.join(os.path.dirname(__file__), 'config.json'), 'r') as config_file:
+config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+with open(config_path, 'r') as config_file:
     config = json.load(config_file)
 
 REQUIRED_TOOLS = config['required_tools']
 REQUIRED_PYTHON_PACKAGES = config['required_python_packages']
 DEFAULT_THRESHOLD = config['default_threshold']
+VERSION = config['version']
 
 def check_tools():
     missing_tools = []
@@ -42,6 +44,7 @@ def check_requirements():
 
 def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser = argparse.ArgumentParser(description="PlasmiCheck: Detect and quantify plasmid DNA contamination in sequencing data")
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}')
     subparsers = parser.add_subparsers(dest="command")
 
     # Convert Command
