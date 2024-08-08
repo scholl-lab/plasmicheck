@@ -64,11 +64,9 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     # Align Command
     parser_align = subparsers.add_parser("align", help="Align reads to a reference and generate a BAI index")
     parser_align.add_argument("-r", "--reference_index", help="Minimap2 index for the reference genome", required=True)
-    parser_align.add_argument("-i", "--input_file", help="Input file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)", required=True)
+    parser_align.add_argument("-i", "--input_files", nargs='+', help="Input file(s) (BAM, interleaved FASTQ, or paired FASTQ files)", required=True)
     parser_align.add_argument("-o", "--output_bam", help="Output BAM file for alignment", required=True)
     parser_align.add_argument("-a", "--alignment_type", help="Type of alignment: 'human' or 'plasmid'", required=True)
-    parser_align.add_argument("-t", "--file_type", help="Type of input file: 'bam', 'interleaved_fastq', or 'paired_fastq'", required=True)
-    parser_align.add_argument("-f2", "--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
 
     # Compare Command
     parser_compare = subparsers.add_parser("compare", help="Compare alignments and assign reads")
@@ -89,12 +87,9 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     # Pipeline Command
     parser_pipeline = subparsers.add_parser("pipeline", help="Run the full pipeline to detect and quantify plasmid DNA contamination in sequencing data")
     parser_pipeline.add_argument("-hf", "--human_fasta", help="Human reference FASTA file", required=True)
-    parser_pipeline.add_argument("-p", "--plasmid_file", help="Plasmid file (GenBank or xDNA)", required=True)
-    parser_pipeline.add_argument("-s", "--sequencing_file", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)", required=True)
+    parser_pipeline.add_argument("-pf", "--plasmid_files", help="Plasmid files (single file or a file containing paths to multiple files)", required=True)
+    parser_pipeline.add_argument("-sf", "--sequencing_files", help="Sequencing files (single file or a file containing paths to multiple files)", required=True)
     parser_pipeline.add_argument("-o", "--output_folder", help="Folder to write all outputs and intermediate files", required=True)
-    parser_pipeline.add_argument("-pt", "--plasmid_file_type", choices=['genbank', 'xdna'], help="Type of plasmid file: 'genbank' or 'xdna'", required=True)
-    parser_pipeline.add_argument("-st", "--sequencing_file_type", choices=['bam', 'interleaved_fastq', 'paired_fastq'], help="Type of sequencing file: 'bam', 'interleaved_fastq', or 'paired_fastq'", required=True)
-    parser_pipeline.add_argument("-f2", "--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
     parser_pipeline.add_argument("-k", "--keep_intermediate", action="store_true", help="Keep intermediate files (default: delete them)")
     parser_pipeline.add_argument("-sb", "--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
     parser_pipeline.add_argument("-g", "--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
@@ -127,7 +122,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         create_indexes(args.fasta_file, args.overwrite)
     elif args.command == "align":
         from .scripts.align_reads import align_reads
-        align_reads(args.reference_index, args.input_file, args.output_bam, args.alignment_type, args.file_type, args.fastq2)
+        align_reads(args.reference_index, args.input_files, args.output_bam, args.alignment_type)
     elif args.command == "compare":
         from .scripts.compare_alignments import compare_alignments
         compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)
@@ -140,7 +135,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         extract_human_reference(args.human_fasta, spanned_regions, args.output_fasta)
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline
-        run_pipeline(args.human_fasta, args.plasmid_file, args.sequencing_file, args.output_folder, args.plasmid_file_type, args.sequencing_file_type, args.fastq2, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold)
+        run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold)
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
         command_line = ' '.join(sys.argv)
