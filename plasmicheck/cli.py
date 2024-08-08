@@ -74,6 +74,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_compare.add_argument("plasmid_bam", help="BAM file for plasmid alignment")
     parser_compare.add_argument("human_bam", help="BAM file for human alignment")
     parser_compare.add_argument("output_basename", help="Basename for output files")
+    parser_compare.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     # Spliced Command
     parser_spliced = subparsers.add_parser("spliced", help="Perform spliced alignment and extract human reference regions")
@@ -121,7 +122,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         align_reads(args.reference_index, args.input_file, args.output_bam, args.alignment_type, args.file_type, args.fastq2)
     elif args.command == "compare":
         from .scripts.compare_alignments import compare_alignments
-        compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename)
+        compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)
     elif args.command == "spliced":
         from .scripts.spliced_alignment import spliced_alignment, extract_human_reference, find_fasta_file
         if args.human_fasta is None:
@@ -134,7 +135,8 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         run_pipeline(args.human_fasta, args.plasmid_gb, args.sequencing_file, args.output_folder, args.file_type, args.fastq2, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold)
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
-        generate_report(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold)
+        command_line = ' '.join(sys.argv)
+        generate_report(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, command_line)
     else:
         parser.print_help()
 

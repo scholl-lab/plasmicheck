@@ -13,6 +13,7 @@ with open(config_path, 'r') as config_file:
 MATE_BONUS = config['scoring']['mate_bonus']
 CLIPPING_PENALTY = config['scoring']['clipping_penalty']
 MISMATCH_PENALTY = config['scoring']['mismatch_penalty']
+DEFAULT_THRESHOLD = config['default_threshold']
 
 def calculate_alignment_score(read):
     """
@@ -38,7 +39,7 @@ def calculate_alignment_score(read):
 
     return score
 
-def compare_alignments(plasmid_bam, human_bam, output_basename):
+def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAULT_THRESHOLD):
     plasmid_samfile = pysam.AlignmentFile(plasmid_bam, "rb")
     human_samfile = pysam.AlignmentFile(human_bam, "rb")
 
@@ -67,17 +68,25 @@ def compare_alignments(plasmid_bam, human_bam, output_basename):
 
             outfile.write(f"{query_name}\t{assigned_to}\t{plasmid_score}\t{human_score}\n")
 
+    plasmid_count = assigned_counts["Plasmid"]
+    human_count = assigned_counts["Human"]
+    ratio = plasmid_count / human_count if human_count != 0 else float('inf')
+    verdict = "Sample is contaminated with plasmid DNA" if ratio > threshold else "Sample is not contaminated with plasmid DNA"
+
     with open(f"{output_basename}.summary.tsv", 'w') as summary_file:
         summary_file.write("Category\tCount\n")
         for category, count in assigned_counts.items():
             summary_file.write(f"{category}\t{count}\n")
+        summary_file.write(f"Verdict\t{verdict}\n")
+        summary_file.write(f"Ratio\t{ratio}\n")
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Compare alignments and assign reads to plasmid or human reference")
     parser.add_argument("plasmid_bam", help="BAM file for plasmid alignment")
-    parser.add.argument("human_bam", help="BAM file for human alignment")
-    parser.add.argument("output_basename", help="Basename for output files")
+    parser.add_argument("human_bam", help="BAM file for human alignment")
+    parser.add_argument("output_basename", help="Basename for output files")
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
     args = parser.parse_args()
 
-    compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename)
+    compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)
