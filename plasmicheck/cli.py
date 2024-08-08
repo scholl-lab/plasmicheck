@@ -48,9 +48,10 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     subparsers = parser.add_subparsers(dest="command")
 
     # Convert Command
-    parser_convert = subparsers.add_parser("convert", help="Convert a GenBank file to a FASTA file and optionally generate a shifted reference")
-    parser_convert.add_argument("input_file", help="Input GenBank file")
+    parser_convert = subparsers.add_parser("convert", help="Convert a plasmid file to a FASTA file and optionally generate a shifted reference")
+    parser_convert.add_argument("input_file", help="Input plasmid file")
     parser_convert.add_argument("output_file", help="Output FASTA file")
+    parser_convert.add_argument("file_type", choices=['genbank', 'xdna'], help="Type of input file: 'genbank' or 'xdna'")
     parser_convert.add_argument("--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
     parser_convert.add_argument("--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
     parser_convert.add_argument("--overwrite", action="store_true", help="Overwrite existing output file")
@@ -88,10 +89,11 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     # Pipeline Command
     parser_pipeline = subparsers.add_parser("pipeline", help="Run the full pipeline to detect and quantify plasmid DNA contamination in sequencing data")
     parser_pipeline.add_argument("human_fasta", help="Human reference FASTA file")
-    parser_pipeline.add_argument("plasmid_gb", help="GenBank plasmid file")
+    parser_pipeline.add_argument("plasmid_file", help="Plasmid file (GenBank or xDNA)")
     parser_pipeline.add_argument("sequencing_file", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
     parser_pipeline.add_argument("output_folder", help="Folder to write all outputs and intermediate files")
-    parser_pipeline.add_argument("file_type", help="Type of input file: 'bam', 'interleaved_fastq', or 'paired_fastq'")
+    parser_pipeline.add_argument("plasmid_file_type", choices=['genbank', 'xdna'], help="Type of plasmid file: 'genbank' or 'xdna'")
+    parser_pipeline.add_argument("sequencing_file_type", choices=['bam', 'interleaved_fastq', 'paired_fastq'], help="Type of sequencing file: 'bam', 'interleaved_fastq', or 'paired_fastq'")
     parser_pipeline.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
     parser_pipeline.add_argument("--keep_intermediate", action="store_true", help="Keep intermediate files (default: delete them)")
     parser_pipeline.add_argument("--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
@@ -112,8 +114,8 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     check_requirements()
 
     if args.command == "convert":
-        from .scripts.convert_gb_to_fasta import convert_gb_to_fasta
-        convert_gb_to_fasta(args.input_file, args.output_file, args.shift_bases, args.generate_shifted, args.overwrite)
+        from .scripts.convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta
+        convert_plasmidfile_to_fasta(args.input_file, args.output_file, args.file_type, args.shift_bases, args.generate_shifted, args.overwrite)
     elif args.command == "index":
         from .scripts.create_indexes import create_indexes
         create_indexes(args.fasta_file, args.overwrite)
@@ -132,7 +134,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         extract_human_reference(args.human_fasta, spanned_regions, args.output_fasta)
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline, DEFAULT_THRESHOLD
-        run_pipeline(args.human_fasta, args.plasmid_gb, args.sequencing_file, args.output_folder, args.file_type, args.fastq2, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold)
+        run_pipeline(args.human_fasta, args.plasmid_file, args.sequencing_file, args.output_folder, args.plasmid_file_type, args.sequencing_file_type, args.fastq2, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold)
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
         command_line = ' '.join(sys.argv)

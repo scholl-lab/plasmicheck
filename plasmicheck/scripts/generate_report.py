@@ -48,11 +48,7 @@ def generate_plots(reads_df, output_folder):
     plt.savefig(f"{output_folder}/scatter_plot.png")
     plt.close()
 
-def generate_report(summary_df, output_folder, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
-    # Extract verdict and ratio from the summary
-    verdict = summary_df[summary_df['Category'] == 'Verdict']['Count'].values[0]
-    ratio = float(summary_df[summary_df['Category'] == 'Ratio']['Count'].values[0])
-
+def generate_report(summary_df, output_folder, verdict, ratio, threshold, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
     # Load the template
     env = Environment(loader=FileSystemLoader('templates'))
     template = env.get_template('report_template.html')
@@ -67,7 +63,7 @@ def generate_report(summary_df, output_folder, command_line, human_fasta="None",
         scatter_plot="scatter_plot.png",
         verdict=verdict,
         ratio=f"{ratio:.2f}",
-        threshold=config['default_threshold'],
+        threshold=threshold,
         verdict_color=verdict_color,
         version=VERSION,
         human_fasta=human_fasta,
@@ -85,11 +81,17 @@ def generate_report(summary_df, output_folder, command_line, human_fasta="None",
     # Convert HTML to PDF
     HTML(html_report).write_pdf(f"{output_folder}/report.pdf")
 
-def main(reads_assignment_file, summary_file, output_folder, human_fasta="None", plasmid_gb="None", sequencing_file="None", command_line=""):
+def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, human_fasta="None", plasmid_gb="None", sequencing_file="None", command_line=""):
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
     generate_plots(reads_df, output_folder)
 
-    generate_report(summary_df, output_folder, command_line, human_fasta, plasmid_gb, sequencing_file)
+    # Determine contamination verdict
+    plasmid_count = int(summary_df[summary_df['Category'] == 'Plasmid']['Count'].values[0])
+    human_count = int(summary_df[summary_df['Category'] == 'Human']['Count'].values[0])
+    ratio = plasmid_count / human_count if human_count != 0 else float('inf')
+    verdict = "Sample is contaminated with plasmid DNA" if ratio > threshold else "Sample is not contaminated with plasmid DNA"
+
+    generate_report(summary_df, output_folder, verdict, ratio, threshold, command_line, human_fasta, plasmid_gb, sequencing_file)
 
 if __name__ == "__main__":
     import argparse
@@ -97,10 +99,11 @@ if __name__ == "__main__":
     parser.add_argument("reads_assignment_file", help="Reads assignment file (reads_assignment.tsv)")
     parser.add_argument("summary_file", help="Summary file (summary.tsv)")
     parser.add_argument("output_folder", help="Folder to write the report and plots")
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
     parser.add_argument("--human_fasta", default="None", help="Human reference FASTA file")
     parser.add_argument("--plasmid_gb", default="None", help="GenBank plasmid file")
     parser.add_argument("--sequencing_file", default="None", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
 
     args = parser.parse_args()
     command_line = ' '.join(sys.argv)
-    main(args.reads_assignment_file, args.summary_file, args.output_folder, args.human_fasta, args.plasmid_gb, args.sequencing_file, command_line)
+    main(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, args.human_fasta, args.plasmid_gb, args.sequencing_file, command_line)
