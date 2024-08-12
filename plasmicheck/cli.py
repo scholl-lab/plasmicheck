@@ -14,6 +14,11 @@ REQUIRED_PYTHON_PACKAGES = config['required_python_packages']
 DEFAULT_THRESHOLD = config['default_threshold']
 VERSION = config['version']
 
+def print_logo():
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'img', 'plasmicheck_ascii.txt')
+    with open(logo_path, 'r') as f:
+        print(f.read())
+
 def check_tools():
     missing_tools = []
     for tool in REQUIRED_TOOLS:
@@ -43,9 +48,15 @@ def check_requirements():
         sys.exit(1)
 
 def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
-    parser = argparse.ArgumentParser(description="PlasmiCheck: Detect and quantify plasmid DNA contamination in sequencing data")
+    parser = argparse.ArgumentParser(description="plasmicheck: Detect and quantify plasmid DNA contamination in sequencing data")
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}')
     subparsers = parser.add_subparsers(dest="command")
+
+    # Print the logo and version when --version is called
+    if '-v' in sys.argv or '--version' in sys.argv:
+        print_logo()
+        print(f"Version: {VERSION}")
+        sys.exit(0)
 
     # Convert Command
     parser_convert = subparsers.add_parser("convert", help="Convert a plasmid file to a FASTA file and optionally generate a shifted reference")
