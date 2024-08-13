@@ -13,7 +13,7 @@
         "clipping_penalty": 1,
         "mismatch_penalty": 1
     },
-    "version": "0.13.3",
+    "version": "0.14.0",
     "alignment": {
         "minimap2_threads": 8,
         "samtools_threads": 4,

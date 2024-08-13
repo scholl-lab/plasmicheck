@@ -107,6 +107,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_pipeline.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output files")
     parser_pipeline.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
     parser_pipeline.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_pipeline.add_argument("-md5", "--md5_level", type=str, choices=["all", "input", "intermediate", "output"], default="intermediate", help="Level of MD5 checksum calculation (default: all)")
 
     # Report Command
     parser_report = subparsers.add_parser("report", help="Generate a visualized HTML/PDF report from alignment comparison results")
@@ -146,7 +147,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         extract_human_reference(args.human_fasta, spanned_regions, args.output_fasta)
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline
-        run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold)
+        run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold, args.md5_level)
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
         command_line = ' '.join(sys.argv)

@@ -9,6 +9,7 @@ from .spliced_alignment import spliced_alignment, extract_human_reference
 from .align_reads import align_reads
 from .compare_alignments import compare_alignments
 from .generate_report import main as generate_report, DEFAULT_THRESHOLD
+from .utils import write_md5sum, sanitize_filename
 
 # Resolve the path to config.json in the parent directory of the current script
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
@@ -16,9 +17,6 @@ config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.j
 # Load configuration from JSON file
 with open(config_path, 'r') as config_file:
     config = json.load(config_file)
-
-def sanitize_filename(filename):
-    return re.sub(r'[^a-zA-Z0-9_-]', '_', filename)
 
 def read_file_list(file_path):
     """Read a file containing newline-separated file paths and return a list of files."""
@@ -33,7 +31,7 @@ def get_file_list(file_or_list):
     else:
         return [file_or_list]
 
-def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, keep_intermediate=True, shift_bases=500, generate_shifted=False, overwrite=False, padding=1000, threshold=DEFAULT_THRESHOLD):
+def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, keep_intermediate=True, shift_bases=500, generate_shifted=False, overwrite=False, padding=1000, threshold=DEFAULT_THRESHOLD, md5_level="all"):
     plasmid_files = get_file_list(plasmid_files)
     sequencing_files = get_file_list(sequencing_files)
 
@@ -63,6 +61,10 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             plasmid_fasta = os.path.join(output_subfolder, os.path.splitext(os.path.basename(plasmid_file))[0] + ".fasta")
             if not os.path.exists(plasmid_fasta) or overwrite:
                 convert_plasmidfile_to_fasta(plasmid_file, plasmid_fasta, plasmid_file_type, shift_bases, generate_shifted, overwrite)
+            if md5_level in ["all", "intermediate"]:
+                write_md5sum(plasmid_fasta, "intermediate", output_subfolder)
+            if md5_level in ["all"]:
+                write_md5sum(plasmid_file, "input", output_subfolder)
 
             # Step 2: Generate indices for the human and plasmid FASTA files or check if they exist
             human_index = os.path.join(os.path.dirname(human_fasta), os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi")
@@ -71,23 +73,35 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
                 create_indexes(human_fasta, overwrite)
             if not os.path.exists(plasmid_index) or overwrite:
                 create_indexes(plasmid_fasta, overwrite)
+            if md5_level in ["all", "intermediate"]:
+                write_md5sum(plasmid_index, "intermediate", output_subfolder)
+            if md5_level in ["all"]:
+                write_md5sum(human_index, "intermediate", output_subfolder)
 
             # Step 3: Perform spliced alignment and extract human reference regions
             spliced_bam = os.path.join(output_subfolder, "spliced_alignment.bam")
             spliced_fasta = os.path.join(output_subfolder, "spliced_reference.fasta")
             spanned_regions = spliced_alignment(human_index, plasmid_fasta, spliced_bam, padding)
             extract_human_reference(human_fasta, spanned_regions, spliced_fasta)
+            if md5_level in ["all", "intermediate"]:
+                write_md5sum(spliced_bam, "intermediate", output_subfolder)
+                write_md5sum(spliced_fasta, "intermediate", output_subfolder)
 
             # Generate index for the spliced reference
             spliced_index = os.path.join(output_subfolder, os.path.splitext(os.path.basename(spliced_fasta))[0] + ".mmi")
             if not os.path.exists(spliced_index) or overwrite:
                 create_indexes(spliced_fasta, overwrite)
+            if md5_level in ["all", "intermediate"]:
+                write_md5sum(spliced_index, "intermediate", output_subfolder)
 
             # Step 4: Align reads to the plasmid and the spliced reference
             plasmid_bam = os.path.join(output_subfolder, "plasmid_alignment.bam")
             spliced_human_bam = os.path.join(output_subfolder, "spliced_human_alignment.bam")
             align_reads(plasmid_index, sequencing_file, plasmid_bam, "plasmid", fastq2)
             align_reads(spliced_index, sequencing_file, spliced_human_bam, "human", fastq2)
+            if md5_level in ["all", "intermediate"]:
+                write_md5sum(plasmid_bam, "intermediate", output_subfolder)
+                write_md5sum(spliced_human_bam, "intermediate", output_subfolder)
 
             # Step 5: Compare the two alignments
             comparison_output = os.path.join(output_subfolder, "comparison_result")
@@ -98,6 +112,11 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             summary_file = f"{comparison_output}.summary.tsv"
             command_line = ' '.join(sys.argv)
             generate_report(reads_assignment_file, summary_file, output_subfolder, threshold, command_line, human_fasta, plasmid_file, sequencing_file)
+
+            # Write MD5 checksums for the output files
+            if md5_level in ["all", "intermediate", "output"]:
+                write_md5sum(reads_assignment_file, "output", output_subfolder)
+                write_md5sum(summary_file, "output", output_subfolder)
 
             # Step 7: Optionally delete intermediate files
             if not keep_intermediate:
@@ -118,7 +137,8 @@ if __name__ == "__main__":
     parser.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output files")
     parser.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
     parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("-md5", "--md5_level", type=str, choices=["all", "intermediate", "output"], default="intermediate", help="Level of MD5 checksum calculation (default: all)")
 
     args = parser.parse_args()
 
-    run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold)
+    run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold, args.md5_level)
