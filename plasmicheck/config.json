@@ -13,11 +13,7 @@
         "clipping_penalty": 1,
         "mismatch_penalty": 1
     },
-    "version": "0.13.1",
-    "plot_size": {
-        "width": 6,
-        "height": 4
-    },
+    "version": "0.13.2",
     "alignment": {
         "minimap2_threads": 8,
         "samtools_threads": 4,
@@ -48,6 +44,27 @@
         "xticks_ha": "right",
         "yticks_rotation": 0,
         "output_filename": "contamination_heatmap.png"
+    },
+    "plot_sample_report": {
+        "figsize": {
+            "width": 6,
+            "height": 4
+        },
+        "colors": {
+            "human": "blue",
+            "tied": "orange",
+            "plasmid": "red"
+        },
+        "title_box_plot": "Box Plot of Plasmid Scores by Assignment",
+        "title_scatter_plot": "Scatter Plot of Plasmid vs. Human Scores by Assignment",
+        "scatter_plot_legend_title": "Assigned To",
+        "scatter_plot_x_label": "Plasmid Score",
+        "scatter_plot_y_label": "Human Score",
+        "box_plot_x_label": "Assigned To",
+        "box_plot_y_label": "Plasmid Score",
+        "xticks_rotation": 0,
+        "output_box_plot_filename": "box_plot.png",
+        "output_scatter_plot_filename": "scatter_plot.png"
     },
     "paths": {
         "template_dir": "templates",

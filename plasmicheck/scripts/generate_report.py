@@ -18,7 +18,7 @@ with open(config_path, 'r') as config_file:
 DEFAULT_THRESHOLD = config['default_threshold']
 UNCLEAR_RANGE = config['unclear_range']
 VERSION = config['version']
-PLOT_SIZE = config['plot_size']
+PLOT_SAMPLE_REPORT = config['plot_sample_report']
 TEMPLATE_DIR = config['paths']['template_dir']
 LOGO_PATH = config['paths']['logo_path']
 
@@ -30,23 +30,33 @@ def load_data(reads_assignment_file, summary_file):
 def generate_plots(reads_df, output_folder):
     counts = reads_df['AssignedTo'].value_counts().to_dict()
 
-    plt.figure(figsize=(PLOT_SIZE['width'], PLOT_SIZE['height']))
-    sns.boxplot(data=reads_df, x='AssignedTo', y='PlasmidScore')
-    plt.title(f"Box Plot of Plasmid Scores by Assignment\n(Total Reads: {len(reads_df)})")
-    plt.xlabel("Assigned To")
-    plt.ylabel("Plasmid Score")
+    # Get the color mapping from the config file
+    color_mapping = {
+        'Human': PLOT_SAMPLE_REPORT['colors']['human'],
+        'Tied': PLOT_SAMPLE_REPORT['colors']['tied'],
+        'Plasmid': PLOT_SAMPLE_REPORT['colors']['plasmid']
+    }
+
+    # Create the box plot with consistent colors
+    plt.figure(figsize=(PLOT_SAMPLE_REPORT['figsize']['width'], PLOT_SAMPLE_REPORT['figsize']['height']))
+    sns.boxplot(data=reads_df, x='AssignedTo', y='PlasmidScore', hue='AssignedTo', palette=color_mapping, dodge=False)
+    plt.title(f"{PLOT_SAMPLE_REPORT['title_box_plot']}\n(Total Reads: {len(reads_df)})")
+    plt.xlabel(PLOT_SAMPLE_REPORT['box_plot_x_label'])
+    plt.ylabel(PLOT_SAMPLE_REPORT['box_plot_y_label'])
     for category, count in counts.items():
-        plt.text(category, 0, f'N={count}', ha='center', va='bottom')
-    plt.savefig(f"{output_folder}/box_plot.png")
+        plt.text(list(counts.keys()).index(category), 0, f'N={count}', ha='center', va='bottom')
+    plt.legend([], [], frameon=False)  # Hide the legend as it's redundant
+    plt.savefig(f"{output_folder}/{PLOT_SAMPLE_REPORT['output_box_plot_filename']}")
     plt.close()
 
-    plt.figure(figsize=(PLOT_SIZE['width'], PLOT_SIZE['height']))
-    sns.scatterplot(data=reads_df, x='PlasmidScore', y='HumanScore', hue='AssignedTo')
-    plt.title(f"Scatter Plot of Plasmid vs. Human Scores by Assignment\n(Total Reads: {len(reads_df)})")
-    plt.xlabel("Plasmid Score")
-    plt.ylabel("Human Score")
-    plt.legend(title='Assigned To', loc='best')
-    plt.savefig(f"{output_folder}/scatter_plot.png")
+    # Create the scatter plot with consistent colors
+    plt.figure(figsize=(PLOT_SAMPLE_REPORT['figsize']['width'], PLOT_SAMPLE_REPORT['figsize']['height']))
+    sns.scatterplot(data=reads_df, x='PlasmidScore', y='HumanScore', hue='AssignedTo', palette=color_mapping)
+    plt.title(f"{PLOT_SAMPLE_REPORT['title_scatter_plot']}\n(Total Reads: {len(reads_df)})")
+    plt.xlabel(PLOT_SAMPLE_REPORT['scatter_plot_x_label'])
+    plt.ylabel(PLOT_SAMPLE_REPORT['scatter_plot_y_label'])
+    plt.legend(title=PLOT_SAMPLE_REPORT['scatter_plot_legend_title'], loc='best')
+    plt.savefig(f"{output_folder}/{PLOT_SAMPLE_REPORT['output_scatter_plot_filename']}")
     plt.close()
 
 def encode_image_to_base64(image_path):
@@ -64,8 +74,8 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclea
 
     html_content = template.render(
         summary_df=summary_df.to_html(classes='table table-striped'),
-        box_plot="box_plot.png",
-        scatter_plot="scatter_plot.png",
+        box_plot=PLOT_SAMPLE_REPORT['output_box_plot_filename'],
+        scatter_plot=PLOT_SAMPLE_REPORT['output_scatter_plot_filename'],
         verdict=verdict,
         ratio=f"{ratio:.3f}",
         threshold=threshold,
