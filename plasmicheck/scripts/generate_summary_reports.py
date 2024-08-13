@@ -110,7 +110,7 @@ def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plo
         heatmap_data[col] = heatmap_data[col].map(lambda x: 3 if x == "missing" else 2 if x > threshold else 1 if unclear_range['lower_bound'] <= x <= unclear_range['upper_bound'] else 0)
 
     # Define the color palette
-    cmap = sns.color_palette([plot_config['colors']['not_contaminated'], plot_config['colors']['unclear'], plot_config['colors']['contaminated'], "white"])
+    cmap = sns.color_palette(["white", plot_config['colors']['not_contaminated'], plot_config['colors']['unclear'], plot_config['colors']['contaminated']])
 
     plt.figure(figsize=(plot_config['figsize']['width'], plot_config['figsize']['height']))  # Adjust figure size
     for col in ratio_data.columns:
