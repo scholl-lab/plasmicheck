@@ -64,13 +64,20 @@ def encode_image_to_base64(image_path):
         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
     return f"data:image/png;base64,{encoded_string}"
 
-def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclear_range, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
+def extract_verdict_from_summary(summary_df):
+    verdict_row = summary_df[summary_df['Category'] == 'Verdict']
+    if not verdict_row.empty:
+        return verdict_row['Count'].values[0]
+    else:
+        return "Verdict not found in summary file"
+
+def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclear, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('report_template.html')
 
     logo_base64 = encode_image_to_base64(LOGO_PATH)
 
-    verdict_color = "green" if "not contaminated" in verdict else "orange" if "unclear" in verdict else "red"
+    verdict_color = "green" if "Sample is not contaminated with plasmid DNA" in verdict else "orange" if "Sample contamination status is unclear" in verdict else "red"
 
     html_content = template.render(
         summary_df=summary_df.to_html(classes='table table-striped'),
@@ -79,7 +86,7 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclea
         verdict=verdict,
         ratio=f"{ratio:.3f}",
         threshold=threshold,
-        unclear_range=unclear_range,
+        unclear_range=unclear,
         verdict_color=verdict_color,
         version=VERSION,
         logo_base64=logo_base64,
@@ -96,18 +103,16 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclea
 
     HTML(html_report).write_pdf(f"{output_folder}/report.pdf")
 
-def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLEAR_RANGE, human_fasta="None", plasmid_gb="None", sequencing_file="None", command_line=""):
+def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, unclear=UNCLEAR_RANGE, human_fasta="None", plasmid_gb="None", sequencing_file="None", command_line=""):
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
     generate_plots(reads_df, output_folder)
+
+    # Extract the verdict from the summary file
+    verdict = extract_verdict_from_summary(summary_df)
 
     plasmid_count = int(summary_df[summary_df['Category'] == 'Plasmid']['Count'].values[0])
     human_count = int(summary_df[summary_df['Category'] == 'Human']['Count'].values[0])
     ratio = plasmid_count / human_count if human_count != 0 else float('inf')
-    
-    verdict = (
-        "Sample is contaminated with plasmid DNA" if ratio > threshold else
-        "Sample is not contaminated with plasmid DNA"
-    )
 
     generate_report(
         summary_df, 
@@ -115,7 +120,7 @@ def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_T
         verdict, 
         ratio, 
         threshold, 
-        unclear_range, 
+        UNCLEAR_RANGE, 
         command_line, 
         human_fasta, 
         plasmid_gb, 
@@ -135,4 +140,15 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     command_line = ' '.join(sys.argv)
-    main(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, UNCLEAR_RANGE, args.human_fasta, args.plasmid_gb, args.sequencing_file, command_line)
+
+    main(
+        args.reads_assignment_file, 
+        args.summary_file, 
+        args.output_folder, 
+        args.threshold, 
+        UNCLEAR_RANGE, 
+        args.human_fasta, 
+        args.plasmid_gb, 
+        args.sequencing_file, 
+        command_line
+    )
