@@ -10,6 +10,8 @@ with open(os.path.join(os.path.dirname(__file__), '..', 'config.json'), 'r') as 
 
 PADDING_DEFAULT = config['padding']
 FASTA_EXTENSIONS = config['alignment']['fasta_extensions']
+MINIMAP2_THREADS = config['alignment']['minimap2_threads']
+SAMTOOLS_THREADS = config['alignment']['samtools_threads']
 
 def find_fasta_file(base_name):
     for ext in FASTA_EXTENSIONS:
@@ -21,7 +23,7 @@ def find_fasta_file(base_name):
 def spliced_alignment(human_index, plasmid_fasta, output_bam, padding=PADDING_DEFAULT):
     # Perform spliced alignment
     subprocess.run(
-        f"minimap2 -ax splice {human_index} {plasmid_fasta} | samtools view -h -F 4 - | samtools sort -o {output_bam}",
+        f"minimap2 -t {MINIMAP2_THREADS} -ax splice {human_index} {plasmid_fasta} | samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}",
         shell=True,
         check=True
     )
@@ -61,9 +63,9 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output_fasta", help="Output FASTA file for the extracted human reference regions", required=True)
     parser.add_argument("-i", "--human_index", help="Minimap2 index for the human reference genome", required=True)
     parser.add_argument("-p", "--plasmid_fasta", help="FASTA file of the plasmid reference", required=True)
-    parser.add_argument("-b", "--output_bam", help="Output BAM file for the spliced alignment", required=True)
+    parser.add.argument("-b", "--output_bam", help="Output BAM file for the spliced alignment", required=True)
     parser.add_argument("-hf", "--human_fasta", help="FASTA file of the human reference genome", default=None)
-    parser.add_argument("-d", "--padding", type=int, default=PADDING_DEFAULT, help=f"Padding to add to both sides of the spanned regions (default: {PADDING_DEFAULT})")
+    parser.add.argument("-d", "--padding", type=int, default=PADDING_DEFAULT, help=f"Padding to add to both sides of the spanned regions (default: {PADDING_DEFAULT})")
 
     args = parser.parse_args()
 
