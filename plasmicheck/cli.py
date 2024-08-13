@@ -101,7 +101,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_pipeline.add_argument("-pf", "--plasmid_files", help="Plasmid files (single file or a file containing paths to multiple files)", required=True)
     parser_pipeline.add_argument("-sf", "--sequencing_files", help="Sequencing files (single file or a file containing paths to multiple files)", required=True)
     parser_pipeline.add_argument("-o", "--output_folder", help="Folder to write all outputs and intermediate files", required=True)
-    parser_pipeline.add_argument("-k", "--keep_intermediate", action="store_true", help="Keep intermediate files (default: delete them)")
+    parser_pipeline.add_argument("-k", "--keep_intermediate", type=bool, default=True, help="Keep intermediate files (default: True)")
     parser_pipeline.add_argument("-sb", "--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
     parser_pipeline.add_argument("-g", "--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
     parser_pipeline.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output files")

@@ -13,7 +13,7 @@
         "clipping_penalty": 1,
         "mismatch_penalty": 1
     },
-    "version": "0.13.0",
+    "version": "0.13.1",
     "plot_size": {
         "width": 6,
         "height": 4
