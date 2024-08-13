@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PlasmiCheck Summary Report</title>
+    <title>plasmicheck Summary Report</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.min.css">
     <style>
@@ -11,10 +11,12 @@
         .container { margin-top: 20px; }
         .table-container { width: 80%; margin: 20px auto; }
         .plot { margin: 20px auto; display: block; width: 60%; }
+        .logo { display: block; margin: 0 auto; width: 150px; }
     </style>
 </head>
 <body>
-    <h1>PlasmiCheck Summary Report</h1>
+    <img src="{{ logo_base64 }}" alt="plasmicheck Logo" class="logo">
+    <h1>plasmicheck Summary Report</h1>
 
     <h2>Plots</h2>
     <img src="{{ plot_image }}" alt="Heatmap Plot" class="plot">

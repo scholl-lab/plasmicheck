@@ -6,6 +6,7 @@ from weasyprint import HTML
 from datetime import datetime
 import json
 import os
+import base64
 
 # Resolve the path to config.json in the parent directory of the current script
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
@@ -17,6 +18,8 @@ with open(config_path, 'r') as config_file:
 DEFAULT_THRESHOLD = config['default_threshold']
 VERSION = config['version']
 PLOT_SIZE = config['plot_size']
+TEMPLATE_DIR = config['paths']['template_dir']
+LOGO_PATH = config['paths']['logo_path']
 
 def load_data(reads_assignment_file, summary_file):
     reads_df = pd.read_csv(reads_assignment_file, sep='\t')
@@ -24,10 +27,8 @@ def load_data(reads_assignment_file, summary_file):
     return reads_df, summary_df
 
 def generate_plots(reads_df, output_folder):
-    # Number of reads for each assignment category
     counts = reads_df['AssignedTo'].value_counts().to_dict()
 
-    # Box plot
     plt.figure(figsize=(PLOT_SIZE['width'], PLOT_SIZE['height']))
     sns.boxplot(data=reads_df, x='AssignedTo', y='PlasmidScore')
     plt.title(f"Box Plot of Plasmid Scores by Assignment\n(Total Reads: {len(reads_df)})")
@@ -38,7 +39,6 @@ def generate_plots(reads_df, output_folder):
     plt.savefig(f"{output_folder}/box_plot.png")
     plt.close()
 
-    # Scatter plot
     plt.figure(figsize=(PLOT_SIZE['width'], PLOT_SIZE['height']))
     sns.scatterplot(data=reads_df, x='PlasmidScore', y='HumanScore', hue='AssignedTo')
     plt.title(f"Scatter Plot of Plasmid vs. Human Scores by Assignment\n(Total Reads: {len(reads_df)})")
@@ -48,15 +48,19 @@ def generate_plots(reads_df, output_folder):
     plt.savefig(f"{output_folder}/scatter_plot.png")
     plt.close()
 
+def encode_image_to_base64(image_path):
+    with open(image_path, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+    return f"data:image/png;base64,{encoded_string}"
+
 def generate_report(summary_df, output_folder, verdict, ratio, threshold, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
-    # Load the template
-    env = Environment(loader=FileSystemLoader('templates'))
+    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('report_template.html')
 
-    # Determine verdict color
+    logo_base64 = encode_image_to_base64(LOGO_PATH)
+
     verdict_color = "green" if "not contaminated" in verdict else "red"
 
-    # Render the template
     html_content = template.render(
         summary_df=summary_df.to_html(classes='table table-striped'),
         box_plot="box_plot.png",
@@ -66,6 +70,7 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, comman
         threshold=threshold,
         verdict_color=verdict_color,
         version=VERSION,
+        logo_base64=logo_base64,
         human_fasta=human_fasta,
         plasmid_gb=plasmid_gb,
         sequencing_file=sequencing_file,
@@ -73,19 +78,16 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, comman
         command_line=command_line
     )
 
-    # Save HTML report
     html_report = f"{output_folder}/report.html"
     with open(html_report, 'w') as f:
         f.write(html_content)
 
-    # Convert HTML to PDF
     HTML(html_report).write_pdf(f"{output_folder}/report.pdf")
 
 def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, human_fasta="None", plasmid_gb="None", sequencing_file="None", command_line=""):
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
     generate_plots(reads_df, output_folder)
 
-    # Determine contamination verdict
     plasmid_count = int(summary_df[summary_df['Category'] == 'Plasmid']['Count'].values[0])
     human_count = int(summary_df[summary_df['Category'] == 'Human']['Count'].values[0])
     ratio = plasmid_count / human_count if human_count != 0 else float('inf')

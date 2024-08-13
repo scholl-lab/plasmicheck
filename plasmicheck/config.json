@@ -9,7 +9,7 @@
         "clipping_penalty": 1,
         "mismatch_penalty": 1
     },
-    "version": "0.10.0",
+    "version": "0.11.0",
     "plot_size": {
         "width": 6,
         "height": 4
@@ -42,5 +42,9 @@
         "xticks_ha": "right",
         "yticks_rotation": 0,
         "output_filename": "contamination_heatmap.png"
+    },
+    "paths": {
+        "template_dir": "templates",
+        "logo_path": "static/img/plasmicheck_logo_200px.png"
     }
 }

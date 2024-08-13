@@ -6,6 +6,7 @@ import json
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from datetime import datetime
+import base64
 
 # Resolve the path to config.json in the parent directory of the current script
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
@@ -17,6 +18,13 @@ with open(config_path, 'r') as config_file:
 DEFAULT_THRESHOLD = config['default_threshold']
 PLOT_CONFIG = config['plot_summary']
 VERSION = config['version']
+TEMPLATE_DIR = config['paths']['template_dir']
+LOGO_PATH = config['paths']['logo_path']
+
+def encode_image_to_base64(image_path):
+    with open(image_path, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+    return f"data:image/png;base64,{encoded_string}"
 
 def find_tsv_files(input_dir, pattern):
     """Recursively find all tsv files matching the pattern in the input directory."""
@@ -92,15 +100,20 @@ def create_plots(reads_df, summary_df, output_dir, threshold, plot_config):
 
 def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_folder, threshold, command_line):
     # Load the template
-    env = Environment(loader=FileSystemLoader('templates'))
+    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('summary_template.html')
+
+    # Encode the plot image and the logo
+    plot_base64 = encode_image_to_base64(plot_filename)
+    logo_base64 = encode_image_to_base64(LOGO_PATH)
 
     # Render the template
     html_content = template.render(
         combined_df=combined_df.to_html(classes='table table-striped table-bordered', index=False),
         verdict_df=verdict_df.to_html(classes='table table-striped table-bordered', index=False),
         ratio_df=ratio_df.to_html(classes='table table-striped table-bordered', index=False),
-        plot_image=os.path.basename(plot_filename),  # Use the basename to correctly link the plot
+        plot_image=plot_base64,  # Embed the plot as base64 string
+        logo_base64=logo_base64,  # Embed the logo as base64 string
         threshold=threshold,
         version=VERSION,
         run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
