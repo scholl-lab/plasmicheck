@@ -1,8 +1,9 @@
 import os
+import subprocess
 import json
 import logging
 
-from .utils import setup_logging, run_command  # Import setup_logging and run_command functions
+from .utils import setup_logging  # Import setup_logging function
 
 # Load configuration from JSON file
 with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json'), 'r') as config_file:
@@ -16,7 +17,7 @@ SAMTOOLS_THREADS = config['alignment']['samtools_threads']
 def create_indexes(fasta_file, overwrite=False):
     base_name = os.path.splitext(fasta_file)[0]
     
-    # Define index file paths
+    # Create Minimap2 index
     minimap2_index = f"{base_name}.mmi"
     samtools_index = f"{fasta_file}.fai"
 
@@ -27,13 +28,23 @@ def create_indexes(fasta_file, overwrite=False):
 
     # Create Minimap2 index
     logging.info(f"Creating Minimap2 index for {fasta_file}")
-    minimap2_command = ["minimap2", "-t", str(MINIMAP2_THREADS)] + MINIMAP2_OPTIONS + ["-d", minimap2_index, fasta_file]
-    run_command(minimap2_command)
+    minimap2_command = ["minimap2", "-t", str(MINIMAP2_THREADS)] + MINIMAP2_OPTIONS + [minimap2_index, fasta_file]
+    try:
+        subprocess.run(minimap2_command, check=True)
+        logging.info(f"Minimap2 index created: {minimap2_index}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to create Minimap2 index: {e}")
+        raise
 
     # Create Samtools index
     logging.info(f"Creating Samtools index for {fasta_file}")
     samtools_command = ["samtools", "faidx"] + SAMTOOLS_OPTIONS + [fasta_file]
-    run_command(samtools_command)
+    try:
+        subprocess.run(samtools_command, check=True)
+        logging.info(f"Samtools index created: {samtools_index}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to create Samtools index: {e}")
+        raise
 
 if __name__ == "__main__":
     import argparse
