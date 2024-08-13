@@ -14,6 +14,7 @@ MATE_BONUS = config['scoring']['mate_bonus']
 CLIPPING_PENALTY = config['scoring']['clipping_penalty']
 MISMATCH_PENALTY = config['scoring']['mismatch_penalty']
 DEFAULT_THRESHOLD = config['default_threshold']
+UNCLEAR_RANGE = config['unclear_range']
 
 def calculate_alignment_score(read):
     """
@@ -71,7 +72,14 @@ def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAUL
     plasmid_count = assigned_counts["Plasmid"]
     human_count = assigned_counts["Human"]
     ratio = plasmid_count / human_count if human_count != 0 else float('inf')
-    verdict = "Sample is contaminated with plasmid DNA" if ratio > threshold else "Sample is not contaminated with plasmid DNA"
+
+    # Determine classification based on ratio
+    if ratio > threshold:
+        verdict = "Sample is contaminated with plasmid DNA"
+    elif UNCLEAR_RANGE['lower_bound'] <= ratio <= UNCLEAR_RANGE['upper_bound']:
+        verdict = "Sample contamination status is unclear"
+    else:
+        verdict = "Sample is not contaminated with plasmid DNA"
 
     with open(f"{output_basename}.summary.tsv", 'w') as summary_file:
         summary_file.write("Category\tCount\n")

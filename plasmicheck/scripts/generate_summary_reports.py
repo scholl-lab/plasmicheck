@@ -7,6 +7,7 @@ from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from datetime import datetime
 import base64
+import numpy as np
 
 # Resolve the path to config.json in the parent directory of the current script
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
@@ -16,6 +17,7 @@ with open(config_path, 'r') as config_file:
     config = json.load(config_file)
 
 DEFAULT_THRESHOLD = config['default_threshold']
+UNCLEAR_RANGE = config['unclear_range']
 PLOT_CONFIG = config['plot_summary']
 VERSION = config['version']
 TEMPLATE_DIR = config['paths']['template_dir']
@@ -66,7 +68,7 @@ def read_compare_outputs(input_dir):
     
     return reads_df, summary_df
 
-def create_plots(reads_df, summary_df, output_dir, threshold, plot_config):
+def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plot_config):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
@@ -79,15 +81,27 @@ def create_plots(reads_df, summary_df, output_dir, threshold, plot_config):
     combined_df.loc[:, 'Value'] = pd.to_numeric(combined_df['Value'], errors='coerce')
     ratio_df.loc[:, 'Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
 
-    # Create heatmap data for ratios
-    ratio_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value")
+    # Round the ratio data to 3 decimal places
+    ratio_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value").round(3)
+
+    # Replace NaN with "missing"
+    ratio_data = ratio_data.fillna("missing")
+    
+    # Create a mask for formatting only numeric values
+    fmt = lambda x: f"{x:.3f}" if isinstance(x, (int, float)) else x
 
     # Apply threshold for coloring
-    heatmap_data = ratio_data.apply(lambda x: x.map(lambda y: 1 if y > threshold else 0))
+    heatmap_data = ratio_data.copy()
+    for col in heatmap_data.columns:
+        heatmap_data[col] = heatmap_data[col].map(lambda x: 3 if x == "missing" else 2 if x > threshold else 1 if unclear_range['lower_bound'] <= x <= unclear_range['upper_bound'] else 0)
+
+    # Define the color palette
+    cmap = sns.color_palette([plot_config['colors']['not_contaminated'], plot_config['colors']['unclear'], plot_config['colors']['contaminated'], "white"])
 
     plt.figure(figsize=(plot_config['figsize']['width'], plot_config['figsize']['height']))  # Adjust figure size
-    cmap = sns.color_palette([plot_config['colors']['not_contaminated'], plot_config['colors']['contaminated']])  # Color-blind safe colors
-    sns.heatmap(heatmap_data, annot=ratio_data, fmt=".2f", cmap=cmap, cbar=False, linewidths=plot_config['linewidths'], linecolor=plot_config['linecolor'])
+    for col in ratio_data.columns:
+        ratio_data[col] = ratio_data[col].map(fmt)
+    sns.heatmap(heatmap_data, annot=ratio_data, fmt="", cmap=cmap, cbar=False, linewidths=plot_config['linewidths'], linecolor=plot_config['linecolor'])
     plt.title(plot_config['title'])
     plt.xticks(rotation=plot_config['xticks_rotation'], ha=plot_config['xticks_ha'])
     plt.yticks(rotation=plot_config['yticks_rotation'])
@@ -98,7 +112,7 @@ def create_plots(reads_df, summary_df, output_dir, threshold, plot_config):
     
     return plot_filename, combined_df, verdict_df, ratio_df
 
-def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_folder, threshold, command_line):
+def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_folder, threshold, unclear_range, command_line):
     # Load the template
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('summary_template.html')
@@ -115,6 +129,7 @@ def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_fol
         plot_image=plot_base64,  # Embed the plot as base64 string
         logo_base64=logo_base64,  # Embed the logo as base64 string
         threshold=threshold,
+        unclear_range=unclear_range,
         version=VERSION,
         run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         command_line=command_line
@@ -128,9 +143,9 @@ def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_fol
     # Convert HTML to PDF
     HTML(html_report).write_pdf(os.path.join(output_folder, 'summary_report.pdf'))
 
-def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD):
+def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLEAR_RANGE):
     reads_df, summary_df = read_compare_outputs(input_dir)
-    plot_filename, combined_df, verdict_df, ratio_df = create_plots(reads_df, summary_df, output_dir, threshold, PLOT_CONFIG)
+    plot_filename, combined_df, verdict_df, ratio_df = create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, PLOT_CONFIG)
 
     generate_report(
         combined_df, 
@@ -139,6 +154,7 @@ def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD):
         plot_filename, 
         output_dir, 
         threshold, 
+        unclear_range,
         ' '.join(os.sys.argv)
     )
 
@@ -150,4 +166,5 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
 
     args = parser.parse_args()
+
     main(args.input_dir, args.output_dir, args.threshold)
