@@ -7,7 +7,9 @@ from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from datetime import datetime
 import base64
-import numpy as np
+import logging
+
+from .utils import setup_logging  # Import setup_logging function
 
 # Resolve the path to config.json in the parent directory of the current script
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
@@ -23,7 +25,15 @@ VERSION = config['version']
 TEMPLATE_DIR = config['paths']['template_dir']
 LOGO_PATH = config['paths']['logo_path']
 
+# Setup logging for the libraries used in this script
+logging.getLogger('matplotlib').setLevel(logging.ERROR)
+logging.getLogger('seaborn').setLevel(logging.ERROR)
+logging.getLogger('jinja2').setLevel(logging.ERROR)
+logging.getLogger('weasyprint').setLevel(logging.ERROR)
+logging.getLogger('fontTools').setLevel(logging.ERROR)
+
 def encode_image_to_base64(image_path):
+    logging.info(f"Encoding image {image_path} to base64")
     with open(image_path, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
     return f"data:image/png;base64,{encoded_string}"
@@ -38,10 +48,12 @@ def find_tsv_files(input_dir, pattern):
     return tsv_files
 
 def read_compare_outputs(input_dir):
+    logging.info(f"Reading compare outputs from {input_dir}")
     reads_assignment_files = find_tsv_files(input_dir, '.reads_assignment.tsv')
     summary_files = find_tsv_files(input_dir, '.summary.tsv')
 
     if not reads_assignment_files or not summary_files:
+        logging.error("No valid TSV files found in the specified directory structure.")
         raise ValueError("No valid TSV files found in the specified directory structure.")
     
     reads_df_list = []
@@ -69,7 +81,9 @@ def read_compare_outputs(input_dir):
     return reads_df, summary_df
 
 def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plot_config):
+    logging.info("Creating plots")
     if not os.path.exists(output_dir):
+        logging.debug(f"Creating output directory: {output_dir}")
         os.makedirs(output_dir)
     
     # Split summary dataframe into separate dataframes for different categories
@@ -113,6 +127,7 @@ def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plo
     return plot_filename, combined_df, verdict_df, ratio_df
 
 def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_folder, threshold, unclear_range, command_line):
+    logging.info("Generating summary report")
     # Load the template
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('summary_template.html')
@@ -164,7 +179,11 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--input_dir", help="Directory containing compare outputs", required=True)
     parser.add_argument("-o", "--output_dir", help="Directory to save the plots and reports", required=True)
     parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser.add_argument("--log-file", help="Set the log output file", default=None)
 
     args = parser.parse_args()
+
+    setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)  # Setup logging with arguments
 
     main(args.input_dir, args.output_dir, args.threshold)

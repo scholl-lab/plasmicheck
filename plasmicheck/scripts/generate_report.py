@@ -7,6 +7,9 @@ from datetime import datetime
 import json
 import os
 import base64
+import logging
+
+from .utils import setup_logging  # Import the setup_logging function
 
 # Resolve the path to config.json in the parent directory of the current script
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
@@ -22,12 +25,21 @@ PLOT_SAMPLE_REPORT = config['plot_sample_report']
 TEMPLATE_DIR = config['paths']['template_dir']
 LOGO_PATH = config['paths']['logo_path']
 
+# Setup logging for the libraries used in this script
+logging.getLogger('matplotlib').setLevel(logging.ERROR)
+logging.getLogger('seaborn').setLevel(logging.ERROR)
+logging.getLogger('jinja2').setLevel(logging.ERROR)
+logging.getLogger('weasyprint').setLevel(logging.ERROR)
+logging.getLogger('fontTools').setLevel(logging.ERROR)
+
 def load_data(reads_assignment_file, summary_file):
+    logging.info(f"Loading data from {reads_assignment_file} and {summary_file}")
     reads_df = pd.read_csv(reads_assignment_file, sep='\t')
     summary_df = pd.read_csv(summary_file, sep='\t')
     return reads_df, summary_df
 
 def generate_plots(reads_df, output_folder):
+    logging.info("Generating plots")
     counts = reads_df['AssignedTo'].value_counts().to_dict()
 
     # Get the color mapping from the config file
@@ -60,6 +72,7 @@ def generate_plots(reads_df, output_folder):
     plt.close()
 
 def encode_image_to_base64(image_path):
+    logging.info(f"Encoding image {image_path} to base64")
     with open(image_path, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
     return f"data:image/png;base64,{encoded_string}"
@@ -72,6 +85,7 @@ def extract_verdict_from_summary(summary_df):
         return "Verdict not found in summary file"
 
 def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclear, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
+    logging.info("Generating report")
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('report_template.html')
 
@@ -137,9 +151,13 @@ if __name__ == "__main__":
     parser.add_argument("-hf", "--human_fasta", default="None", help="Human reference FASTA file")
     parser.add_argument("-pg", "--plasmid_gb", default="None", help="GenBank plasmid file")
     parser.add_argument("-sf", "--sequencing_file", default="None", help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)")
+    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser.add_argument("--log-file", help="Set the log output file", default=None)
 
     args = parser.parse_args()
     command_line = ' '.join(sys.argv)
+
+    setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)  # Setup logging with arguments
 
     main(
         args.reads_assignment_file, 

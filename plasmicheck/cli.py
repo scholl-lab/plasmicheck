@@ -3,6 +3,7 @@ import sys
 import shutil
 import json
 import os
+import logging
 
 # Load configuration from JSON file
 config_path = os.path.join(os.path.dirname(__file__), 'config.json')
@@ -13,6 +14,17 @@ REQUIRED_TOOLS = config['required_tools']
 REQUIRED_PYTHON_PACKAGES = config['required_python_packages']
 DEFAULT_THRESHOLD = config['default_threshold']
 VERSION = config['version']
+
+def setup_logging(log_level=logging.INFO, log_file=None):
+    """Set up logging configuration."""
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        filename=log_file,
+        filemode='a'  # Append mode for logging to a file
+    )
+    if not log_file:  # If no log file, also log to stdout
+        logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
 def print_logo():
     logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'img', 'plasmicheck_ascii.txt')
@@ -40,15 +52,18 @@ def check_requirements():
     missing_packages = check_python_packages()
     
     if missing_tools or missing_packages:
-        print("The following requirements are not satisfied:")
+        logging.error("The following requirements are not satisfied:")
         if missing_tools:
-            print("Missing tools:", ", ".join(missing_tools))
+            logging.error("Missing tools: %s", ", ".join(missing_tools))
         if missing_packages:
-            print("Missing Python packages:", ", ".join(missing_packages))
+            logging.error("Missing Python packages: %s", ", ".join(missing_packages))
         sys.exit(1)
 
 def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser = argparse.ArgumentParser(description="plasmicheck: Detect and quantify plasmid DNA contamination in sequencing data")
+    parser.add_argument('--log-level', help="Set the logging level", default="INFO")
+    parser.add_argument('--log-file', help="Set the log output file", default=None)
+    
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}')
     subparsers = parser.add_subparsers(dest="command")
 
@@ -66,11 +81,15 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_convert.add_argument("-sb", "--shift_bases", type=int, default=500, help="Number of bases to shift in the shifted reference (default: 500)")
     parser_convert.add_argument("-g", "--generate_shifted", action="store_true", help="Generate a shifted reference sequence")
     parser_convert.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output file")
+    parser_convert.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser_convert.add_argument("--log-file", help="Set the log output file", default=None)
 
     # Index Command
     parser_index = subparsers.add_parser("index", help="Create Minimap2 and Samtools indexes for a FASTA file")
     parser_index.add_argument("-f", "--fasta_file", help="FASTA file to index", required=True)
     parser_index.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing index files")
+    parser_index.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser_index.add_argument("--log-file", help="Set the log output file", default=None)
 
     # Align Command
     parser_align = subparsers.add_parser("align", help="Align reads to a reference and generate a BAI index")
@@ -78,6 +97,8 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_align.add_argument("-i", "--input_files", nargs='+', help="Input file(s) (BAM, interleaved FASTQ, or paired FASTQ files)", required=True)
     parser_align.add_argument("-o", "--output_bam", help="Output BAM file for alignment", required=True)
     parser_align.add_argument("-a", "--alignment_type", help="Type of alignment: 'human' or 'plasmid'", required=True)
+    parser_align.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser_align.add_argument("--log-file", help="Set the log output file", default=None)
 
     # Compare Command
     parser_compare = subparsers.add_parser("compare", help="Compare alignments and assign reads")
@@ -85,6 +106,8 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_compare.add_argument("-m", "--human_bam", help="BAM file for human alignment", required=True)
     parser_compare.add_argument("-o", "--output_basename", help="Basename for output files", required=True)
     parser_compare.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_compare.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser_compare.add_argument("--log-file", help="Set the log output file", default=None)
 
     # Spliced Command
     parser_spliced = subparsers.add_parser("spliced", help="Perform spliced alignment and extract human reference regions")
@@ -94,6 +117,8 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_spliced.add_argument("-b", "--output_bam", help="Output BAM file for the spliced alignment", required=True)
     parser_spliced.add_argument("-hf", "--human_fasta", help="FASTA file of the human reference genome", default=None)
     parser_spliced.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
+    parser_spliced.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser_spliced.add_argument("--log-file", help="Set the log output file", default=None)
 
     # Pipeline Command
     parser_pipeline = subparsers.add_parser("pipeline", help="Run the full pipeline to detect and quantify plasmid DNA contamination in sequencing data")
@@ -108,6 +133,8 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_pipeline.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
     parser_pipeline.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
     parser_pipeline.add_argument("-md5", "--md5_level", type=str, choices=["all", "input", "intermediate", "output"], default="intermediate", help="Level of MD5 checksum calculation (default: all)")
+    parser_pipeline.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser_pipeline.add_argument("--log-file", help="Set the log output file", default=None)
 
     # Report Command
     parser_report = subparsers.add_parser("report", help="Generate a visualized HTML/PDF report from alignment comparison results")
@@ -115,14 +142,22 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_report.add_argument("-s", "--summary_file", help="Summary file (summary.tsv)", required=True)
     parser_report.add_argument("-o", "--output_folder", help="Folder to write the report and plots", required=True)
     parser_report.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_report.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser_report.add_argument("--log-file", help="Set the log output file", default=None)
 
     # Summary Reports Command
     parser_summary_reports = subparsers.add_parser("summary_reports", help="Generate summary reports for multiple samples and plasmids.")
     parser_summary_reports.add_argument("-i", "--input_dir", help="Directory containing compare outputs", required=True)
     parser_summary_reports.add_argument("-o", "--output_dir", help="Directory to save the plots", required=True)
     parser_summary_reports.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_summary_reports.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser_summary_reports.add_argument("--log-file", help="Set the log output file", default=None)
 
     args = parser.parse_args()
+
+    # Setup logging based on command-line arguments
+    log_level = getattr(logging, args.log_level.upper(), logging.INFO)
+    setup_logging(log_level=log_level, log_file=args.log_file)
 
     check_requirements()
 

@@ -1,6 +1,9 @@
 import pysam
 import json
 import os
+import logging
+
+from .utils import setup_logging  # Import the setup_logging function
 
 # Resolve the path to config.json in the parent directory of the current script
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
@@ -41,14 +44,20 @@ def calculate_alignment_score(read):
     return score
 
 def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAULT_THRESHOLD):
+    logging.info("Starting comparison of alignments")
+
     plasmid_samfile = pysam.AlignmentFile(plasmid_bam, "rb")
     human_samfile = pysam.AlignmentFile(human_bam, "rb")
+
+    logging.debug(f"Processing BAM files: {plasmid_bam} (plasmid), {human_bam} (human)")
 
     # Create dictionaries to store reads by query name
     plasmid_reads = {read.query_name: read for read in plasmid_samfile.fetch(until_eof=True)}
     human_reads = {read.query_name: read for read in human_samfile.fetch(until_eof=True)}
 
     assigned_counts = {"Plasmid": 0, "Human": 0, "Tied": 0}
+
+    logging.debug(f"Writing alignment comparison results to {output_basename}.reads_assignment.tsv")
 
     with open(f"{output_basename}.reads_assignment.tsv", 'w') as outfile:
         outfile.write("ReadID\tAssignedTo\tPlasmidScore\tHumanScore\n")
@@ -81,6 +90,8 @@ def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAUL
     else:
         verdict = "Sample is not contaminated with plasmid DNA"
 
+    logging.info(f"Comparison completed. Verdict: {verdict}, Ratio: {ratio}")
+
     with open(f"{output_basename}.summary.tsv", 'w') as summary_file:
         summary_file.write("Category\tCount\n")
         for category, count in assigned_counts.items():
@@ -95,6 +106,11 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--human_bam", help="BAM file for human alignment", required=True)
     parser.add_argument("-o", "--output_basename", help="Basename for output files", required=True)
     parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser.add_argument("--log-file", help="Set the log output file", default=None)
     args = parser.parse_args()
+
+    # Setup logging with the specified log level and file
+    setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)
 
     compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)

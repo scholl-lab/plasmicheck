@@ -1,16 +1,21 @@
-import subprocess
 import json
 import os
+import logging
+
+from .utils import setup_logging, run_command  # Import setup_logging and run_command functions
 
 # Load configuration from JSON file
-with open(os.path.join(os.path.dirname(__file__), '..', 'config.json'), 'r') as config_file:
+with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json'), 'r') as config_file:
     config = json.load(config_file)
 
 MINIMAP2_THREADS = config['alignment']['minimap2_threads']
 SAMTOOLS_THREADS = config['alignment']['samtools_threads']
 
 def align_reads(reference_index, input_file, output_bam, alignment_type, fastq2=None):
+    logging.info(f"Starting alignment of {input_file} against {reference_index} as {alignment_type}")
+
     if alignment_type not in ['human', 'plasmid']:
+        logging.error(f"Invalid alignment type: {alignment_type}")
         raise ValueError("alignment_type must be 'human' or 'plasmid'")
 
     if input_file.endswith('.bam'):
@@ -21,13 +26,16 @@ def align_reads(reference_index, input_file, output_bam, alignment_type, fastq2=
         else:
             command = f"minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} {input_file} | samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
     else:
+        logging.error(f"Unsupported input file type: {input_file}")
         raise ValueError("Unsupported input file type. Must be .bam, .fastq, or paired FASTQ files.")
 
     # Run the alignment command
-    subprocess.run(command, shell=True, check=True)
+    run_command(command)
 
     # Generate the BAI index
-    subprocess.run(f"samtools index {output_bam}", shell=True, check=True)
+    run_command(f"samtools index {output_bam}")
+
+    logging.info(f"Alignment completed successfully for {input_file}, output written to {output_bam}")
 
 if __name__ == "__main__":
     import argparse
@@ -37,6 +45,11 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output_bam", help="Output BAM file for alignment", required=True)
     parser.add_argument("-a", "--alignment_type", help="Type of alignment: 'human' or 'plasmid'", required=True)
     parser.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
+    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser.add_argument("--log-file", help="Set the log output file", default=None)
     args = parser.parse_args()
+
+    # Setup logging with the specified log level and file
+    setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)
 
     align_reads(args.reference_index, args.input_file, args.output_bam, args.alignment_type, args.fastq2)
