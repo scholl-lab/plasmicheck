@@ -52,12 +52,23 @@ def spliced_alignment(human_index, plasmid_fasta, output_bam, padding=PADDING_DE
 
 def extract_human_reference(human_fasta, spanned_regions, output_fasta):
     logging.info(f"Extracting human reference regions from {human_fasta} to {output_fasta}")
-    with open(human_fasta, "r") as human_handle, open(output_fasta, "w") as output_handle:
-        for record in SeqIO.parse(human_handle, "fasta"):
-            for region in spanned_regions:
-                if record.id == region[0]:
-                    logging.debug(f"Writing region {region} to {output_fasta}")
-                    SeqIO.write(record[region[1]:region[2]], output_handle, "fasta")
+    
+    # Use pysam to open the FASTA file
+    fasta = pysam.FastaFile(human_fasta)
+
+    with open(output_fasta, "w") as output_handle:
+        for region in spanned_regions:
+            chrom = region[0]
+            start = region[1]
+            end = region[2]
+            logging.debug(f"Fetching region {chrom}:{start}-{end}")
+            sequence = fasta.fetch(chrom, start, end)
+            
+            # Write the fetched sequence to the output FASTA file
+            output_handle.write(f">{chrom}:{start}-{end}\n{sequence}\n")
+    
+    fasta.close()
+    logging.info(f"Human reference regions have been extracted to {output_fasta}")
 
 if __name__ == "__main__":
     import argparse
