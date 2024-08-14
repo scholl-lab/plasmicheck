@@ -183,11 +183,17 @@ def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAUL
     logging.debug(f"Writing alignment comparison results to {output_basename}.reads_assignment.tsv")
 
     with open(f"{output_basename}.reads_assignment.tsv", 'w') as outfile:
-        outfile.write("ReadID\tAssignedTo\tPlasmidScore\tHumanScore\n")
+        # Include headers for the new fields (CIGAR strings and mapping qualities)
+        outfile.write("ReadID\tAssignedTo\tPlasmidScore\tHumanScore\tPlasmidCIGAR\tHumanCIGAR\tPlasmidMapQ\tHumanMapQ\n")
         for query_name, plasmid_read in plasmid_reads.items():
             plasmid_score = calculate_alignment_score(plasmid_read)
+            plasmid_cigar = plasmid_read.cigarstring if plasmid_read.cigarstring else "NA"
+            plasmid_mapq = plasmid_read.mapping_quality
+            
             human_read = human_reads.get(query_name)
             human_score = calculate_alignment_score(human_read) if human_read else 0
+            human_cigar = human_read.cigarstring if human_read and human_read.cigarstring else "NA"
+            human_mapq = human_read.mapping_quality if human_read else "NA"
 
             if plasmid_score > human_score:
                 assigned_to = "Plasmid"
@@ -199,7 +205,8 @@ def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAUL
                 assigned_to = "Tied"
                 assigned_counts["Tied"] += 1
 
-            outfile.write(f"{query_name}\t{assigned_to}\t{plasmid_score}\t{human_score}\n")
+            # Write the extended data to the output file
+            outfile.write(f"{query_name}\t{assigned_to}\t{plasmid_score}\t{human_score}\t{plasmid_cigar}\t{human_cigar}\t{plasmid_mapq}\t{human_mapq}\n")
 
     plasmid_count = assigned_counts["Plasmid"]
     human_count = assigned_counts["Human"]
