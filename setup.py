@@ -16,7 +16,10 @@ setup(
         "weasyprint",
         "matplotlib",
         "seaborn",
-        "pandas"
+        "pandas",
+        "scipy",
+        "plotly",
+        "statsmodels"
     ],
     entry_points={
         "console_scripts": [

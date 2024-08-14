@@ -10,7 +10,7 @@
         h1, h2, h3 { text-align: center; margin-top: 20px; }
         .container { margin-top: 20px; }
         .table-container { width: 80%; margin: 20px auto; }
-        .plot { margin: 20px auto; display: block; width: 60%; }
+        .plot { margin: 20px auto; display: block; width: 80%; }
         .logo { display: block; margin: 0 auto; width: 150px; }
     </style>
 </head>
@@ -19,7 +19,13 @@
     <h1>plasmicheck Summary Report</h1>
 
     <h2>Plots</h2>
-    <img src="{{ plot_image }}" alt="Heatmap Plot" class="plot">
+    <div class="plot">
+        {{ heatmap_html_content|safe }}
+    </div>
+
+    <div class="plot">
+        {{ boxplot_html_content|safe }}
+    </div>
 
     <h2>Summary</h2>
     <div class="table-container">
@@ -34,6 +40,11 @@
     <h2>Ratios</h2>
     <div class="table-container">
         {{ ratio_df|safe }}
+    </div>
+
+    <h2>P-Value Table</h2>
+    <div class="table-container">
+        {{ p_value_table|safe }}
     </div>
 
     <div class="details">

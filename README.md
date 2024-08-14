@@ -56,6 +56,11 @@ Make sure you have the following tools and packages installed:
   - `matplotlib` (version 3.9.1.post1)
   - `seaborn` (version 0.13.2)
   - `pandas` (version 2.2.2)
+  - `scipy`
+  - `plotly`
+  - `statsmodels`
+  - `numpy`
+
 
 You can install the Python packages using pip:
 

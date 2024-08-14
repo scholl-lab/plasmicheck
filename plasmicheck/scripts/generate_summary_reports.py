@@ -1,13 +1,15 @@
 import os
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import json
+import logging
+import base64
+import plotly.express as px
+import scipy.stats as stats
+from statsmodels.stats.multitest import multipletests
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from datetime import datetime
-import base64
-import logging
+import numpy as np
 
 from .utils import setup_logging  # Import setup_logging function
 
@@ -80,11 +82,83 @@ def read_compare_outputs(input_dir):
     
     return reads_df, summary_df
 
-def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plot_config):
+def save_tables_as_tsv(combined_df, verdict_df, ratio_df, output_dir):
+    """Save the combined, verdict, and ratio dataframes as TSV files."""
+    data_dir = os.path.join(output_dir, 'data')
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+
+    combined_df.to_csv(os.path.join(data_dir, 'combined_table.tsv'), sep='\t', index=False)
+    verdict_df.to_csv(os.path.join(data_dir, 'verdict_table.tsv'), sep='\t', index=False)
+    ratio_df.to_csv(os.path.join(data_dir, 'ratio_table.tsv'), sep='\t', index=False)
+    logging.info("TSV files have been saved.")
+
+def calculate_and_plot_variations(ratio_df, output_dir):
+    """Calculate variations and generate boxplots for contamination ratios by plasmid."""
+    logging.info("Calculating variations and generating boxplots.")
+    
+    # Convert the ratio_df to the appropriate format
+    ratio_df['Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
+    boxplot_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value")
+    
+    # Drop NaNs
+    boxplot_data = boxplot_data.dropna(how='all', axis=1)
+
+    # Calculate p-values and FDR correction
+    p_values_list = []
+    for plasmid in boxplot_data.columns:
+        data = boxplot_data[plasmid].dropna()
+        if len(data) > 1:
+            # Compare each sample to the mean of others
+            for i in range(len(data)):
+                t_stat, p_value = stats.ttest_1samp(data.drop(data.index[i]), data.iloc[i])
+                p_values_list.append({
+                    'Sample': data.index[i],
+                    'Plasmid': plasmid,
+                    'p_value': p_value,
+                })
+
+    # Convert p-values list to DataFrame
+    p_values_df = pd.DataFrame(p_values_list)
+
+    # Apply FDR correction
+    p_values_df['p_value_corrected'] = multipletests(p_values_df['p_value'], method='fdr_bh')[1]
+
+    # Save p-values as a DataFrame
+    p_value_table_filename = os.path.join(output_dir, 'p_value_table.tsv')
+    p_values_df.to_csv(p_value_table_filename, sep='\t', index=False)
+
+    # Interactive boxplot using Plotly
+    boxplot_df = ratio_df.copy()
+    boxplot_df['log_value'] = boxplot_df['Value'].apply(lambda x: np.log10(x + 1e-9))  # Avoid log(0) issues
+    fig = px.box(
+        boxplot_df, 
+        x="Plasmid", 
+        y="log_value", 
+        points="all", 
+        hover_data={'Sample': True, 'Value': True, 'log_value': False},  # Show original Value and hide log_value on hover
+        title="Contamination Ratios by Plasmid (Log Scale)"
+    )
+    fig.update_layout(yaxis_title="Log of Value")
+    
+    # Adjust the marker style to be similar to your example
+    fig.update_traces(marker=dict(size=8, opacity=0.7))
+
+    plots_dir = os.path.join(output_dir, 'plots')
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
+
+    boxplot_filename = os.path.join(plots_dir, 'boxplot_contamination_ratios.html')
+    fig.write_html(boxplot_filename)
+    
+    logging.info("Boxplots and statistical calculations completed.")
+    return boxplot_filename, p_value_table_filename, p_values_df
+
+def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plot_config, substring_to_remove=None):
     logging.info("Creating plots")
-    if not os.path.exists(output_dir):
-        logging.debug(f"Creating output directory: {output_dir}")
-        os.makedirs(output_dir)
+    plots_dir = os.path.join(output_dir, 'plots')
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
     
     # Split summary dataframe into separate dataframes for different categories
     combined_df = summary_df[summary_df['Category'].isin(['Plasmid', 'Human', 'Tied'])].copy()
@@ -95,45 +169,51 @@ def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plo
     combined_df.loc[:, 'Value'] = pd.to_numeric(combined_df['Value'], errors='coerce')
     ratio_df.loc[:, 'Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
 
+    # Remove the specified substring from sample names
+    if substring_to_remove:
+        ratio_df['Sample'] = ratio_df['Sample'].str.replace(substring_to_remove, '', regex=False)
+        combined_df['Sample'] = combined_df['Sample'].str.replace(substring_to_remove, '', regex=False)
+        verdict_df['Sample'] = verdict_df['Sample'].str.replace(substring_to_remove, '', regex=False)
+
     # Round the ratio data to 3 decimal places
     ratio_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value").round(3)
-
-    # Replace NaN with "missing"
-    ratio_data = ratio_data.fillna("missing")
     
-    # Create a mask for formatting only numeric values
-    fmt = lambda x: f"{x:.3f}" if isinstance(x, (int, float)) else x
+    # Interactive heatmap using Plotly
+    fig = px.imshow(
+        ratio_data, 
+        color_continuous_scale=px.colors.sequential.YlGnBu[::-1],  # Inverted color scale
+        text_auto=True,
+        width=1200,  # Set the width of the plot
+        height=1200   # Set the height of the plot
+    )
+    fig.update_layout(
+        title=plot_config['title'],
+        xaxis_title="Plasmid",
+        yaxis_title="Sample",
+    )
 
-    # Apply threshold for coloring
-    heatmap_data = ratio_data.copy()
-    for col in heatmap_data.columns:
-        heatmap_data[col] = heatmap_data[col].map(lambda x: 3 if x == "missing" else 2 if x > threshold else 1 if unclear_range['lower_bound'] <= x <= unclear_range['upper_bound'] else 0)
+    plot_filename = os.path.join(plots_dir, plot_config['output_filename'].replace('.png', '.html'))
+    fig.write_html(plot_filename)
 
-    # Define the color palette
-    cmap = sns.color_palette(["white", plot_config['colors']['not_contaminated'], plot_config['colors']['unclear'], plot_config['colors']['contaminated']])
-
-    plt.figure(figsize=(plot_config['figsize']['width'], plot_config['figsize']['height']))  # Adjust figure size
-    for col in ratio_data.columns:
-        ratio_data[col] = ratio_data[col].map(fmt)
-    sns.heatmap(heatmap_data, annot=ratio_data, fmt="", cmap=cmap, cbar=False, linewidths=plot_config['linewidths'], linecolor=plot_config['linecolor'])
-    plt.title(plot_config['title'])
-    plt.xticks(rotation=plot_config['xticks_rotation'], ha=plot_config['xticks_ha'])
-    plt.yticks(rotation=plot_config['yticks_rotation'])
-    plt.tight_layout()  # Adjust layout to fit labels
-    plot_filename = os.path.join(output_dir, plot_config['output_filename'])
-    plt.savefig(plot_filename)
-    plt.close()
-    
     return plot_filename, combined_df, verdict_df, ratio_df
 
-def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_folder, threshold, unclear_range, command_line):
+def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename, boxplot_filename, p_value_table_filename, output_folder, threshold, unclear_range, command_line):
     logging.info("Generating summary report")
     # Load the template
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('summary_template.html')
 
-    # Encode the plot image and the logo
-    plot_base64 = encode_image_to_base64(plot_filename)
+    # Read the Plotly HTML files content
+    with open(heatmap_filename, 'r') as f:
+        heatmap_html_content = f.read()
+
+    with open(boxplot_filename, 'r') as f:
+        boxplot_html_content = f.read()
+
+    # Read p-value table
+    p_value_table = pd.read_csv(p_value_table_filename, sep='\t').to_html(classes='table table-striped table-bordered', index=False)
+
+    # Encode the logo
     logo_base64 = encode_image_to_base64(LOGO_PATH)
 
     # Render the template
@@ -141,7 +221,9 @@ def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_fol
         combined_df=combined_df.to_html(classes='table table-striped table-bordered', index=False),
         verdict_df=verdict_df.to_html(classes='table table-striped table-bordered', index=False),
         ratio_df=ratio_df.to_html(classes='table table-striped table-bordered', index=False),
-        plot_image=plot_base64,  # Embed the plot as base64 string
+        heatmap_html_content=heatmap_html_content,  # Include the Plotly HTML content directly
+        boxplot_html_content=boxplot_html_content,  # Include the Plotly HTML content directly
+        p_value_table=p_value_table,  # Include the p-value table
         logo_base64=logo_base64,  # Embed the logo as base64 string
         threshold=threshold,
         unclear_range=unclear_range,
@@ -158,15 +240,25 @@ def generate_report(combined_df, verdict_df, ratio_df, plot_filename, output_fol
     # Convert HTML to PDF
     HTML(html_report).write_pdf(os.path.join(output_folder, 'summary_report.pdf'))
 
-def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLEAR_RANGE):
+def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLEAR_RANGE, substring_to_remove=None):
     reads_df, summary_df = read_compare_outputs(input_dir)
-    plot_filename, combined_df, verdict_df, ratio_df = create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, PLOT_CONFIG)
+    plot_filename, combined_df, verdict_df, ratio_df = create_plots(
+        reads_df, summary_df, output_dir, threshold, unclear_range, PLOT_CONFIG, substring_to_remove
+    )
+
+    # Save the tables as TSV
+    save_tables_as_tsv(combined_df, verdict_df, ratio_df, output_dir)
+
+    # Calculate and plot variations
+    boxplot_filename, p_value_table_filename, stats_results = calculate_and_plot_variations(ratio_df, output_dir)
 
     generate_report(
         combined_df, 
         verdict_df, 
         ratio_df, 
         plot_filename, 
+        boxplot_filename,
+        p_value_table_filename,
         output_dir, 
         threshold, 
         unclear_range,
@@ -179,6 +271,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--input_dir", help="Directory containing compare outputs", required=True)
     parser.add_argument("-o", "--output_dir", help="Directory to save the plots and reports", required=True)
     parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("--substring_to_remove", help="Substring to remove from sample names", default=None)
     parser.add_argument("--log-level", help="Set the logging level", default="INFO")
     parser.add_argument("--log-file", help="Set the log output file", default=None)
 
@@ -186,4 +279,4 @@ if __name__ == "__main__":
 
     setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)  # Setup logging with arguments
 
-    main(args.input_dir, args.output_dir, args.threshold)
+    main(args.input_dir, args.output_dir, args.threshold, substring_to_remove=args.substring_to_remove)

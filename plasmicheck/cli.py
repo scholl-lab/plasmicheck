@@ -151,6 +151,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_summary_reports.add_argument("-i", "--input_dir", help="Directory containing compare outputs", required=True)
     parser_summary_reports.add_argument("-o", "--output_dir", help="Directory to save the plots", required=True)
     parser_summary_reports.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
+    parser_summary_reports.add_argument("--substring_to_remove", help="Substring to remove from sample names", default=None)
     parser_summary_reports.add_argument("--log-level", help="Set the logging level", default="INFO")
     parser_summary_reports.add_argument("--log-file", help="Set the log output file", default=None)
 
@@ -192,7 +193,12 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         generate_report(args.reads_assignment_file, args.summary_file, args.output_folder, args.threshold, command_line)
     elif args.command == "summary_reports":
         from .scripts.generate_summary_reports import main as generate_summary_reports
-        generate_summary_reports(args.input_dir, args.output_dir, args.threshold)
+        generate_summary_reports(
+            args.input_dir,
+            args.output_dir,
+            args.threshold,
+            substring_to_remove=args.substring_to_remove  # Pass the substring correctly
+        )
     else:
         parser.print_help()
 
