@@ -10,16 +10,17 @@ setup(
     version=config['version'],
     packages=find_packages(),
     install_requires=[
-        "biopython",
-        "pysam",
-        "jinja2",
-        "weasyprint",
-        "matplotlib",
-        "seaborn",
-        "pandas",
-        "scipy",
-        "plotly",
-        "statsmodels"
+        "biopython>=1.84",
+        "pysam>=0.22.1",
+        "jinja2>=3.0.0",
+        "weasyprint>=62.3",
+        "matplotlib>=3.9.1.post1",
+        "seaborn>=0.13.2",
+        "pandas>=2.2.2",
+        "scipy>=1.13.1",
+        "plotly>=5.23.0",
+        "statsmodels>=0.14.2",
+        "numpy>=2.0.1",
     ],
     entry_points={
         "console_scripts": [
@@ -38,4 +39,12 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
+    extras_require={
+        "dev": [
+            "pytest",
+            "black",
+            "flake8",
+        ],
+    },
+    include_package_data=True,
 )
