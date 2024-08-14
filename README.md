@@ -28,18 +28,36 @@ Beyond its core logic, 'plasmicheck' offers a comprehensive set of functionaliti
 
 ## Installation
 
+### Option 1: Using pip
+
 You can install plasmicheck using pip:
 
 ```bash
 pip install .
 ```
 
-Alternatively, you can set up a Conda environment:
+### Option 2: Using Conda Environment
 
-```bash
-conda env create -f environment.yml
-conda activate plasmicheck
-```
+Alternatively, you can set up a Conda environment using the provided `plasmicheck_full_conda.yml` file (which includes all dependencies) as follows:
+
+1. Clone the repository:
+
+    ```bash
+    git clone https://github.com/berntpopp/plasmicheck.git
+    cd plasmicheck
+    ```
+
+2. Create the Conda environment:
+
+    ```bash
+    conda env create -f conda/plasmicheck_conda.yml
+    ```
+
+3. Activate the environment:
+
+    ```bash
+    conda activate plasmicheck
+    ```
 
 ### Required Tools and Python Packages
 
@@ -52,21 +70,22 @@ Make sure you have the following tools and packages installed:
 - **Python Packages:**
   - `biopython` (version 1.84)
   - `pysam` (version 0.22.1)
+  - `jinja2` (version 3.0.0)
   - `weasyprint` (version 62.3)
-  - `matplotlib` (version 3.9.1.post1)
+  - `matplotlib` (version 3.9.1)
   - `seaborn` (version 0.13.2)
   - `pandas` (version 2.2.2)
-  - `scipy`
-  - `plotly`
-  - `statsmodels`
-  - `numpy`
+  - `scipy` (version 1.13.1)
+  - `plotly` (version 5.23.0)
+  - `statsmodels` (version 0.14.2)
+  - `numpy` (version 2.0.1)
 
-
-You can install the Python packages using pip:
+You can also install the Python packages using pip:
 
 ```bash
-pip install biopython pysam weasyprint matplotlib seaborn pandas
+pip install biopython pysam jinja2 weasyprint matplotlib seaborn pandas scipy plotly statsmodels numpy
 ```
+
 
 ## Configuration
 
