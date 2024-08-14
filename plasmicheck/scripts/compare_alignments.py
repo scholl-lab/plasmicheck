@@ -43,6 +43,113 @@ def calculate_alignment_score(read):
 
     return score
 
+def parse_insert_region(cDNA_positions_file):
+    """
+    Parse the cDNA_positions.txt file to extract the INSERT_REGION.
+    """
+    if not os.path.exists(cDNA_positions_file):
+        raise FileNotFoundError(f"Expected cDNA_positions.txt at {cDNA_positions_file} but the file was not found.")
+
+    logging.debug(f"Looking for cDNA_positions.txt at: {cDNA_positions_file}")
+
+    with open(cDNA_positions_file, 'r') as f:
+        lines = f.readlines()
+
+    cDNA_start = int(lines[0].split(': ')[1])
+    cDNA_end = int(lines[1].split(': ')[1])
+    insert_region = (cDNA_start, cDNA_end)
+    
+    return insert_region
+
+def calculate_coverage_outside_insert(plasmid_bam, insert_region):
+    """
+    Calculate the coverage of reads mapping outside the INSERT_REGION.
+    Coverage is defined as the total number of aligned bases outside the INSERT_REGION
+    divided by the length of the reference region outside the INSERT_REGION.
+    """
+    total_aligned_bases_outside_insert = 0
+
+    with pysam.AlignmentFile(plasmid_bam, "rb") as bamfile:
+        # Calculate the length of the plasmid reference
+        plasmid_length = bamfile.lengths[bamfile.get_tid(bamfile.get_reference_name(0))]  # Assumes single reference in BAM
+        
+        total_reference_bases_outside_insert = plasmid_length - (insert_region[1] - insert_region[0] + 1)
+        if total_reference_bases_outside_insert <= 0:
+            raise ValueError("The INSERT_REGION covers the entire reference sequence.")
+
+        for read in bamfile.fetch():
+            if read.is_unmapped:
+                continue
+
+            read_start = read.reference_start
+            read_end = read.reference_end
+
+            # Check if the read overlaps with the region outside the INSERT_REGION
+            if read_end < insert_region[0] or read_start > insert_region[1]:
+                # Entire read is outside the INSERT_REGION
+                total_aligned_bases_outside_insert += read.query_length
+            else:
+                # Read overlaps with the INSERT_REGION, split into parts
+                if read_start < insert_region[0]:  # Part of the read is before the INSERT_REGION
+                    outside_start = read_start
+                    outside_end = min(read_end, insert_region[0] - 1)
+                    total_aligned_bases_outside_insert += (outside_end - outside_start + 1)
+
+                if read_end > insert_region[1]:  # Part of the read is after the INSERT_REGION
+                    outside_start = max(read_start, insert_region[1] + 1)
+                    outside_end = read_end
+                    total_aligned_bases_outside_insert += (outside_end - outside_start + 1)
+
+    # Calculate coverage
+    coverage_outside_insert = total_aligned_bases_outside_insert / total_reference_bases_outside_insert \
+        if total_reference_bases_outside_insert > 0 else 0
+
+    return coverage_outside_insert
+
+def count_mismatches_near_insert_end(plasmid_bam, insert_region, window_size=100):
+    """
+    Count the number of reads with and without mismatches or clipping near the INSERT_REGION end.
+
+    Parameters:
+    - plasmid_bam: Path to the BAM file for plasmid alignment.
+    - insert_region: Tuple indicating the (start, end) of the INSERT_REGION.
+    - window_size: The number of bases around the insert end to consider for counting mismatches and clipping.
+
+    Returns:
+    - A dictionary with counts of reads with and without mismatches/clipping near the INSERT_REGION end.
+    """
+    mismatches_near_insert = {"with_mismatches_or_clipping": 0, "without_mismatches_or_clipping": 0}
+
+    with pysam.AlignmentFile(plasmid_bam, "rb") as bamfile:
+        for read in bamfile.fetch():
+            if read.is_unmapped:
+                continue
+
+            read_start = read.reference_start
+            read_end = read.reference_end
+
+            # Check if the read is near the start of the INSERT_REGION
+            near_insert_start = read_end >= insert_region[0] - window_size and read_end <= insert_region[0] + window_size
+
+            # Check if the read is near the end of the INSERT_REGION
+            near_insert_end = read_start >= insert_region[1] - window_size and read_start <= insert_region[1] + window_size
+
+            if near_insert_start or near_insert_end:
+                has_mismatches_or_clipping = False
+
+                # Check CIGAR string for mismatches, clipping, or other issues
+                for operation, length in read.cigartuples:
+                    if operation in {1, 2, 3, 4, 5}:  # Insertion, Deletion, Skipped region, Soft clipping, Hard clipping
+                        has_mismatches_or_clipping = True
+                        break
+
+                if has_mismatches_or_clipping:
+                    mismatches_near_insert["with_mismatches_or_clipping"] += 1
+                else:
+                    mismatches_near_insert["without_mismatches_or_clipping"] += 1
+
+    return mismatches_near_insert
+
 def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAULT_THRESHOLD):
     logging.info("Starting comparison of alignments")
 
@@ -56,6 +163,22 @@ def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAUL
     human_reads = {read.query_name: read for read in human_samfile.fetch(until_eof=True)}
 
     assigned_counts = {"Plasmid": 0, "Human": 0, "Tied": 0}
+
+    # Extract the INSERT_REGION from cDNA_positions.txt
+    cDNA_positions_file = os.path.join(os.path.dirname(output_basename), "cDNA_positions.txt")
+    if not os.path.exists(cDNA_positions_file):
+        raise FileNotFoundError(f"Expected cDNA_positions.txt at {cDNA_positions_file} but the file was not found.")
+    
+    insert_region = parse_insert_region(cDNA_positions_file)
+    logging.debug(f"INSERT_REGION extracted from {cDNA_positions_file}: {insert_region}")
+
+    # Calculate the coverage outside the INSERT_REGION
+    coverage_outside_insert = calculate_coverage_outside_insert(plasmid_bam, insert_region)
+    logging.debug(f"Coverage outside INSERT_REGION: {coverage_outside_insert}")
+
+    # Count mismatches near the INSERT_REGION
+    mismatches_near_insert = count_mismatches_near_insert_end(plasmid_bam, insert_region)
+    logging.debug(f"Mismatches near INSERT_REGION: {mismatches_near_insert}")
 
     logging.debug(f"Writing alignment comparison results to {output_basename}.reads_assignment.tsv")
 
@@ -98,6 +221,8 @@ def compare_alignments(plasmid_bam, human_bam, output_basename, threshold=DEFAUL
             summary_file.write(f"{category}\t{count}\n")
         summary_file.write(f"Verdict\t{verdict}\n")
         summary_file.write(f"Ratio\t{ratio}\n")
+        summary_file.write(f"CoverageOutsideINSERT\t{coverage_outside_insert:.4f}\n")  # Added coverage information
+        summary_file.write(f"MismatchesNearINSERT\t{mismatches_near_insert}\n")  # Added mismatches information
 
 if __name__ == "__main__":
     import argparse

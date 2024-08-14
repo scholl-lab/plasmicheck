@@ -132,7 +132,8 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_pipeline.add_argument("-w", "--overwrite", action="store_true", help="Overwrite existing output files")
     parser_pipeline.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
     parser_pipeline.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
-    parser_pipeline.add_argument("-md5", "--md5_level", type=str, choices=["all", "input", "intermediate", "output"], default="intermediate", help="Level of MD5 checksum calculation (default: all)")
+    parser_pipeline.add_argument("-md5", "--md5_level", type=str, choices=["all", "input", "intermediate", "output"], default="intermediate", help="Level of MD5 checksum calculation (default: intermediate)")
+    parser_pipeline.add_argument("--cDNA_output", help="Output file for cDNA start and end positions in the plasmid reference", default=None)
     parser_pipeline.add_argument("--log-level", help="Set the logging level", default="INFO")
     parser_pipeline.add_argument("--log-file", help="Set the log output file", default=None)
 
@@ -174,12 +175,14 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
         from .scripts.compare_alignments import compare_alignments
         compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)
     elif args.command == "spliced":
-        from .scripts.spliced_alignment import spliced_alignment, extract_human_reference, find_fasta_file
+        from .scripts.spliced_alignment import spliced_alignment, extract_human_reference, extract_plasmid_cDNA_positions, find_fasta_file
         if args.human_fasta is None:
             base_name = os.path.splitext(args.human_index)[0]
             args.human_fasta = find_fasta_file(base_name)
         spanned_regions = spliced_alignment(args.human_index, args.plasmid_fasta, args.output_bam, args.padding)
         extract_human_reference(args.human_fasta, spanned_regions, args.output_fasta)
+        if args.cDNA_output:
+            extract_plasmid_cDNA_positions(args.plasmid_fasta, args.output_bam, args.cDNA_output)
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline
         run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold, args.md5_level)

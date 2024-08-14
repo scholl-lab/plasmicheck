@@ -6,7 +6,7 @@ import sys
 import logging
 from .convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta
 from .create_indexes import create_indexes
-from .spliced_alignment import spliced_alignment, extract_human_reference
+from .spliced_alignment import spliced_alignment, extract_human_reference, extract_plasmid_cDNA_positions
 from .align_reads import align_reads
 from .compare_alignments import compare_alignments
 from .generate_report import main as generate_report, DEFAULT_THRESHOLD
@@ -32,7 +32,7 @@ def get_file_list(file_or_list):
     else:
         return [file_or_list]
 
-def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, keep_intermediate=True, shift_bases=500, generate_shifted=False, overwrite=False, padding=1000, threshold=DEFAULT_THRESHOLD, md5_level="all"):
+def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, keep_intermediate=True, shift_bases=500, generate_shifted=False, overwrite=False, padding=1000, threshold=DEFAULT_THRESHOLD, md5_level="all", cDNA_output=None):
     logging.info("Starting the pipeline...")
     # log the input parameters
     logging.info("Input parameters:")
@@ -121,7 +121,15 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(spliced_index, "intermediate", output_subfolder)
 
-            # Step 4: Align reads to the plasmid and the spliced reference
+            # Step 4: Extract cDNA positions
+            unique_cDNA_output = cDNA_output or os.path.join(output_subfolder, "cDNA_positions.txt")
+            logging.info("Extracting cDNA positions from the spliced alignment...")
+            logging.debug(f"Running: extract_plasmid_cDNA_positions({plasmid_fasta}, {spliced_bam}, {unique_cDNA_output})")
+            extract_plasmid_cDNA_positions(plasmid_fasta, spliced_bam, unique_cDNA_output)
+            if md5_level in ["all", "intermediate"]:
+                write_md5sum(unique_cDNA_output, "intermediate", output_subfolder)
+
+            # Step 5: Align reads to the plasmid and the spliced reference
             plasmid_bam = os.path.join(output_subfolder, "plasmid_alignment.bam")
             spliced_human_bam = os.path.join(output_subfolder, "spliced_human_alignment.bam")
             logging.info("Aligning reads to the plasmid and spliced human reference...")
@@ -133,13 +141,13 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
                 write_md5sum(plasmid_bam, "intermediate", output_subfolder)
                 write_md5sum(spliced_human_bam, "intermediate", output_subfolder)
 
-            # Step 5: Compare the two alignments
+            # Step 6: Compare the two alignments
             comparison_output = os.path.join(output_subfolder, "comparison_result")
             logging.info("Comparing the two alignments...")
             logging.debug(f"Running: compare_alignments({plasmid_bam}, {spliced_human_bam}, {comparison_output})")
             compare_alignments(plasmid_bam, spliced_human_bam, comparison_output)
 
-            # Step 6: Generate report
+            # Step 7: Generate report
             logging.info("Generating report...")
             reads_assignment_file = f"{comparison_output}.reads_assignment.tsv"
             summary_file = f"{comparison_output}.summary.tsv"
@@ -152,7 +160,7 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
                 write_md5sum(reads_assignment_file, "output", output_subfolder)
                 write_md5sum(summary_file, "output", output_subfolder)
 
-            # Step 7: Optionally delete intermediate files
+            # Step 8: Optionally delete intermediate files
             if not keep_intermediate:
                 logging.info("Deleting intermediate files...")
                 os.remove(plasmid_bam)
@@ -175,6 +183,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--padding", type=int, default=1000, help="Padding to add to both sides of the spanned regions (default: 1000)")
     parser.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
     parser.add_argument("-md5", "--md5_level", type=str, choices=["all", "intermediate", "output"], default="intermediate", help="Level of MD5 checksum calculation (default: intermediate)")
+    parser.add_argument("--cDNA_output", help="Output file for cDNA start and end positions in the plasmid reference", default=None)
     parser.add_argument("--log-level", help="Set the logging level", default="INFO")
     parser.add_argument("--log-file", help="Set the log output file", default=None)
 
@@ -182,4 +191,4 @@ if __name__ == "__main__":
 
     setup_logging(log_level=getattr(logging, args.log_level.upper(), None), log_file=args.log_file)
 
-    run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold, args.md5_level)
+    run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold, args.md5_level, args.cDNA_output)
