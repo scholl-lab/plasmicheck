@@ -13,7 +13,7 @@
     "clipping_penalty": 1,
     "mismatch_penalty": 1
   },
-  "version": "0.22.0",
+  "version": "0.23.0",
   "alignment": {
     "minimap2_threads": 8,
     "samtools_threads": 4,
@@ -97,5 +97,13 @@
       "columns": ["Plasmid", "p_value_corrected"],
       "ascending": [true, true]
     }
+  },
+  "supported_formats": {
+    "txt": ".txt",
+    "bam": ".bam",
+    "fastq": [".fastq", ".fq", ".fastq.gz", ".fq.gz"],
+    "fasta": [".fasta", ".fa", ".fna", ".fsa", ".ffn"],
+    "genbank": [".gb", ".gbk", ".genbank"],
+    "xdna": ".xdna"
   }
 }

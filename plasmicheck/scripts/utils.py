@@ -5,7 +5,15 @@ import logging
 import sys
 import subprocess
 import tarfile
+import json
 from datetime import datetime
+
+# Load configuration from JSON file
+config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
+with open(config_path, 'r') as config_file:
+    config = json.load(config_file)
+
+SUPPORTED_FORMATS = config['supported_formats']
 
 def calculate_md5(file_path):
     """Calculate and return the MD5 checksum of a file."""
@@ -55,14 +63,7 @@ def run_command(command):
         raise
 
 def archive_output_folder(output_folder, archive_name=None):
-    """
-    Archive and compress the output folder into a .tar.gz file.
-
-    Args:
-        output_folder (str): The path to the output folder to be archived.
-        archive_name (str, optional): The name of the archive file. If None, a name will be generated based on the
-                                      folder structure and current date.
-    """
+    """Archive and compress the output folder into a .tar.gz file."""
     # Extract the folder structure and create a default archive name if not provided
     if not archive_name:
         folder_parts = output_folder.strip(os.sep).split(os.sep)
@@ -84,3 +85,43 @@ def archive_output_folder(output_folder, archive_name=None):
 
     logging.info(f"Output folder archived successfully: {archive_path}")
     return archive_path
+
+def validate_file_existence(file_paths):
+    """Check if all files in the list exist."""
+    missing_files = [file for file in file_paths if not os.path.exists(file)]
+    if missing_files:
+        logging.error(f"The following files are missing: {', '.join(missing_files)}")
+        raise FileNotFoundError(f"Missing files: {', '.join(missing_files)}")
+    logging.debug("All files exist.")
+
+def validate_file_format(file_paths, expected_formats):
+    """Check if files have the correct format based on their extensions."""
+    if not isinstance(expected_formats, list):
+        expected_formats = [expected_formats]  # Ensure it's a list for uniformity
+    
+    expected_extensions = []
+    for format in expected_formats:
+        format_extensions = SUPPORTED_FORMATS.get(format.lower())
+        if not format_extensions:
+            raise ValueError(f"Unsupported format: {format}")
+        if isinstance(format_extensions, str):
+            format_extensions = [format_extensions]
+        expected_extensions.extend(format_extensions)  # Collect all valid extensions
+
+    invalid_files = [file for file in file_paths if not any(file.endswith(ext) for ext in expected_extensions)]
+    if invalid_files:
+        logging.error(f"The following files have an incorrect format: {', '.join(invalid_files)}")
+        raise ValueError(f"Incorrect format for files: {', '.join(invalid_files)}")
+    
+    logging.debug(f"All files have the correct format: {', '.join(expected_formats)}")
+
+def quality_control(file_paths, expected_formats=None):
+    """Perform quality control checks on the input files."""
+    # Step 1: Validate that files exist
+    validate_file_existence(file_paths)
+    
+    # Step 2: Validate file format, if expected formats are provided
+    if expected_formats:
+        validate_file_format(file_paths, expected_formats)
+    
+    logging.debug("Quality control checks passed.")

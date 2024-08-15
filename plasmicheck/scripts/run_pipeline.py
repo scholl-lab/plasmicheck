@@ -10,7 +10,7 @@ from .spliced_alignment import spliced_alignment, extract_human_reference, extra
 from .align_reads import align_reads
 from .compare_alignments import compare_alignments
 from .generate_report import main as generate_report, DEFAULT_THRESHOLD
-from .utils import write_md5sum, sanitize_filename, setup_logging, archive_output_folder
+from .utils import write_md5sum, sanitize_filename, setup_logging, archive_output_folder, quality_control
 
 # Resolve the path to config.json in the parent directory of the current script
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
@@ -44,6 +44,26 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
     plasmid_files = get_file_list(plasmid_files)
     sequencing_files = get_file_list(sequencing_files)
 
+    # Perform quality control checks
+    logging.info("Performing quality control checks on input files...")
+    quality_control([human_fasta], expected_formats=['fasta'])
+
+    # Plasmid files can be in multiple formats, e.g., genbank and xdna
+    quality_control(plasmid_files, expected_formats=['genbank', 'xdna'])
+
+    # Determine the format of sequencing files (bam or fastq)
+    for seq_file in sequencing_files:
+        if seq_file.endswith('.bam'):
+            quality_control([seq_file], expected_formats=['bam'])
+        elif seq_file.endswith('.fastq'):
+            quality_control([seq_file], expected_formats=['fastq'])
+        elif ',' in seq_file:  # Paired FASTQ files
+            fastq1, fastq2 = seq_file.split(',')
+            quality_control([fastq1, fastq2], expected_formats=['fastq'])
+        else:
+            logging.error("Unsupported sequencing file type.")
+            raise ValueError("Unsupported sequencing file type. Must be .bam, .fastq, or paired FASTQ files separated by a comma.")
+
     for plasmid_file in plasmid_files:
         plasmid_file_type = 'genbank' if plasmid_file.endswith('.gb') or plasmid_file.endswith('.gbk') else 'xdna'
         logging.info(f"Processing plasmid file: {plasmid_file}")
@@ -61,8 +81,8 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
                 sequencing_file_type = 'paired_fastq'
                 sequencing_file, fastq2 = sequencing_file.split(',')
             else:
-                logging.error("Unsupported sequencing file type. Must be .bam, .fastq, or paired FASTQ files separated by a comma.")
-                raise ValueError("Unsupported sequencing file type. Must be .bam, .fastq, or paired FASTQ files separated by a comma.")
+                logging.error("Unsupported sequencing file type.")
+                raise ValueError("Unsupported sequencing file type.")
 
             bam_basename = sanitize_filename(os.path.splitext(os.path.basename(sequencing_file))[0])
             file_basename = sanitize_filename(os.path.splitext(os.path.basename(plasmid_file))[0])
@@ -76,7 +96,6 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             plasmid_fasta = os.path.join(output_subfolder, os.path.splitext(os.path.basename(plasmid_file))[0] + ".fasta")
             if not os.path.exists(plasmid_fasta) or overwrite:
                 logging.info(f"Converting {plasmid_file} to FASTA format.")
-                logging.debug(f"Running: convert_plasmidfile_to_fasta({plasmid_file}, {plasmid_fasta}, {plasmid_file_type}, {shift_bases}, {generate_shifted}, {overwrite})")
                 convert_plasmidfile_to_fasta(plasmid_file, plasmid_fasta, plasmid_file_type, shift_bases, generate_shifted, overwrite)
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(plasmid_fasta, "intermediate", output_subfolder)
@@ -88,11 +107,9 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             plasmid_index = os.path.join(output_subfolder, os.path.splitext(os.path.basename(plasmid_fasta))[0] + ".mmi")
             if not os.path.exists(human_index) or overwrite:
                 logging.info(f"Creating index for human reference: {human_fasta}")
-                logging.debug(f"Running: create_indexes({human_fasta}, {overwrite})")
                 create_indexes(human_fasta, overwrite)
             if not os.path.exists(plasmid_index) or overwrite:
                 logging.info(f"Creating index for plasmid FASTA: {plasmid_fasta}")
-                logging.debug(f"Running: create_indexes({plasmid_fasta}, {overwrite})")
                 create_indexes(plasmid_fasta, overwrite)
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(plasmid_index, "intermediate", output_subfolder)
@@ -103,10 +120,8 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             spliced_bam = os.path.join(output_subfolder, "spliced_alignment.bam")
             spliced_fasta = os.path.join(output_subfolder, "spliced_reference.fasta")
             logging.info(f"Performing spliced alignment for {sequencing_file} and {plasmid_file}...")
-            logging.debug(f"Running: spliced_alignment({human_index}, {plasmid_fasta}, {spliced_bam}, {padding})")
             spanned_regions = spliced_alignment(human_index, plasmid_fasta, spliced_bam, padding)
             logging.info("Extracting human reference regions...")
-            logging.debug(f"Running: extract_human_reference({human_fasta}, {spanned_regions}, {spliced_fasta})")
             extract_human_reference(human_fasta, spanned_regions, spliced_fasta)
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(spliced_bam, "intermediate", output_subfolder)
@@ -116,7 +131,6 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             spliced_index = os.path.join(output_subfolder, os.path.splitext(os.path.basename(spliced_fasta))[0] + ".mmi")
             if not os.path.exists(spliced_index) or overwrite:
                 logging.info("Creating index for spliced reference...")
-                logging.debug(f"Running: create_indexes({spliced_fasta}, {overwrite})")
                 create_indexes(spliced_fasta, overwrite)
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(spliced_index, "intermediate", output_subfolder)
@@ -124,7 +138,6 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             # Step 4: Extract cDNA positions
             unique_cDNA_output = cDNA_output or os.path.join(output_subfolder, "cDNA_positions.txt")
             logging.info("Extracting cDNA positions from the spliced alignment...")
-            logging.debug(f"Running: extract_plasmid_cDNA_positions({plasmid_fasta}, {spliced_bam}, {unique_cDNA_output})")
             extract_plasmid_cDNA_positions(plasmid_fasta, spliced_bam, unique_cDNA_output)
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(unique_cDNA_output, "intermediate", output_subfolder)
@@ -133,9 +146,7 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             plasmid_bam = os.path.join(output_subfolder, "plasmid_alignment.bam")
             spliced_human_bam = os.path.join(output_subfolder, "spliced_human_alignment.bam")
             logging.info("Aligning reads to the plasmid and spliced human reference...")
-            logging.debug(f"Running: align_reads({plasmid_index}, {sequencing_file}, {plasmid_bam}, 'plasmid', {fastq2})")
             align_reads(plasmid_index, sequencing_file, plasmid_bam, "plasmid", fastq2)
-            logging.debug(f"Running: align_reads({spliced_index}, {sequencing_file}, {spliced_human_bam}, 'human', {fastq2})")
             align_reads(spliced_index, sequencing_file, spliced_human_bam, "human", fastq2)
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(plasmid_bam, "intermediate", output_subfolder)
@@ -144,7 +155,6 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             # Step 6: Compare the two alignments
             comparison_output = os.path.join(output_subfolder, "comparison_result")
             logging.info("Comparing the two alignments...")
-            logging.debug(f"Running: compare_alignments({plasmid_bam}, {spliced_human_bam}, {comparison_output})")
             compare_alignments(plasmid_bam, spliced_human_bam, comparison_output)
 
             # Step 7: Generate report
@@ -152,7 +162,6 @@ def run_pipeline(human_fasta, plasmid_files, sequencing_files, output_folder, ke
             reads_assignment_file = f"{comparison_output}.reads_assignment.tsv"
             summary_file = f"{comparison_output}.summary.tsv"
             command_line = ' '.join(sys.argv)
-            logging.debug(f"Running: generate_report({reads_assignment_file}, {summary_file}, {output_subfolder}, {threshold}, {command_line}, {human_fasta}, {plasmid_file}, {sequencing_file})")
             generate_report(reads_assignment_file, summary_file, output_subfolder, threshold, command_line, human_fasta, plasmid_file, sequencing_file)
 
             # Write MD5 checksums for the output files
