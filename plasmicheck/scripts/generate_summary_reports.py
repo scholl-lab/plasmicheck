@@ -27,6 +27,7 @@ PLOT_CONFIG = config['plot_summary']
 VERSION = config['version']
 TEMPLATE_DIR = config['paths']['template_dir']
 LOGO_PATH = config['paths']['logo_path']
+TABLE_SORTING = config['table_sorting']
 
 # Replace magic numbers with config values
 PLOT_DIMENSIONS = PLOT_CONFIG.get('plot_dimensions', {'width': 1200, 'height': 1200})
@@ -89,11 +90,25 @@ def read_compare_outputs(input_dir):
     
     return reads_df, summary_df
 
+def apply_sorting(df, sorting_config):
+    """Apply sorting to a DataFrame based on the given sorting configuration."""
+    if sorting_config:
+        columns = sorting_config.get("columns", [])
+        ascending = sorting_config.get("ascending", [True] * len(columns))
+        df = df.sort_values(by=columns, ascending=ascending)
+    return df
+
 def save_tables_as_tsv_and_excel(combined_df, verdict_df, ratio_df, p_values_df, output_dir):
     """Save the combined, verdict, ratio, and p-value dataframes as TSV and Excel files."""
     data_dir = os.path.join(output_dir, 'data')
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
+
+    # Apply sorting to each DataFrame
+    combined_df = apply_sorting(combined_df, TABLE_SORTING.get('combined'))
+    verdict_df = apply_sorting(verdict_df, TABLE_SORTING.get('verdict'))
+    ratio_df = apply_sorting(ratio_df, TABLE_SORTING.get('ratio'))
+    p_values_df = apply_sorting(p_values_df, TABLE_SORTING.get('p_value'))
 
     # Save TSV files
     combined_df.to_csv(os.path.join(data_dir, 'combined_table.tsv'), sep='\t', index=False)
@@ -233,6 +248,13 @@ def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plo
 def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interactive, heatmap_filename_png, boxplot_filename_interactive, boxplot_filename_png, p_value_table_filename, output_folder, threshold, unclear_range, command_line):
     logging.info("Generating summary reports")
 
+    # Apply sorting to each DataFrame
+    combined_df = apply_sorting(combined_df, TABLE_SORTING.get('combined'))
+    verdict_df = apply_sorting(verdict_df, TABLE_SORTING.get('verdict'))
+    ratio_df = apply_sorting(ratio_df, TABLE_SORTING.get('ratio'))
+    p_values_df = pd.read_csv(p_value_table_filename, sep='\t')  # Load the p-value table
+    p_values_df = apply_sorting(p_values_df, TABLE_SORTING.get('p_value'))
+
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('summary_template.html')
 
@@ -247,20 +269,23 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
     heatmap_png_base64 = encode_image_to_base64(heatmap_filename_png)
     boxplot_png_base64 = encode_image_to_base64(boxplot_filename_png)
 
-    # Read p-value table
-    p_value_table = pd.read_csv(p_value_table_filename, sep='\t').to_html(classes='table table-striped table-bordered', index=False)
+    # Convert sorted DataFrames to HTML
+    combined_html = combined_df.to_html(classes='table table-striped table-bordered', index=False)
+    verdict_html = verdict_df.to_html(classes='table table-striped table-bordered', index=False)
+    ratio_html = ratio_df.to_html(classes='table table-striped table-bordered', index=False)
+    p_value_html = p_values_df.to_html(classes='table table-striped table-bordered', index=False)
 
     # Encode the logo
     logo_base64 = encode_image_to_base64(LOGO_PATH)
 
     # Render interactive HTML report
     html_content_interactive = template.render(
-        combined_df=combined_df.to_html(classes='table table-striped table-bordered', index=False),
-        verdict_df=verdict_df.to_html(classes='table table-striped table-bordered', index=False),
-        ratio_df=ratio_df.to_html(classes='table table-striped table-bordered', index=False),
+        combined_df=combined_html,
+        verdict_df=verdict_html,
+        ratio_df=ratio_html,
         heatmap_content=heatmap_html_content,  # Plotly HTML content
         boxplot_content=boxplot_html_content,  # Plotly HTML content
-        p_value_table=p_value_table,
+        p_value_table=p_value_html,
         logo_base64=logo_base64,
         threshold=threshold,
         unclear_range=unclear_range,
@@ -272,12 +297,12 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
 
     # Render non-interactive HTML report
     html_content_non_interactive = template.render(
-        combined_df=combined_df.to_html(classes='table table-striped table-bordered', index=False),
-        verdict_df=verdict_df.to_html(classes='table table-striped table-bordered', index=False),
-        ratio_df=ratio_df.to_html(classes='table table-striped table-bordered', index=False),
+        combined_df=combined_html,
+        verdict_df=verdict_html,
+        ratio_df=ratio_html,
         heatmap_content=heatmap_png_base64,  # Base64-encoded PNG image
         boxplot_content=boxplot_png_base64,  # Base64-encoded PNG image
-        p_value_table=p_value_table,
+        p_value_table=p_value_html,
         logo_base64=logo_base64,
         threshold=threshold,
         unclear_range=unclear_range,

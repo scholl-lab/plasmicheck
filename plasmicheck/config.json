@@ -1,83 +1,101 @@
 {
-    "required_tools": ["minimap2", "samtools"],
-    "required_python_packages": ["Bio", "pysam", "jinja2", "weasyprint", "matplotlib"],
-    "default_threshold": 0.8,
-    "unclear_range": {
-        "lower_bound": 0.6,
-        "upper_bound": 1.0
+  "required_tools": ["minimap2", "samtools"],
+  "required_python_packages": ["Bio", "pysam", "jinja2", "weasyprint", "matplotlib"],
+  "default_threshold": 0.8,
+  "unclear_range": {
+    "lower_bound": 0.6,
+    "upper_bound": 1.0
+  },
+  "shift_bases": 500,
+  "padding": 1000,
+  "scoring": {
+    "mate_bonus": 10,
+    "clipping_penalty": 1,
+    "mismatch_penalty": 1
+  },
+  "version": "0.22.0",
+  "alignment": {
+    "minimap2_threads": 8,
+    "samtools_threads": 4,
+    "fasta_extensions": [".fasta", ".fa", ".fna", ".fsa", ".ffn"]
+  },
+  "indexing": {
+    "minimap2_options": ["-d"],
+    "samtools_options": []
+  },
+  "conversion": {
+    "input_formats": ["genbank", "xdna"],
+    "output_formats": ["fasta", "genbank"]
+  },
+  "plot_summary": {
+    "figsize": {
+      "width": 10,
+      "height": 6
     },
-    "shift_bases": 500,
-    "padding": 1000,
-    "scoring": {
-        "mate_bonus": 10,
-        "clipping_penalty": 1,
-        "mismatch_penalty": 1
+    "colors": {
+      "not_contaminated": "lightblue",
+      "unclear": "orange",
+      "contaminated": "red"
     },
-    "version": "0.21.0",
-    "alignment": {
-        "minimap2_threads": 8,
-        "samtools_threads": 4,
-        "fasta_extensions": [".fasta", ".fa", ".fna", ".fsa", ".ffn"]
+    "linewidths": 0.5,
+    "linecolor": "gray",
+    "title": "Heatmap of Contamination Ratios by Sample and Plasmid",
+    "xticks_rotation": 45,
+    "xticks_ha": "right",
+    "yticks_rotation": 0,
+    "output_filename": "contamination_heatmap.png",
+    "plot_dimensions": {
+      "width": 1200,
+      "height": 1200
     },
-    "indexing": {
-        "minimap2_options": ["-d"],
-        "samtools_options": []
-    },
-    "conversion": {
-        "input_formats": ["genbank", "xdna"],
-        "output_formats": ["fasta", "genbank"]
-    },
-    "plot_summary": {
-        "figsize": {
-            "width": 10,
-            "height": 6
-        },
-        "colors": {
-            "not_contaminated": "lightblue",
-            "unclear": "orange",
-            "contaminated": "red"
-        },
-        "linewidths": 0.5,
-        "linecolor": "gray",
-        "title": "Heatmap of Contamination Ratios by Sample and Plasmid",
-        "xticks_rotation": 45,
-        "xticks_ha": "right",
-        "yticks_rotation": 0,
-        "output_filename": "contamination_heatmap.png",
-        "plot_dimensions": {
-            "width": 1200,
-            "height": 1200
-        },
-        "round_decimals": 3,
-        "log_offset": 1e-9,
-        "marker_style": {
-            "size": 8,
-            "opacity": 0.7
-        }
-    },
-    "plot_sample_report": {
-        "figsize": {
-            "width": 6,
-            "height": 4
-        },
-        "colors": {
-            "human": "blue",
-            "tied": "orange",
-            "plasmid": "red"
-        },
-        "title_box_plot": "Box Plot of Plasmid Scores by Assignment",
-        "title_scatter_plot": "Scatter Plot of Plasmid vs. Human Scores by Assignment",
-        "scatter_plot_legend_title": "Assigned To",
-        "scatter_plot_x_label": "Plasmid Score",
-        "scatter_plot_y_label": "Human Score",
-        "box_plot_x_label": "Assigned To",
-        "box_plot_y_label": "Plasmid Score",
-        "xticks_rotation": 0,
-        "output_box_plot_filename": "box_plot.png",
-        "output_scatter_plot_filename": "scatter_plot.png"
-    },
-    "paths": {
-        "template_dir": "templates",
-        "logo_path": "static/img/plasmicheck_logo_200px.png"
+    "round_decimals": 3,
+    "log_offset": 1e-9,
+    "marker_style": {
+      "size": 8,
+      "opacity": 0.7
     }
+  },
+  "plot_sample_report": {
+    "figsize": {
+      "width": 6,
+      "height": 4
+    },
+    "colors": {
+      "human": "blue",
+      "tied": "orange",
+      "plasmid": "red"
+    },
+    "title_box_plot": "Box Plot of Plasmid Scores by Assignment",
+    "title_scatter_plot": "Scatter Plot of Plasmid vs. Human Scores by Assignment",
+    "scatter_plot_legend_title": "Assigned To",
+    "scatter_plot_x_label": "Plasmid Score",
+    "scatter_plot_y_label": "Human Score",
+    "box_plot_x_label": "Assigned To",
+    "box_plot_y_label": "Plasmid Score",
+    "xticks_rotation": 0,
+    "output_box_plot_filename": "box_plot.png",
+    "output_scatter_plot_filename": "scatter_plot.png"
+  },
+  "paths": {
+    "template_dir": "templates",
+    "logo_path": "static/img/plasmicheck_logo_200px.png"
+  },
+  "table_sorting": {
+    "combined": {
+      "columns": ["Sample", "Plasmid"],
+      "ascending": [true, true]
+    },
+    "verdict": {
+      "columns": ["Sample", "Plasmid", "Value"],
+      "ascending": [true, true, false]
+    },
+    "ratio": {
+      "columns": ["Sample", "Value"],
+      "ascending": [true, false]
+    },
+    "p_value": {
+      "columns": ["Plasmid", "p_value_corrected"],
+      "ascending": [true, true]
+    }
+  }
 }
