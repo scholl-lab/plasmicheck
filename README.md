@@ -50,7 +50,7 @@ Alternatively, you can set up a Conda environment using the provided `plasmichec
 2. Create the Conda environment:
 
     ```bash
-    conda env create -f conda/plasmicheck_conda.yml
+    conda env create -f conda/conda/plasmicheck_full_conda.yml
     ```
 
 3. Activate the environment:
