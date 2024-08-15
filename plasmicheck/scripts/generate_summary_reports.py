@@ -257,7 +257,7 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
     p_values_df = pd.read_csv(p_value_table_filename, sep='\t')  # Load the p-value table
     p_values_df = apply_sorting(p_values_df, TABLE_SORTING.get('p_value'))
 
-    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    env = Environment(loader=FileSystemLoader(os.path.join('plasmicheck', TEMPLATE_DIR)))
     template = env.get_template('summary_template.html')
 
     # Read the Plotly HTML files content for interactive report
@@ -278,7 +278,7 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
     p_value_html = p_values_df.to_html(classes='table table-striped table-bordered', index=False)
 
     # Encode the logo
-    logo_base64 = encode_image_to_base64(LOGO_PATH)
+    logo_base64 = encode_image_to_base64(os.path.join('plasmicheck', LOGO_PATH))
 
     # Render interactive HTML report
     html_content_interactive = template.render(

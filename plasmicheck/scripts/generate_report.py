@@ -88,10 +88,10 @@ def extract_verdict_from_summary(summary_df):
 
 def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclear, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None"):
     logging.info("Generating report")
-    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    env = Environment(loader=FileSystemLoader(os.path.join('plasmicheck', TEMPLATE_DIR)))
     template = env.get_template('report_template.html')
 
-    logo_base64 = encode_image_to_base64(LOGO_PATH)
+    logo_base64 = encode_image_to_base64(os.path.join('plasmicheck', LOGO_PATH))
 
     verdict_color = "green" if "Sample is not contaminated with plasmid DNA" in verdict else "orange" if "Sample contamination status is unclear" in verdict else "red"
 

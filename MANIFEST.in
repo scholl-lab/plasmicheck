@@ -1,4 +1,4 @@
 include plasmicheck/config.json
 include plasmicheck/version.py
-include plasmicheck/static/img/plasmicheck_ascii.txt
+include plasmicheck/static/img/*.txt
 include plasmicheck/templates/*.html
