@@ -13,7 +13,7 @@
         "clipping_penalty": 1,
         "mismatch_penalty": 1
     },
-    "version": "0.18.0",
+    "version": "0.19.0",
     "alignment": {
         "minimap2_threads": 8,
         "samtools_threads": 4,
@@ -43,7 +43,17 @@
         "xticks_rotation": 45,
         "xticks_ha": "right",
         "yticks_rotation": 0,
-        "output_filename": "contamination_heatmap.png"
+        "output_filename": "contamination_heatmap.png",
+        "plot_dimensions": {
+            "width": 1200,
+            "height": 1200
+        },
+        "round_decimals": 3,
+        "log_offset": 1e-9,
+        "marker_style": {
+            "size": 8,
+            "opacity": 0.7
+        }
     },
     "plot_sample_report": {
         "figsize": {

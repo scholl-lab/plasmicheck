@@ -27,6 +27,12 @@ VERSION = config['version']
 TEMPLATE_DIR = config['paths']['template_dir']
 LOGO_PATH = config['paths']['logo_path']
 
+# Replace magic numbers with config values
+PLOT_DIMENSIONS = PLOT_CONFIG.get('plot_dimensions', {'width': 1200, 'height': 1200})
+ROUND_DECIMALS = PLOT_CONFIG.get('round_decimals', 3)
+LOG_OFFSET = PLOT_CONFIG.get('log_offset', 1e-9)
+MARKER_STYLE = PLOT_CONFIG.get('marker_style', {'size': 8, 'opacity': 0.7})
+
 # Setup logging for the libraries used in this script
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 logging.getLogger('seaborn').setLevel(logging.ERROR)
@@ -130,7 +136,7 @@ def calculate_and_plot_variations(ratio_df, output_dir):
 
     # Interactive boxplot using Plotly
     boxplot_df = ratio_df.copy()
-    boxplot_df['log_value'] = boxplot_df['Value'].apply(lambda x: np.log10(x + 1e-9))  # Avoid log(0) issues
+    boxplot_df['log_value'] = boxplot_df['Value'].apply(lambda x: np.log10(x + LOG_OFFSET))  # Avoid log(0) issues
     fig = px.box(
         boxplot_df, 
         x="Plasmid", 
@@ -142,7 +148,7 @@ def calculate_and_plot_variations(ratio_df, output_dir):
     fig.update_layout(yaxis_title="Log of Value")
     
     # Adjust the marker style to be similar to your example
-    fig.update_traces(marker=dict(size=8, opacity=0.7))
+    fig.update_traces(marker=MARKER_STYLE)
 
     plots_dir = os.path.join(output_dir, 'plots')
     if not os.path.exists(plots_dir):
@@ -176,15 +182,15 @@ def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plo
         verdict_df['Sample'] = verdict_df['Sample'].str.replace(substring_to_remove, '', regex=False)
 
     # Round the ratio data to 3 decimal places
-    ratio_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value").round(3)
+    ratio_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value").round(ROUND_DECIMALS)
     
     # Interactive heatmap using Plotly
     fig = px.imshow(
         ratio_data, 
         color_continuous_scale=px.colors.sequential.YlGnBu[::-1],  # Inverted color scale
         text_auto=True,
-        width=1200,  # Set the width of the plot
-        height=1200   # Set the height of the plot
+        width=PLOT_DIMENSIONS['width'],  # Set the width of the plot
+        height=PLOT_DIMENSIONS['height']   # Set the height of the plot
     )
     fig.update_layout(
         title=plot_config['title'],
