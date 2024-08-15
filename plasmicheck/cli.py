@@ -29,7 +29,7 @@ def setup_logging(log_level=logging.INFO, log_file=None):
         logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
 def print_logo():
-    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'img', 'plasmicheck_ascii.txt')
+    logo_path = os.path.join('plasmicheck', 'static', 'img', 'plasmicheck_ascii.txt')
     with open(logo_path, 'r') as f:
         print(f.read())
 

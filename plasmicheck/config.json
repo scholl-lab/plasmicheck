@@ -76,8 +76,8 @@
     "output_scatter_plot_filename": "scatter_plot.png"
   },
   "paths": {
-    "template_dir": "templates",
-    "logo_path": "static/img/plasmicheck_logo_200px.png"
+    "template_dir": "plasmicheck/templates",
+    "logo_path": "plasmicheck/static/img/plasmicheck_logo_200px.png"
   },
   "table_sorting": {
     "combined": {
