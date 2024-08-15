@@ -104,5 +104,9 @@
     "fasta": [".fasta", ".fa", ".fna", ".fsa", ".ffn"],
     "genbank": [".gb", ".gbk", ".genbank"],
     "xdna": ".xdna"
+  },
+  "retry_settings": {
+    "retries": 3,
+    "delay": 5
   }
 }

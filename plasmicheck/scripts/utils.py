@@ -6,6 +6,7 @@ import sys
 import subprocess
 import tarfile
 import json
+import time  # Added for retry delay
 from datetime import datetime
 
 # Load configuration from JSON file
@@ -52,15 +53,27 @@ def setup_logging(log_level=logging.INFO, log_file=None):
         logger.setLevel(log_level)
 
 def run_command(command):
-    """Run a command using subprocess and log the output."""
-    logging.info(f"Running command: {command}")
-    try:
-        result = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        logging.debug(result.stdout)
-        logging.error(result.stderr)
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Command failed with exit code {e.returncode}: {e.stderr}")
-        raise
+    """Run a command using subprocess with retry logic and log the output."""
+    # Fetch retry settings from config or use default values
+    retries = config.get('retry_settings', {}).get('retries', 3)
+    delay = config.get('retry_settings', {}).get('delay', 5)
+    
+    for attempt in range(retries):
+        logging.info(f"Running command: {command} (Attempt {attempt + 1}/{retries})")
+        try:
+            result = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            logging.debug(result.stdout)
+            if result.stderr:
+                logging.warning(result.stderr)
+            return result  # Exit after successful run
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Command failed with exit code {e.returncode}: {e.stderr}")
+            if attempt < retries - 1:
+                logging.info(f"Retrying command in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                logging.error(f"Command failed after {retries} attempts.")
+                raise
 
 def archive_output_folder(output_folder, archive_name=None):
     """Archive and compress the output folder into a .tar.gz file."""

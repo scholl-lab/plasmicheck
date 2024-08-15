@@ -19,20 +19,29 @@ def align_reads(reference_index, input_file, output_bam, alignment_type, fastq2=
         raise ValueError("alignment_type must be 'human' or 'plasmid'")
 
     if input_file.endswith('.bam'):
-        command = f"samtools fasta {input_file} | minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} - | samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
+        command = (
+            f"samtools fasta {input_file} | minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} - "
+            f"| samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
+        )
     elif input_file.endswith('.fastq'):
         if fastq2:
-            command = f"minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} {input_file} {fastq2} | samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
+            command = (
+                f"minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} {input_file} {fastq2} "
+                f"| samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
+            )
         else:
-            command = f"minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} {input_file} | samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
+            command = (
+                f"minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} {input_file} "
+                f"| samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
+            )
     else:
         logging.error(f"Unsupported input file type: {input_file}")
         raise ValueError("Unsupported input file type. Must be .bam, .fastq, or paired FASTQ files.")
 
-    # Run the alignment command
+    # Run the alignment command with retry logic
     run_command(command)
 
-    # Generate the BAI index
+    # Generate the BAI index with retry logic
     run_command(f"samtools index {output_bam}")
 
     logging.info(f"Alignment completed successfully for {input_file}, output written to {output_bam}")

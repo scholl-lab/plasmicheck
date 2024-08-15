@@ -136,7 +136,6 @@ def extract_plasmid_cDNA_positions(plasmid_fasta, bam_file, output_file):
     
     logging.info(f"cDNA positions and INSERT_REGION saved to {output_file}")
 
-
 if __name__ == "__main__":
     import argparse
 
