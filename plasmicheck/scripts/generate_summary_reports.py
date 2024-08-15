@@ -4,6 +4,7 @@ import json
 import logging
 import base64
 import plotly.express as px
+import matplotlib.pyplot as plt
 import scipy.stats as stats
 from statsmodels.stats.multitest import multipletests
 from jinja2 import Environment, FileSystemLoader
@@ -130,8 +131,12 @@ def calculate_and_plot_variations(ratio_df, output_dir):
     # Apply FDR correction
     p_values_df['p_value_corrected'] = multipletests(p_values_df['p_value'], method='fdr_bh')[1]
 
-    # Save p-values as a DataFrame
-    p_value_table_filename = os.path.join(output_dir, 'p_value_table.tsv')
+    # Save p-values as a DataFrame in the data directory
+    data_dir = os.path.join(output_dir, 'data')
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    
+    p_value_table_filename = os.path.join(data_dir, 'p_value_table.tsv')
     p_values_df.to_csv(p_value_table_filename, sep='\t', index=False)
 
     # Interactive boxplot using Plotly
@@ -156,9 +161,14 @@ def calculate_and_plot_variations(ratio_df, output_dir):
 
     boxplot_filename = os.path.join(plots_dir, 'boxplot_contamination_ratios.html')
     fig.write_html(boxplot_filename)
+
+    # Save non-interactive PNG plot
+    boxplot_filename_png = os.path.join(plots_dir, 'boxplot_contamination_ratios.png')
+    fig.write_image(boxplot_filename_png)
     
     logging.info("Boxplots and statistical calculations completed.")
-    return boxplot_filename, p_value_table_filename, p_values_df
+    
+    return boxplot_filename, boxplot_filename_png, p_value_table_filename, p_values_df
 
 def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plot_config, substring_to_remove=None):
     logging.info("Creating plots")
@@ -198,23 +208,33 @@ def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plo
         yaxis_title="Sample",
     )
 
-    plot_filename = os.path.join(plots_dir, plot_config['output_filename'].replace('.png', '.html'))
-    fig.write_html(plot_filename)
+    heatmap_filename_interactive = os.path.join(plots_dir, plot_config['output_filename'].replace('.png', '.html'))
+    heatmap_filename_png = os.path.join(plots_dir, plot_config['output_filename'])
 
-    return plot_filename, combined_df, verdict_df, ratio_df
+    # Save interactive HTML plot
+    fig.write_html(heatmap_filename_interactive)
 
-def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename, boxplot_filename, p_value_table_filename, output_folder, threshold, unclear_range, command_line):
-    logging.info("Generating summary report")
-    # Load the template
+    # Save non-interactive PNG plot
+    fig.write_image(heatmap_filename_png)
+
+    return heatmap_filename_interactive, heatmap_filename_png, combined_df, verdict_df, ratio_df
+
+def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interactive, heatmap_filename_png, boxplot_filename_interactive, boxplot_filename_png, p_value_table_filename, output_folder, threshold, unclear_range, command_line):
+    logging.info("Generating summary reports")
+
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template('summary_template.html')
 
-    # Read the Plotly HTML files content
-    with open(heatmap_filename, 'r') as f:
+    # Read the Plotly HTML files content for interactive report
+    with open(heatmap_filename_interactive, 'r') as f:
         heatmap_html_content = f.read()
 
-    with open(boxplot_filename, 'r') as f:
+    with open(boxplot_filename_interactive, 'r') as f:
         boxplot_html_content = f.read()
+
+    # Read the PNG files as base64 for non-interactive report
+    heatmap_png_base64 = encode_image_to_base64(heatmap_filename_png)
+    boxplot_png_base64 = encode_image_to_base64(boxplot_filename_png)
 
     # Read p-value table
     p_value_table = pd.read_csv(p_value_table_filename, sep='\t').to_html(classes='table table-striped table-bordered', index=False)
@@ -222,33 +242,56 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename, boxplot
     # Encode the logo
     logo_base64 = encode_image_to_base64(LOGO_PATH)
 
-    # Render the template
-    html_content = template.render(
+    # Render interactive HTML report
+    html_content_interactive = template.render(
         combined_df=combined_df.to_html(classes='table table-striped table-bordered', index=False),
         verdict_df=verdict_df.to_html(classes='table table-striped table-bordered', index=False),
         ratio_df=ratio_df.to_html(classes='table table-striped table-bordered', index=False),
-        heatmap_html_content=heatmap_html_content,  # Include the Plotly HTML content directly
-        boxplot_html_content=boxplot_html_content,  # Include the Plotly HTML content directly
-        p_value_table=p_value_table,  # Include the p-value table
-        logo_base64=logo_base64,  # Embed the logo as base64 string
+        heatmap_content=heatmap_html_content,  # Plotly HTML content
+        boxplot_content=boxplot_html_content,  # Plotly HTML content
+        p_value_table=p_value_table,
+        logo_base64=logo_base64,
         threshold=threshold,
         unclear_range=unclear_range,
         version=VERSION,
         run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        command_line=command_line
+        command_line=command_line,
+        interactive=True  # Pass True for interactive report
     )
 
-    # Save HTML report
-    html_report = os.path.join(output_folder, 'summary_report.html')
-    with open(html_report, 'w') as f:
-        f.write(html_content)
+    # Render non-interactive HTML report
+    html_content_non_interactive = template.render(
+        combined_df=combined_df.to_html(classes='table table-striped table-bordered', index=False),
+        verdict_df=verdict_df.to_html(classes='table table-striped table-bordered', index=False),
+        ratio_df=ratio_df.to_html(classes='table table-striped table-bordered', index=False),
+        heatmap_content=heatmap_png_base64,  # Base64-encoded PNG image
+        boxplot_content=boxplot_png_base64,  # Base64-encoded PNG image
+        p_value_table=p_value_table,
+        logo_base64=logo_base64,
+        threshold=threshold,
+        unclear_range=unclear_range,
+        version=VERSION,
+        run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        command_line=command_line,
+        interactive=False  # Pass False for non-interactive report
+    )
 
-    # Convert HTML to PDF
-    HTML(html_report).write_pdf(os.path.join(output_folder, 'summary_report.pdf'))
+    # Save interactive HTML report
+    html_report_interactive = os.path.join(output_folder, 'summary_report_interactive.html')
+    with open(html_report_interactive, 'w') as f:
+        f.write(html_content_interactive)
+
+    # Save non-interactive HTML report
+    html_report_non_interactive = os.path.join(output_folder, 'summary_report_non_interactive.html')
+    with open(html_report_non_interactive, 'w') as f:
+        f.write(html_content_non_interactive)
+
+    # Convert non-interactive HTML to PDF
+    HTML(html_report_non_interactive).write_pdf(os.path.join(output_folder, 'summary_report.pdf'))
 
 def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLEAR_RANGE, substring_to_remove=None):
     reads_df, summary_df = read_compare_outputs(input_dir)
-    plot_filename, combined_df, verdict_df, ratio_df = create_plots(
+    heatmap_filename_interactive, heatmap_filename_png, combined_df, verdict_df, ratio_df = create_plots(
         reads_df, summary_df, output_dir, threshold, unclear_range, PLOT_CONFIG, substring_to_remove
     )
 
@@ -256,14 +299,16 @@ def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLE
     save_tables_as_tsv(combined_df, verdict_df, ratio_df, output_dir)
 
     # Calculate and plot variations
-    boxplot_filename, p_value_table_filename, stats_results = calculate_and_plot_variations(ratio_df, output_dir)
+    boxplot_filename_interactive, boxplot_filename_png, p_value_table_filename, stats_results = calculate_and_plot_variations(ratio_df, output_dir)
 
     generate_report(
         combined_df, 
         verdict_df, 
         ratio_df, 
-        plot_filename, 
-        boxplot_filename,
+        heatmap_filename_interactive, 
+        heatmap_filename_png,
+        boxplot_filename_interactive, 
+        boxplot_filename_png,
         p_value_table_filename,
         output_dir, 
         threshold, 

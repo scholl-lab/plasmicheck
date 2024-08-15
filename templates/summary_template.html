@@ -20,11 +20,19 @@
 
     <h2>Plots</h2>
     <div class="plot">
-        {{ heatmap_html_content|safe }}
+        {% if interactive %}
+            {{ heatmap_content|safe }}
+        {% else %}
+            <img src="{{ heatmap_content }}" alt="Heatmap">
+        {% endif %}
     </div>
 
     <div class="plot">
-        {{ boxplot_html_content|safe }}
+        {% if interactive %}
+            {{ boxplot_content|safe }}
+        {% else %}
+            <img src="{{ boxplot_content }}" alt="Boxplot">
+        {% endif %}
     </div>
 
     <h2>Summary</h2>
