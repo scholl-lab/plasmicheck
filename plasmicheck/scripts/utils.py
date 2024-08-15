@@ -4,6 +4,8 @@ import re
 import logging
 import sys
 import subprocess
+import tarfile
+from datetime import datetime
 
 def calculate_md5(file_path):
     """Calculate and return the MD5 checksum of a file."""
@@ -51,3 +53,34 @@ def run_command(command):
     except subprocess.CalledProcessError as e:
         logging.error(f"Command failed with exit code {e.returncode}: {e.stderr}")
         raise
+
+def archive_output_folder(output_folder, archive_name=None):
+    """
+    Archive and compress the output folder into a .tar.gz file.
+
+    Args:
+        output_folder (str): The path to the output folder to be archived.
+        archive_name (str, optional): The name of the archive file. If None, a name will be generated based on the
+                                      folder structure and current date.
+    """
+    # Extract the folder structure and create a default archive name if not provided
+    if not archive_name:
+        folder_parts = output_folder.strip(os.sep).split(os.sep)
+        if len(folder_parts) >= 2:
+            sample_name, plasmid_name = folder_parts[-2], folder_parts[-1]
+        else:
+            sample_name, plasmid_name = "sample", "plasmid"
+        
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        archive_name = f"{sample_name}.{plasmid_name}.{current_date}.tar.gz"
+
+    # Define the full path to the archive file
+    archive_path = os.path.join(os.path.dirname(output_folder), archive_name)
+
+    logging.info(f"Archiving output folder {output_folder} to {archive_path}")
+
+    with tarfile.open(archive_path, "w:gz") as tar:
+        tar.add(output_folder, arcname=os.path.basename(output_folder))
+
+    logging.info(f"Output folder archived successfully: {archive_path}")
+    return archive_path

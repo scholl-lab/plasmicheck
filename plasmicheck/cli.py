@@ -134,6 +134,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
     parser_pipeline.add_argument("-t", "--threshold", type=float, default=DEFAULT_THRESHOLD, help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})")
     parser_pipeline.add_argument("-md5", "--md5_level", type=str, choices=["all", "input", "intermediate", "output"], default="intermediate", help="Level of MD5 checksum calculation (default: intermediate)")
     parser_pipeline.add_argument("--cDNA_output", help="Output file for cDNA start and end positions in the plasmid reference", default=None)
+    parser_pipeline.add_argument("--archive_output", action="store_true", help="Archive and compress the output folder into a .tar.gz file")
     parser_pipeline.add_argument("--log-level", help="Set the logging level", default="INFO")
     parser_pipeline.add_argument("--log-file", help="Set the log output file", default=None)
 
@@ -186,7 +187,7 @@ def main(DEFAULT_THRESHOLD=DEFAULT_THRESHOLD):
             extract_plasmid_cDNA_positions(args.plasmid_fasta, args.output_bam, args.cDNA_output)
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline
-        run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold, args.md5_level)
+        run_pipeline(args.human_fasta, args.plasmid_files, args.sequencing_files, args.output_folder, args.keep_intermediate, args.shift_bases, args.generate_shifted, args.overwrite, args.padding, args.threshold, args.md5_level, args.cDNA_output, args.archive_output)
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
         command_line = ' '.join(sys.argv)
