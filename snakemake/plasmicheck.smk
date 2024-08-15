@@ -38,7 +38,7 @@ rule run_plasmicheck_pipeline:
         plasmid = lambda wildcards: f"{jobs[wildcards.bam_basename + '__' + wildcards.plasmid_basename]['plasmid']}",
     output:
         log = f"logs/{{bam_basename}}__{{plasmid_basename}}.log",
-    threads: 12
+    threads: 8
     resources:
         mem_mb = get_mem_from_threads,
         time = '72:00:00',

@@ -1,3 +1,3 @@
 # plasmicheck/version.py
 
-__version__ = "0.25.3"
+__version__ = "0.25.4"

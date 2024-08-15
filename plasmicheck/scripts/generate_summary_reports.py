@@ -60,7 +60,7 @@ def find_tsv_files(input_dir, pattern):
     return tsv_files
 
 
-def read_compare_outputs(input_dir):
+def read_compare_outputs(input_dir, substring_to_remove=None):
     logging.info(f"Reading compare outputs from {input_dir}")
     reads_assignment_files = find_tsv_files(input_dir, '.reads_assignment.tsv')
     summary_files = find_tsv_files(input_dir, '.summary.tsv')
@@ -73,7 +73,12 @@ def read_compare_outputs(input_dir):
     for file in reads_assignment_files:
         sample_name = os.path.basename(os.path.dirname(os.path.dirname(file)))
         plasmid_name = os.path.basename(os.path.dirname(file))
-        df = pd.read_csv(file, sep='\t')
+        
+        # Remove the substring from the sample name if provided
+        if substring_to_remove:
+            sample_name = sample_name.replace(substring_to_remove, '')
+
+        df = pd.read_csv(file, sep='\t', low_memory=False)  # Disable low_memory mode to avoid DtypeWarning
         df['Sample'] = sample_name
         df['Plasmid'] = plasmid_name
         reads_df_list.append(df)
@@ -82,7 +87,12 @@ def read_compare_outputs(input_dir):
     for file in summary_files:
         sample_name = os.path.basename(os.path.dirname(os.path.dirname(file)))
         plasmid_name = os.path.basename(os.path.dirname(file))
-        df = pd.read_csv(file, sep='\t')
+        
+        # Remove the substring from the sample name if provided
+        if substring_to_remove:
+            sample_name = sample_name.replace(substring_to_remove, '')
+
+        df = pd.read_csv(file, sep='\t', low_memory=False)  # Disable low_memory mode to avoid DtypeWarning
         df['Sample'] = sample_name
         df['Plasmid'] = plasmid_name
         df = df.rename(columns={"Count": "Value"})  # Rename Count to Value
@@ -92,7 +102,6 @@ def read_compare_outputs(input_dir):
     summary_df = pd.concat(summary_df_list, ignore_index=True)
     
     return reads_df, summary_df
-
 
 def apply_sorting(df, sorting_config):
     """Apply sorting to a DataFrame based on the given sorting configuration."""
@@ -177,7 +186,13 @@ def plot_boxplot(boxplot_data, output_dir):
         hover_data={'Sample': True, 'Value': True, 'log_value': False},
         title="Contamination Ratios by Plasmid (Log Scale)"
     )
-    fig.update_layout(yaxis_title="Log of Value")
+    
+    # Increase the height of the boxplot
+    fig.update_layout(
+        yaxis_title="Log of Value",
+        height=800  # Adjust this value to make the boxplot taller
+    )
+    
     fig.update_traces(marker=MARKER_STYLE)
 
     plots_dir = os.path.join(output_dir, 'plots')
@@ -194,24 +209,38 @@ def plot_boxplot(boxplot_data, output_dir):
     
     return boxplot_filename, boxplot_filename_png
 
-
 def plot_heatmap(ratio_df, output_dir, threshold, unclear_range, plot_config):
     """Generate and save heatmap for contamination ratios by plasmid."""
     logging.info("Generating heatmap for contamination ratios.")
 
+    # Convert the 'Value' column to numeric, coercing errors to NaN
+    ratio_df['Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
+    
+    # Pivot the DataFrame for the heatmap
     ratio_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value").round(ROUND_DECIMALS)
 
+    # Define a custom color scale using Plotly's built-in scaling
+    color_scale = [
+        [0.0, plot_config['colors']['not_contaminated']],  # Start
+        [unclear_range['lower_bound'] / ratio_data.max().max(), plot_config['colors']['unclear']],  # Lower bound
+        [unclear_range['upper_bound'] / ratio_data.max().max(), plot_config['colors']['unclear']],  # Upper bound
+        [1.0, plot_config['colors']['contaminated']]  # End
+    ]
+
     fig = px.imshow(
-        ratio_data, 
-        color_continuous_scale=px.colors.sequential.YlGnBu[::-1],  
-        text_auto=True,
-        width=PLOT_DIMENSIONS['width'], 
+        ratio_data,
+        color_continuous_scale=color_scale,
+        width=PLOT_DIMENSIONS['width'],
         height=PLOT_DIMENSIONS['height']
     )
+    
+    # Update layout for axis labels and title
     fig.update_layout(
         title=plot_config['title'],
         xaxis_title="Plasmid",
         yaxis_title="Sample",
+        xaxis=dict(tickangle=plot_config['xticks_rotation'], tickfont=dict(size=8), tickmode='linear'),
+        yaxis=dict(tickfont=dict(size=8))
     )
 
     plots_dir = os.path.join(output_dir, 'plots')
@@ -227,7 +256,6 @@ def plot_heatmap(ratio_df, output_dir, threshold, unclear_range, plot_config):
     logging.info("Heatmap generated.")
     
     return heatmap_filename_interactive, heatmap_filename_png
-
 
 # Report Generation Functions
 def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interactive, heatmap_filename_png, boxplot_filename_interactive, boxplot_filename_png, p_value_table_filename, output_folder, threshold, unclear_range, command_line):
@@ -312,7 +340,7 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
 
 
 def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLEAR_RANGE, substring_to_remove=None):
-    reads_df, summary_df = read_compare_outputs(input_dir)
+    reads_df, summary_df = read_compare_outputs(input_dir, substring_to_remove=substring_to_remove)
 
     # Calculate variations
     boxplot_data, p_values_df = calculate_variations(summary_df[summary_df['Category'] == 'Ratio'])
@@ -351,4 +379,4 @@ if __name__ == "__main__":
 
     setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)  # Setup logging with arguments
 
-    main(args.input_dir, args.output_dir, args.threshold, unclear_range=args.substring_to_remove)
+    main(args.input_dir, args.output_dir, args.threshold, unclear_range=UNCLEAR_RANGE, substring_to_remove=args.substring_to_remove)

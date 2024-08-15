@@ -44,8 +44,8 @@
     "yticks_rotation": 0,
     "output_filename": "contamination_heatmap.png",
     "plot_dimensions": {
-      "width": 1200,
-      "height": 1200
+      "width": 1400,
+      "height": 1400
     },
     "round_decimals": 3,
     "log_offset": 1e-9,
