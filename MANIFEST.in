@@ -1,0 +1,4 @@
+include plasmicheck/config.json
+include plasmicheck/version.py
+recursive-include plasmicheck/templates *
+recursive-include plasmicheck/static *

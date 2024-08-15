@@ -5,6 +5,9 @@ import json
 import os
 import logging
 
+# Import the version from version.py
+from .version import __version__ as VERSION
+
 # Load configuration from JSON file
 config_path = os.path.join(os.path.dirname(__file__), 'config.json')
 with open(config_path, 'r') as config_file:
@@ -13,7 +16,6 @@ with open(config_path, 'r') as config_file:
 REQUIRED_TOOLS = config['required_tools']
 REQUIRED_PYTHON_PACKAGES = config['required_python_packages']
 DEFAULT_THRESHOLD = config['default_threshold']
-VERSION = config['version']
 
 def setup_logging(log_level=logging.INFO, log_file=None):
     """Set up logging configuration."""

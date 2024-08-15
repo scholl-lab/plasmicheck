@@ -12,6 +12,9 @@ from weasyprint import HTML
 from datetime import datetime
 import numpy as np
 
+# Import the version from version.py
+from plasmicheck.version import __version__ as VERSION
+
 from .utils import setup_logging  # Import setup_logging function
 
 # Resolve the path to config.json in the parent directory of the current script
@@ -24,7 +27,6 @@ with open(config_path, 'r') as config_file:
 DEFAULT_THRESHOLD = config['default_threshold']
 UNCLEAR_RANGE = config['unclear_range']
 PLOT_CONFIG = config['plot_summary']
-VERSION = config['version']
 TEMPLATE_DIR = config['paths']['template_dir']
 LOGO_PATH = config['paths']['logo_path']
 TABLE_SORTING = config['table_sorting']

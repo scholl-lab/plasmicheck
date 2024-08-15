@@ -1,14 +1,16 @@
-import json
+import os
 from setuptools import setup, find_packages
 
-# Load configuration from JSON file
-with open('plasmicheck/config.json', 'r') as config_file:
-    config = json.load(config_file)
+# Load version from version.py
+version = {}
+with open(os.path.join('plasmicheck', 'version.py')) as f:
+    exec(f.read(), version)
 
 setup(
     name="plasmicheck",
-    version=config['version'],
+    version=version['__version__'],  # Use the version from version.py
     packages=find_packages(),
+    include_package_data=True,
     install_requires=[
         "biopython>=1.84",
         "pysam>=0.22.1",
@@ -46,5 +48,4 @@ setup(
             "flake8",
         ],
     },
-    include_package_data=True,
 )
