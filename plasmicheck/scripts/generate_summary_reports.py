@@ -89,16 +89,27 @@ def read_compare_outputs(input_dir):
     
     return reads_df, summary_df
 
-def save_tables_as_tsv(combined_df, verdict_df, ratio_df, output_dir):
-    """Save the combined, verdict, and ratio dataframes as TSV files."""
+def save_tables_as_tsv_and_excel(combined_df, verdict_df, ratio_df, p_values_df, output_dir):
+    """Save the combined, verdict, ratio, and p-value dataframes as TSV and Excel files."""
     data_dir = os.path.join(output_dir, 'data')
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
 
+    # Save TSV files
     combined_df.to_csv(os.path.join(data_dir, 'combined_table.tsv'), sep='\t', index=False)
     verdict_df.to_csv(os.path.join(data_dir, 'verdict_table.tsv'), sep='\t', index=False)
     ratio_df.to_csv(os.path.join(data_dir, 'ratio_table.tsv'), sep='\t', index=False)
-    logging.info("TSV files have been saved.")
+    p_values_df.to_csv(os.path.join(data_dir, 'p_value_table.tsv'), sep='\t', index=False)
+
+    # Save Excel file with multiple sheets
+    excel_file = os.path.join(data_dir, 'summary_report_tables.xlsx')
+    with pd.ExcelWriter(excel_file, engine='xlsxwriter') as writer:
+        combined_df.to_excel(writer, sheet_name='Combined', index=False)
+        verdict_df.to_excel(writer, sheet_name='Verdicts', index=False)
+        ratio_df.to_excel(writer, sheet_name='Ratios', index=False)
+        p_values_df.to_excel(writer, sheet_name='P-Values', index=False)
+    
+    logging.info("TSV and Excel files have been saved.")
 
 def calculate_and_plot_variations(ratio_df, output_dir):
     """Calculate variations and generate boxplots for contamination ratios by plasmid."""
@@ -295,11 +306,11 @@ def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLE
         reads_df, summary_df, output_dir, threshold, unclear_range, PLOT_CONFIG, substring_to_remove
     )
 
-    # Save the tables as TSV
-    save_tables_as_tsv(combined_df, verdict_df, ratio_df, output_dir)
-
-    # Calculate and plot variations
+    # Save the tables as TSV and Excel
     boxplot_filename_interactive, boxplot_filename_png, p_value_table_filename, stats_results = calculate_and_plot_variations(ratio_df, output_dir)
+
+    # Save all tables to both TSV and Excel
+    save_tables_as_tsv_and_excel(combined_df, verdict_df, ratio_df, stats_results, output_dir)
 
     generate_report(
         combined_df, 
