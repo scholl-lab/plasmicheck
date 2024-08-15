@@ -2,7 +2,7 @@ import json
 from setuptools import setup, find_packages
 
 # Load configuration from JSON file
-with open('config.json', 'r') as config_file:
+with open('plasmicheck/config.json', 'r') as config_file:
     config = json.load(config_file)
 
 setup(
