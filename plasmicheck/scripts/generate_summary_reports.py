@@ -17,21 +17,18 @@ from plasmicheck.version import __version__ as VERSION
 
 from .utils import setup_logging  # Import setup_logging function
 
-# Resolve the path to config.json in the parent directory of the current script
-config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
-
 # Load configuration from JSON file
+config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
 with open(config_path, 'r') as config_file:
     config = json.load(config_file)
 
+# Constants from config
 DEFAULT_THRESHOLD = config['default_threshold']
 UNCLEAR_RANGE = config['unclear_range']
 PLOT_CONFIG = config['plot_summary']
 TEMPLATE_DIR = config['paths']['template_dir']
 LOGO_PATH = config['paths']['logo_path']
 TABLE_SORTING = config['table_sorting']
-
-# Replace magic numbers with config values
 PLOT_DIMENSIONS = PLOT_CONFIG.get('plot_dimensions', {'width': 1200, 'height': 1200})
 ROUND_DECIMALS = PLOT_CONFIG.get('round_decimals', 3)
 LOG_OFFSET = PLOT_CONFIG.get('log_offset', 1e-9)
@@ -44,11 +41,14 @@ logging.getLogger('jinja2').setLevel(logging.ERROR)
 logging.getLogger('weasyprint').setLevel(logging.ERROR)
 logging.getLogger('fontTools').setLevel(logging.ERROR)
 
+
+# Helper Functions
 def encode_image_to_base64(image_path):
     logging.info(f"Encoding image {image_path} to base64")
     with open(image_path, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
     return f"data:image/png;base64,{encoded_string}"
+
 
 def find_tsv_files(input_dir, pattern):
     """Recursively find all tsv files matching the pattern in the input directory."""
@@ -58,6 +58,7 @@ def find_tsv_files(input_dir, pattern):
             if file.endswith(pattern):
                 tsv_files.append(os.path.join(root, file))
     return tsv_files
+
 
 def read_compare_outputs(input_dir):
     logging.info(f"Reading compare outputs from {input_dir}")
@@ -92,6 +93,7 @@ def read_compare_outputs(input_dir):
     
     return reads_df, summary_df
 
+
 def apply_sorting(df, sorting_config):
     """Apply sorting to a DataFrame based on the given sorting configuration."""
     if sorting_config:
@@ -99,6 +101,7 @@ def apply_sorting(df, sorting_config):
         ascending = sorting_config.get("ascending", [True] * len(columns))
         df = df.sort_values(by=columns, ascending=ascending)
     return df
+
 
 def save_tables_as_tsv_and_excel(combined_df, verdict_df, ratio_df, p_values_df, output_dir):
     """Save the combined, verdict, ratio, and p-value dataframes as TSV and Excel files."""
@@ -128,23 +131,22 @@ def save_tables_as_tsv_and_excel(combined_df, verdict_df, ratio_df, p_values_df,
     
     logging.info("TSV and Excel files have been saved.")
 
-def calculate_and_plot_variations(ratio_df, output_dir):
-    """Calculate variations and generate boxplots for contamination ratios by plasmid."""
-    logging.info("Calculating variations and generating boxplots.")
-    
-    # Convert the ratio_df to the appropriate format
+
+# Data Manipulation Functions
+def calculate_variations(ratio_df):
+    """Calculate p-values and apply FDR correction for contamination ratios by plasmid."""
+    logging.info("Calculating variations for contamination ratios.")
+
     ratio_df['Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
     boxplot_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value")
-    
+
     # Drop NaNs
     boxplot_data = boxplot_data.dropna(how='all', axis=1)
 
-    # Calculate p-values and FDR correction
     p_values_list = []
     for plasmid in boxplot_data.columns:
         data = boxplot_data[plasmid].dropna()
         if len(data) > 1:
-            # Compare each sample to the mean of others
             for i in range(len(data)):
                 t_stat, p_value = stats.ttest_1samp(data.drop(data.index[i]), data.iloc[i])
                 p_values_list.append({
@@ -153,34 +155,29 @@ def calculate_and_plot_variations(ratio_df, output_dir):
                     'p_value': p_value,
                 })
 
-    # Convert p-values list to DataFrame
     p_values_df = pd.DataFrame(p_values_list)
-
-    # Apply FDR correction
     p_values_df['p_value_corrected'] = multipletests(p_values_df['p_value'], method='fdr_bh')[1]
 
-    # Save p-values as a DataFrame in the data directory
-    data_dir = os.path.join(output_dir, 'data')
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-    
-    p_value_table_filename = os.path.join(data_dir, 'p_value_table.tsv')
-    p_values_df.to_csv(p_value_table_filename, sep='\t', index=False)
+    return boxplot_data, p_values_df
 
-    # Interactive boxplot using Plotly
-    boxplot_df = ratio_df.copy()
-    boxplot_df['log_value'] = boxplot_df['Value'].apply(lambda x: np.log10(x + LOG_OFFSET))  # Avoid log(0) issues
+
+# Plotting Functions
+def plot_boxplot(boxplot_data, output_dir):
+    """Generate and save boxplots for contamination ratios by plasmid."""
+    logging.info("Generating boxplots for contamination ratios.")
+
+    boxplot_df = pd.melt(boxplot_data.reset_index(), id_vars=['Sample'], var_name='Plasmid', value_name='Value')
+    boxplot_df['log_value'] = boxplot_df['Value'].apply(lambda x: np.log10(x + LOG_OFFSET))
+
     fig = px.box(
         boxplot_df, 
         x="Plasmid", 
         y="log_value", 
         points="all", 
-        hover_data={'Sample': True, 'Value': True, 'log_value': False},  # Show original Value and hide log_value on hover
+        hover_data={'Sample': True, 'Value': True, 'log_value': False},
         title="Contamination Ratios by Plasmid (Log Scale)"
     )
     fig.update_layout(yaxis_title="Log of Value")
-    
-    # Adjust the marker style to be similar to your example
     fig.update_traces(marker=MARKER_STYLE)
 
     plots_dir = os.path.join(output_dir, 'plots')
@@ -190,45 +187,26 @@ def calculate_and_plot_variations(ratio_df, output_dir):
     boxplot_filename = os.path.join(plots_dir, 'boxplot_contamination_ratios.html')
     fig.write_html(boxplot_filename)
 
-    # Save non-interactive PNG plot
     boxplot_filename_png = os.path.join(plots_dir, 'boxplot_contamination_ratios.png')
     fig.write_image(boxplot_filename_png)
     
-    logging.info("Boxplots and statistical calculations completed.")
+    logging.info("Boxplots generated.")
     
-    return boxplot_filename, boxplot_filename_png, p_value_table_filename, p_values_df
+    return boxplot_filename, boxplot_filename_png
 
-def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plot_config, substring_to_remove=None):
-    logging.info("Creating plots")
-    plots_dir = os.path.join(output_dir, 'plots')
-    if not os.path.exists(plots_dir):
-        os.makedirs(plots_dir)
-    
-    # Split summary dataframe into separate dataframes for different categories
-    combined_df = summary_df[summary_df['Category'].isin(['Plasmid', 'Human', 'Tied'])].copy()
-    verdict_df = summary_df[summary_df['Category'] == 'Verdict'].copy()
-    ratio_df = summary_df[summary_df['Category'] == 'Ratio'].copy()
 
-    # Ensure correct data types for combined and ratio dataframes
-    combined_df.loc[:, 'Value'] = pd.to_numeric(combined_df['Value'], errors='coerce')
-    ratio_df.loc[:, 'Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
+def plot_heatmap(ratio_df, output_dir, threshold, unclear_range, plot_config):
+    """Generate and save heatmap for contamination ratios by plasmid."""
+    logging.info("Generating heatmap for contamination ratios.")
 
-    # Remove the specified substring from sample names
-    if substring_to_remove:
-        ratio_df['Sample'] = ratio_df['Sample'].str.replace(substring_to_remove, '', regex=False)
-        combined_df['Sample'] = combined_df['Sample'].str.replace(substring_to_remove, '', regex=False)
-        verdict_df['Sample'] = verdict_df['Sample'].str.replace(substring_to_remove, '', regex=False)
-
-    # Round the ratio data to 3 decimal places
     ratio_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value").round(ROUND_DECIMALS)
-    
-    # Interactive heatmap using Plotly
+
     fig = px.imshow(
         ratio_data, 
-        color_continuous_scale=px.colors.sequential.YlGnBu[::-1],  # Inverted color scale
+        color_continuous_scale=px.colors.sequential.YlGnBu[::-1],  
         text_auto=True,
-        width=PLOT_DIMENSIONS['width'],  # Set the width of the plot
-        height=PLOT_DIMENSIONS['height']   # Set the height of the plot
+        width=PLOT_DIMENSIONS['width'], 
+        height=PLOT_DIMENSIONS['height']
     )
     fig.update_layout(
         title=plot_config['title'],
@@ -236,17 +214,22 @@ def create_plots(reads_df, summary_df, output_dir, threshold, unclear_range, plo
         yaxis_title="Sample",
     )
 
-    heatmap_filename_interactive = os.path.join(plots_dir, plot_config['output_filename'].replace('.png', '.html'))
-    heatmap_filename_png = os.path.join(plots_dir, plot_config['output_filename'])
+    plots_dir = os.path.join(output_dir, 'plots')
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
 
-    # Save interactive HTML plot
+    heatmap_filename_interactive = os.path.join(plots_dir, plot_config['output_filename'].replace('.png', '.html'))
     fig.write_html(heatmap_filename_interactive)
 
-    # Save non-interactive PNG plot
+    heatmap_filename_png = os.path.join(plots_dir, plot_config['output_filename'])
     fig.write_image(heatmap_filename_png)
 
-    return heatmap_filename_interactive, heatmap_filename_png, combined_df, verdict_df, ratio_df
+    logging.info("Heatmap generated.")
+    
+    return heatmap_filename_interactive, heatmap_filename_png
 
+
+# Report Generation Functions
 def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interactive, heatmap_filename_png, boxplot_filename_interactive, boxplot_filename_png, p_value_table_filename, output_folder, threshold, unclear_range, command_line):
     logging.info("Generating summary reports")
 
@@ -254,7 +237,7 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
     combined_df = apply_sorting(combined_df, TABLE_SORTING.get('combined'))
     verdict_df = apply_sorting(verdict_df, TABLE_SORTING.get('verdict'))
     ratio_df = apply_sorting(ratio_df, TABLE_SORTING.get('ratio'))
-    p_values_df = pd.read_csv(p_value_table_filename, sep='\t')  # Load the p-value table
+    p_values_df = pd.read_csv(p_value_table_filename, sep='\t')  
     p_values_df = apply_sorting(p_values_df, TABLE_SORTING.get('p_value'))
 
     env = Environment(loader=FileSystemLoader(os.path.join('plasmicheck', TEMPLATE_DIR)))
@@ -285,8 +268,8 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
         combined_df=combined_html,
         verdict_df=verdict_html,
         ratio_df=ratio_html,
-        heatmap_content=heatmap_html_content,  # Plotly HTML content
-        boxplot_content=boxplot_html_content,  # Plotly HTML content
+        heatmap_content=heatmap_html_content,
+        boxplot_content=boxplot_html_content,
         p_value_table=p_value_html,
         logo_base64=logo_base64,
         threshold=threshold,
@@ -294,7 +277,7 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
         version=VERSION,
         run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         command_line=command_line,
-        interactive=True  # Pass True for interactive report
+        interactive=True  
     )
 
     # Render non-interactive HTML report
@@ -302,8 +285,8 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
         combined_df=combined_html,
         verdict_df=verdict_html,
         ratio_df=ratio_html,
-        heatmap_content=heatmap_png_base64,  # Base64-encoded PNG image
-        boxplot_content=boxplot_png_base64,  # Base64-encoded PNG image
+        heatmap_content=heatmap_png_base64,
+        boxplot_content=boxplot_png_base64,
         p_value_table=p_value_html,
         logo_base64=logo_base64,
         threshold=threshold,
@@ -311,7 +294,7 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
         version=VERSION,
         run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         command_line=command_line,
-        interactive=False  # Pass False for non-interactive report
+        interactive=False  
     )
 
     # Save interactive HTML report
@@ -327,32 +310,32 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
     # Convert non-interactive HTML to PDF
     HTML(html_report_non_interactive).write_pdf(os.path.join(output_folder, 'summary_report.pdf'))
 
+
 def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLEAR_RANGE, substring_to_remove=None):
     reads_df, summary_df = read_compare_outputs(input_dir)
-    heatmap_filename_interactive, heatmap_filename_png, combined_df, verdict_df, ratio_df = create_plots(
-        reads_df, summary_df, output_dir, threshold, unclear_range, PLOT_CONFIG, substring_to_remove
-    )
 
-    # Save the tables as TSV and Excel
-    boxplot_filename_interactive, boxplot_filename_png, p_value_table_filename, stats_results = calculate_and_plot_variations(ratio_df, output_dir)
+    # Calculate variations
+    boxplot_data, p_values_df = calculate_variations(summary_df[summary_df['Category'] == 'Ratio'])
 
-    # Save all tables to both TSV and Excel
-    save_tables_as_tsv_and_excel(combined_df, verdict_df, ratio_df, stats_results, output_dir)
+    # Generate plots
+    boxplot_filename_interactive, boxplot_filename_png = plot_boxplot(boxplot_data, output_dir)
+    heatmap_filename_interactive, heatmap_filename_png = plot_heatmap(summary_df[summary_df['Category'] == 'Ratio'], output_dir, threshold, unclear_range, PLOT_CONFIG)
 
-    generate_report(
-        combined_df, 
-        verdict_df, 
-        ratio_df, 
-        heatmap_filename_interactive, 
-        heatmap_filename_png,
-        boxplot_filename_interactive, 
-        boxplot_filename_png,
-        p_value_table_filename,
-        output_dir, 
-        threshold, 
-        unclear_range,
-        ' '.join(os.sys.argv)
-    )
+    # Save tables
+    save_tables_as_tsv_and_excel(summary_df[summary_df['Category'].isin(['Plasmid', 'Human', 'Tied'])], 
+                                 summary_df[summary_df['Category'] == 'Verdict'], 
+                                 summary_df[summary_df['Category'] == 'Ratio'], 
+                                 p_values_df, output_dir)
+
+    # Generate report
+    generate_report(summary_df[summary_df['Category'].isin(['Plasmid', 'Human', 'Tied'])], 
+                    summary_df[summary_df['Category'] == 'Verdict'], 
+                    summary_df[summary_df['Category'] == 'Ratio'], 
+                    heatmap_filename_interactive, heatmap_filename_png, 
+                    boxplot_filename_interactive, boxplot_filename_png, 
+                    os.path.join(output_dir, 'data', 'p_value_table.tsv'), 
+                    output_dir, threshold, unclear_range, ' '.join(os.sys.argv))
+
 
 if __name__ == "__main__":
     import argparse
@@ -368,4 +351,4 @@ if __name__ == "__main__":
 
     setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)  # Setup logging with arguments
 
-    main(args.input_dir, args.output_dir, args.threshold, substring_to_remove=args.substring_to_remove)
+    main(args.input_dir, args.output_dir, args.threshold, unclear_range=args.substring_to_remove)
