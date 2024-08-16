@@ -1,6 +1,6 @@
 ### plasmicheck: Detect and quantify plasmid DNA contamination in sequencing data
 
-![plasmicheck Logo](static/img/plasmicheck_logo_200px.png)
+![plasmicheck Logo](plasmicheck/static/img/plasmicheck_logo_200px.png)
 
 'plasmicheck' is a comprehensive tool for detecting and quantifying plasmid DNA contamination in sequencing data. It provides a fully integrated pipeline for handling all steps, even with large batches of sequencing files and plasmid inputs. The tool is efficient and easy to use, and it automates all necessary processes, from initial data conversion to final report generation.
 
