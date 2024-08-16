@@ -146,7 +146,8 @@ def calculate_variations(ratio_df):
     """Calculate p-values and apply FDR correction for contamination ratios by plasmid."""
     logging.info("Calculating variations for contamination ratios.")
 
-    ratio_df['Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
+    # Convert 'Value' to numeric, ensuring all entries are valid numbers
+    ratio_df.loc[:, 'Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
     boxplot_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value")
 
     # Drop NaNs
@@ -154,21 +155,28 @@ def calculate_variations(ratio_df):
 
     p_values_list = []
     for plasmid in boxplot_data.columns:
-        data = boxplot_data[plasmid].dropna()
+        # Ensure the data is numeric and drop NaN values
+        data = pd.to_numeric(boxplot_data[plasmid], errors='coerce').dropna()
+
+        # Only run the t-test if there are enough data points
         if len(data) > 1:
             for i in range(len(data)):
-                t_stat, p_value = stats.ttest_1samp(data.drop(data.index[i]), data.iloc[i])
-                p_values_list.append({
-                    'Sample': data.index[i],
-                    'Plasmid': plasmid,
-                    'p_value': p_value,
-                })
+                # Exclude the current sample and run the one-sample t-test
+                try:
+                    t_stat, p_value = stats.ttest_1samp(data.drop(data.index[i]), data.iloc[i])
+                    p_values_list.append({
+                        'Sample': data.index[i],
+                        'Plasmid': plasmid,
+                        'p_value': p_value,
+                    })
+                except Exception as e:
+                    logging.error(f"Error during t-test for {plasmid}, sample {data.index[i]}: {e}")
 
     p_values_df = pd.DataFrame(p_values_list)
-    p_values_df['p_value_corrected'] = multipletests(p_values_df['p_value'], method='fdr_bh')[1]
+    if not p_values_df.empty:
+        p_values_df['p_value_corrected'] = multipletests(p_values_df['p_value'], method='fdr_bh')[1]
 
     return boxplot_data, p_values_df
-
 
 # Plotting Functions
 def plot_boxplot(boxplot_data, output_dir):
@@ -210,11 +218,11 @@ def plot_boxplot(boxplot_data, output_dir):
     return boxplot_filename, boxplot_filename_png
 
 def plot_heatmap(ratio_df, output_dir, threshold, unclear_range, plot_config):
-    """Generate and save heatmap for contamination ratios by plasmid."""
+    """Generate and save heatmap for contamination ratios by plasmid without the color bar."""
     logging.info("Generating heatmap for contamination ratios.")
 
-    # Convert the 'Value' column to numeric, coercing errors to NaN
-    ratio_df['Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
+    # Use .loc[] to avoid SettingWithCopyWarning
+    ratio_df.loc[:, 'Value'] = pd.to_numeric(ratio_df['Value'], errors='coerce')
     
     # Pivot the DataFrame for the heatmap
     ratio_data = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value").round(ROUND_DECIMALS)
@@ -230,8 +238,8 @@ def plot_heatmap(ratio_df, output_dir, threshold, unclear_range, plot_config):
     fig = px.imshow(
         ratio_data,
         color_continuous_scale=color_scale,
-        width=PLOT_DIMENSIONS['width'],
-        height=PLOT_DIMENSIONS['height']
+        height=PLOT_DIMENSIONS['height'],
+        aspect='auto'  # Adjust the aspect ratio to fit the plot dimensions
     )
     
     # Update layout for axis labels and title
@@ -239,9 +247,12 @@ def plot_heatmap(ratio_df, output_dir, threshold, unclear_range, plot_config):
         title=plot_config['title'],
         xaxis_title="Plasmid",
         yaxis_title="Sample",
-        xaxis=dict(tickangle=plot_config['xticks_rotation'], tickfont=dict(size=8), tickmode='linear'),
-        yaxis=dict(tickfont=dict(size=8))
+        xaxis=dict(tickangle=plot_config['xticks_rotation'], tickfont=dict(size=9), tickmode='linear'),
+        yaxis=dict(tickfont=dict(size=9))
     )
+    
+    # Disable the color bar
+    fig.update_coloraxes(showscale=False)
 
     plots_dir = os.path.join(output_dir, 'plots')
     if not os.path.exists(plots_dir):
