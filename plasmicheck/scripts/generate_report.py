@@ -2,7 +2,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML
 from datetime import datetime
 import json
 import os
@@ -31,7 +30,6 @@ LOGO_PATH = config['paths']['logo_path']
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 logging.getLogger('seaborn').setLevel(logging.ERROR)
 logging.getLogger('jinja2').setLevel(logging.ERROR)
-logging.getLogger('weasyprint').setLevel(logging.ERROR)
 logging.getLogger('fontTools').setLevel(logging.ERROR)
 
 def load_data(reads_assignment_file, summary_file):
@@ -117,8 +115,6 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclea
     with open(html_report, 'w') as f:
         f.write(html_content)
 
-    HTML(html_report).write_pdf(f"{output_folder}/report.pdf")
-
 def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, unclear=UNCLEAR_RANGE, human_fasta="None", plasmid_gb="None", sequencing_file="None", command_line=""):
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
     generate_plots(reads_df, output_folder)
@@ -145,7 +141,7 @@ def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_T
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Generate a visualized HTML/PDF report from alignment comparison results")
+    parser = argparse.ArgumentParser(description="Generate a visualized HTML report from alignment comparison results")
     parser.add_argument("-r", "--reads_assignment_file", help="Reads assignment file (reads_assignment.tsv)", required=True)
     parser.add_argument("-s", "--summary_file", help="Summary file (summary.tsv)", required=True)
     parser.add_argument("-o", "--output_folder", help="Folder to write the report and plots", required=True)

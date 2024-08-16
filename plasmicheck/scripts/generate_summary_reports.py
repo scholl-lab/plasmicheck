@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import scipy.stats as stats
 from statsmodels.stats.multitest import multipletests
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML
 from datetime import datetime
 import numpy as np
 
@@ -38,7 +37,6 @@ MARKER_STYLE = PLOT_CONFIG.get('marker_style', {'size': 8, 'opacity': 0.7})
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 logging.getLogger('seaborn').setLevel(logging.ERROR)
 logging.getLogger('jinja2').setLevel(logging.ERROR)
-logging.getLogger('weasyprint').setLevel(logging.ERROR)
 logging.getLogger('fontTools').setLevel(logging.ERROR)
 
 
@@ -345,9 +343,6 @@ def generate_report(combined_df, verdict_df, ratio_df, heatmap_filename_interact
     html_report_non_interactive = os.path.join(output_folder, 'summary_report_non_interactive.html')
     with open(html_report_non_interactive, 'w') as f:
         f.write(html_content_non_interactive)
-
-    # Convert non-interactive HTML to PDF
-    HTML(html_report_non_interactive).write_pdf(os.path.join(output_folder, 'summary_report.pdf'))
 
 
 def main(input_dir, output_dir, threshold=DEFAULT_THRESHOLD, unclear_range=UNCLEAR_RANGE, substring_to_remove=None):

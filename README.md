@@ -71,7 +71,6 @@ Make sure you have the following tools and packages installed:
   - `biopython` (version 1.84)
   - `pysam` (version 0.22.1)
   - `jinja2` (version 3.0.0)
-  - `weasyprint` (version 62.3)
   - `matplotlib` (version 3.9.1)
   - `seaborn` (version 0.13.2)
   - `pandas` (version 2.2.2)

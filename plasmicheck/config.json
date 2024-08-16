@@ -1,6 +1,6 @@
 {
   "required_tools": ["minimap2", "samtools"],
-  "required_python_packages": ["Bio", "pysam", "jinja2", "weasyprint", "matplotlib"],
+  "required_python_packages": ["Bio", "pysam", "jinja2", "matplotlib"],
   "default_threshold": 0.8,
   "unclear_range": {
     "lower_bound": 0.6,

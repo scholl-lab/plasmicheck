@@ -15,7 +15,6 @@ setup(
         "biopython>=1.84",
         "pysam>=0.22.1",
         "jinja2>=3.0.0",
-        "weasyprint>=62.3",
         "matplotlib>=3.9.1.post1",
         "seaborn>=0.13.2",
         "pandas>=2.2.2",

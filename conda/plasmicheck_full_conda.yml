@@ -165,7 +165,6 @@ dependencies:
   - tornado=6.4.1=py39hd3abc70_0
   - tzdata=2024a=h0c530f3_0
   - unicodedata2=15.1.0=py39hd1e30aa_0
-  - weasyprint=62.3=pyhd8ed1ab_0
   - webencodings=0.5.1=pyhd8ed1ab_2
   - wheel=0.44.0=pyhd8ed1ab_0
   - xcb-util=0.4.0=hd590300_1
