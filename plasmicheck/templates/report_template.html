@@ -9,7 +9,7 @@
         h1, h2, h3 { text-align: center; margin-top: 20px; }
         .container { margin-top: 20px; }
         .table { margin-top: 20px; width: 50%; margin-left: auto; margin-right: auto; }
-        .plot { margin: 20px auto; display: block; width: 60%; }
+        .plot { margin: 20px auto; display: block; width: 1000px; max-width: 100%; } /* Adjust width */
         .verdict { text-align: center; font-size: 1.5em; margin-top: 30px; }
         .verdict span { font-weight: bold; }
         .details { text-align: center; margin-top: 10px; font-size: 0.9em; }
@@ -29,14 +29,27 @@
         <p><span>Unclear Range:</span> {{ unclear_range.lower_bound }} - {{ unclear_range.upper_bound }}</p>
     </div>  
 
+    <h2>Plots</h2>
+    <div class="plot">
+        {% if interactive %}
+            {{ box_plot|safe }}
+        {% else %}
+            <img src="{{ box_plot }}" alt="Box Plot">
+        {% endif %}
+    </div>
+
+    <div class="plot">
+        {% if interactive %}
+            {{ scatter_plot|safe }}
+        {% else %}
+            <img src="{{ scatter_plot }}" alt="Scatter Plot">
+        {% endif %}
+    </div>
+
     <h2>Summary</h2>
     <div class="container">
         {{ summary_df|safe }}
     </div>
-
-    <h2>Plots</h2>
-    <img src="{{ box_plot }}" alt="Box Plot" class="plot">
-    <img src="{{ scatter_plot }}" alt="Scatter Plot" class="plot">
 
     <div class="details">
         <p><span>Script Version:</span> {{ version }}</p>

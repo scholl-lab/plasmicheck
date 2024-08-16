@@ -56,8 +56,8 @@
   },
   "plot_sample_report": {
     "figsize": {
-      "width": 6,
-      "height": 4
+      "width": 1000,
+      "height": 400
     },
     "colors": {
       "human": "blue",
