@@ -73,7 +73,8 @@
     "box_plot_y_label": "Plasmid Score",
     "xticks_rotation": 0,
     "output_box_plot_filename": "box_plot.png",
-    "output_scatter_plot_filename": "scatter_plot.png"
+    "output_scatter_plot_filename": "scatter_plot.png",
+    "max_rows_for_interactive_plots": 5000
   },
   "paths": {
     "template_dir": "templates",

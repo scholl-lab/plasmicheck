@@ -24,7 +24,8 @@ UNCLEAR_RANGE = config['unclear_range']
 PLOT_SAMPLE_REPORT = config['plot_sample_report']
 TEMPLATE_DIR = config['paths']['template_dir']
 LOGO_PATH = config['paths']['logo_path']
-PLOT_DIMENSIONS = PLOT_SAMPLE_REPORT.get('figsize', {'width': 800, 'height': 600})
+PLOT_DIMENSIONS = PLOT_SAMPLE_REPORT.get('figsize', {'width': 1000, 'height': 400})
+DOWNSAMPLE_LIMIT = config.get('downsample_limit', 5000)  # Add downsample limit to the config
 
 # Setup logging for the libraries used in this script
 logging.getLogger('jinja2').setLevel(logging.ERROR)
@@ -36,18 +37,27 @@ def load_data(reads_assignment_file, summary_file):
     summary_df = pd.read_csv(summary_file, sep='\t')
     return reads_df, summary_df
 
+def downsample_data(df, limit):
+    if len(df) > limit:
+        logging.info(f"Downsampling data from {len(df)} to {limit} points.")
+        df = df.sample(n=limit, random_state=1)  # Random downsample to the limit
+        downsampled = True
+    else:
+        downsampled = False
+    return df, downsampled
+
 def generate_plots(reads_df, output_folder):
     logging.info("Generating plots")
     counts = reads_df['AssignedTo'].value_counts().to_dict()
 
     # Ensure default values for width and height
-    width = PLOT_SAMPLE_REPORT.get('figsize', {}).get('width', 600)  # Convert inches to pixels
+    width = PLOT_SAMPLE_REPORT.get('figsize', {}).get('width', 1000)  # Convert inches to pixels
     height = PLOT_SAMPLE_REPORT.get('figsize', {}).get('height', 400)  # Convert inches to pixels
 
     # Validate that width and height are integers
     if not isinstance(width, int):
-        logging.warning(f"Invalid width value: {width}. Defaulting to 600.")
-        width = 600
+        logging.warning(f"Invalid width value: {width}. Defaulting to 1000.")
+        width = 1000
     if not isinstance(height, int):
         logging.warning(f"Invalid height value: {height}. Defaulting to 400.")
         height = 400
@@ -86,7 +96,8 @@ def generate_plots(reads_df, output_folder):
         title=f"{PLOT_SAMPLE_REPORT['title_scatter_plot']}<br>(Total Reads: {len(reads_df)})",
         labels={"PlasmidScore": PLOT_SAMPLE_REPORT['scatter_plot_x_label'], "HumanScore": PLOT_SAMPLE_REPORT['scatter_plot_y_label']},
         width=width, 
-        height=height
+        height=height,
+        render_mode='webgl'  # Use WebGL for better performance with large datasets
     )
     
     scatter_filename_interactive = os.path.join(plots_dir, PLOT_SAMPLE_REPORT['output_scatter_plot_filename'].replace('.png', '.html'))
@@ -112,7 +123,7 @@ def extract_verdict_from_summary(summary_df):
     else:
         return "Verdict not found in summary file"
 
-def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclear, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None", boxplot_filename_interactive=None, boxplot_filename_png=None, scatter_filename_interactive=None, scatter_filename_png=None):
+def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclear, command_line, human_fasta="None", plasmid_gb="None", sequencing_file="None", boxplot_filename_interactive=None, boxplot_filename_png=None, scatter_filename_interactive=None, scatter_filename_png=None, downsampled=False):
     logging.info("Generating report")
     env = Environment(loader=FileSystemLoader(os.path.join('plasmicheck', TEMPLATE_DIR)))
     template = env.get_template('report_template.html')
@@ -120,6 +131,9 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclea
     logo_base64 = encode_image_to_base64(os.path.join('plasmicheck', LOGO_PATH))
 
     verdict_color = "green" if "Sample is not contaminated with plasmid DNA" in verdict else "orange" if "Sample contamination status is unclear" in verdict else "red"
+
+    # Prepare downsample message if data was downsampled
+    downsample_message = "Data was downsampled to improve performance. Only a subset of reads is displayed." if downsampled else ""
 
     # Read the interactive HTML plot content
     with open(boxplot_filename_interactive, 'r') as f:
@@ -149,7 +163,8 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclea
         sequencing_file=sequencing_file,
         run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         command_line=command_line,
-        interactive=True
+        interactive=True,
+        downsample_message=downsample_message  # Pass downsample message
     )
 
     # Render the non-interactive HTML report
@@ -169,7 +184,8 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclea
         sequencing_file=sequencing_file,
         run_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         command_line=command_line,
-        interactive=False
+        interactive=False,
+        downsample_message=downsample_message  # Pass downsample message
     )
 
     # Save interactive HTML report
@@ -184,6 +200,9 @@ def generate_report(summary_df, output_folder, verdict, ratio, threshold, unclea
 
 def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_THRESHOLD, unclear=UNCLEAR_RANGE, human_fasta="None", plasmid_gb="None", sequencing_file="None", command_line=""):
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
+
+    # Downsample data if necessary
+    reads_df, downsampled = downsample_data(reads_df, DOWNSAMPLE_LIMIT)
 
     # Generate plots
     boxplot_filename_interactive, boxplot_filename_png, scatter_filename_interactive, scatter_filename_png = generate_plots(reads_df, output_folder)
@@ -210,7 +229,8 @@ def main(reads_assignment_file, summary_file, output_folder, threshold=DEFAULT_T
         boxplot_filename_interactive=boxplot_filename_interactive,
         boxplot_filename_png=boxplot_filename_png,
         scatter_filename_interactive=scatter_filename_interactive,
-        scatter_filename_png=scatter_filename_png
+        scatter_filename_png=scatter_filename_png,
+        downsampled=downsampled  # Pass the downsampled flag
     )
 
 if __name__ == "__main__":
