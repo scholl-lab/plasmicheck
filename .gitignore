@@ -160,6 +160,6 @@ cython_debug/
 #.idea/
 
 # data, output and reference folder
-data/
-output/
-reference/
+/data/
+/output/
+/reference/
