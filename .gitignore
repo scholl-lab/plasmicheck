@@ -166,3 +166,7 @@ cython_debug/
 
 # commands file
 COMMANDS.md
+
+# claude files and folders
+.claude/
+CLAUDE.md
