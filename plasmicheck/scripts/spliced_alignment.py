@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
 
 import pysam
 
-from .utils import run_command, setup_logging  # Import setup_logging and run_command functions
+from plasmicheck.config import get_config
 
-# Load configuration from JSON file
-with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")) as config_file:
-    config: dict[str, Any] = json.load(config_file)
+from .utils import add_logging_args, configure_logging_from_args, run_command
 
-PADDING_DEFAULT: int = config["padding"]
-FASTA_EXTENSIONS: list[str] = config["alignment"]["fasta_extensions"]
-MINIMAP2_THREADS: int = config["alignment"]["minimap2_threads"]
-SAMTOOLS_THREADS: int = config["alignment"]["samtools_threads"]
+_cfg = get_config()
+PADDING_DEFAULT: int = _cfg["padding"]
+FASTA_EXTENSIONS: list[str] = _cfg["alignment"]["fasta_extensions"]
+MINIMAP2_THREADS: int = _cfg["alignment"]["minimap2_threads"]
+SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
 
 
 def find_fasta_file(base_name: str) -> str:
@@ -198,13 +196,11 @@ if __name__ == "__main__":
         help="Output file for cDNA start and end positions in the plasmid reference",
         default=None,
     )
-    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    parser.add_argument("--log-file", help="Set the log output file", default=None)
+    add_logging_args(parser)
 
     args = parser.parse_args()
 
-    # Setup logging with the specified log level and file
-    setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)
+    configure_logging_from_args(args)
 
     if args.human_fasta is None:
         base_name = os.path.splitext(args.human_index)[0]

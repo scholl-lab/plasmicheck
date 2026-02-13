@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,10 +25,10 @@ except ImportError:
 
 @pytest.fixture
 def sample_config() -> dict[str, Any]:
-    """Load the project config.json."""
-    config_path = Path(__file__).resolve().parent.parent / "plasmicheck" / "config.json"
-    with open(config_path) as f:
-        return json.load(f)
+    """Load the project config.json via the singleton."""
+    from plasmicheck.config import get_config
+
+    return get_config()
 
 
 @pytest.fixture

@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
-from typing import Any
 
-from .utils import run_command, setup_logging  # Import setup_logging and run_command functions
+from plasmicheck.config import get_config
 
-# Load configuration from JSON file
-with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")) as config_file:
-    config: dict[str, Any] = json.load(config_file)
+from .utils import add_logging_args, configure_logging_from_args, run_command
 
-MINIMAP2_THREADS: int = config["alignment"]["minimap2_threads"]
-SAMTOOLS_THREADS: int = config["alignment"]["samtools_threads"]
+_cfg = get_config()
+MINIMAP2_THREADS: int = _cfg["alignment"]["minimap2_threads"]
+SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
 
 
 def align_reads(
@@ -83,12 +79,10 @@ if __name__ == "__main__":
         "-a", "--alignment_type", help="Type of alignment: 'human' or 'plasmid'", required=True
     )
     parser.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
-    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    parser.add_argument("--log-file", help="Set the log output file", default=None)
+    add_logging_args(parser)
     args = parser.parse_args()
 
-    # Setup logging with the specified log level and file
-    setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)
+    configure_logging_from_args(args)
 
     align_reads(
         args.reference_index, args.input_file, args.output_bam, args.alignment_type, args.fastq2

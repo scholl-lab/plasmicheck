@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -9,17 +8,13 @@ from typing import Any
 
 from Bio import SeqIO
 
-from .utils import setup_logging  # Import setup_logging function
+from plasmicheck.config import get_config
 
-# Resolve the path to config.json in the parent directory of the current script
-config_path: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+from .utils import add_logging_args, configure_logging_from_args
 
-# Load configuration from JSON file
-with open(config_path) as config_file:
-    config: dict[str, Any] = json.load(config_file)
-
-DEFAULT_SHIFT_BASES: int = config["shift_bases"]
-CONVERSION_CONFIG: dict[str, Any] = config["conversion"]
+_cfg = get_config()
+DEFAULT_SHIFT_BASES: int = _cfg["shift_bases"]
+CONVERSION_CONFIG: dict[str, Any] = _cfg["conversion"]
 
 
 def sanitize_filename(filename: str) -> str:
@@ -137,12 +132,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "-w", "--overwrite", action="store_true", help="Overwrite existing output file"
     )
-    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    parser.add_argument("--log-file", help="Set the log output file", default=None)
+    add_logging_args(parser)
     args = parser.parse_args()
 
-    # Setup logging with the specified log level and file
-    setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)
+    configure_logging_from_args(args)
 
     convert_plasmidfile_to_fasta(
         args.input_file,
