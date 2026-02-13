@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from plasmicheck.scripts.generate_summary_reports import (
+    _sanitize_for_excel,
     apply_sorting,
     calculate_variations,
     find_tsv_files,
@@ -77,6 +78,27 @@ class TestFindTsvFiles:
         (deep / "data.summary.tsv").write_text("header\n")
         result = find_tsv_files(str(tmp_path), ".summary.tsv")
         assert len(result) == 1
+
+
+class TestSanitizeForExcel:
+    @pytest.mark.unit
+    def test_converts_bool_columns_to_strings(self) -> None:
+        df = pd.DataFrame({"name": ["a", "b"], "flag": [True, False]})
+        result = _sanitize_for_excel(df)
+        assert result["flag"].dtype == object  # string dtype
+        assert list(result["flag"]) == ["True", "False"]
+
+    @pytest.mark.unit
+    def test_preserves_non_bool_columns(self) -> None:
+        df = pd.DataFrame({"val": [1, 2], "name": ["a", "b"]})
+        result = _sanitize_for_excel(df)
+        pd.testing.assert_frame_equal(result, df)
+
+    @pytest.mark.unit
+    def test_does_not_mutate_original(self) -> None:
+        df = pd.DataFrame({"flag": [True, False]})
+        _sanitize_for_excel(df)
+        assert df["flag"].dtype == bool
 
 
 class TestCalculateVariations:
