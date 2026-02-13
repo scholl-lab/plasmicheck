@@ -7,8 +7,6 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("pysam", reason="pysam not available on this platform")
-
 from plasmicheck.scripts.compare_alignments import (
     calculate_alignment_score,
     parse_insert_region,

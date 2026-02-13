@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+
+# ---------------------------------------------------------------------------
+# Mock pysam when it is not installable (e.g. Windows — no wheels on PyPI).
+# Source modules like compare_alignments.py and spliced_alignment.py have
+# `import pysam` at the top level, which would fail at test-collection time.
+# All unit tests already use mock read objects, so a MagicMock placeholder
+# is sufficient for the modules to import.
+# ---------------------------------------------------------------------------
+try:
+    import pysam  # noqa: F401
+except ImportError:
+    sys.modules["pysam"] = MagicMock()
 
 
 @pytest.fixture

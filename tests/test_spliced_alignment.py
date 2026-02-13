@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("pysam", reason="pysam not available on this platform")
-
 from plasmicheck.scripts.spliced_alignment import find_fasta_file
 
 
