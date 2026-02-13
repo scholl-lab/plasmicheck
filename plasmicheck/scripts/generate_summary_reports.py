@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import os
 import sys
@@ -15,23 +14,19 @@ import scipy.stats as stats
 from jinja2 import Environment, FileSystemLoader
 from statsmodels.stats.multitest import multipletests
 
-# Import the version from version.py
+from plasmicheck.config import get_config
+from plasmicheck.resources import get_resource_path
 from plasmicheck.version import __version__ as VERSION
 
-from .utils import setup_logging  # Import setup_logging function
+from .utils import add_logging_args, configure_logging_from_args
 
-# Load configuration from JSON file
-config_path: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
-with open(config_path) as config_file:
-    config: dict[str, Any] = json.load(config_file)
-
-# Constants from config
-DEFAULT_THRESHOLD: float = config["default_threshold"]
-UNCLEAR_RANGE: dict[str, float] = config["unclear_range"]
-PLOT_CONFIG: dict[str, Any] = config["plot_summary"]
-TEMPLATE_DIR: str = config["paths"]["template_dir"]
-LOGO_PATH: str = config["paths"]["logo_path"]
-TABLE_SORTING: dict[str, Any] = config["table_sorting"]
+_cfg = get_config()
+DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
+UNCLEAR_RANGE: dict[str, float] = _cfg["unclear_range"]
+PLOT_CONFIG: dict[str, Any] = _cfg["plot_summary"]
+TEMPLATE_DIR: str = _cfg["paths"]["template_dir"]
+LOGO_PATH: str = _cfg["paths"]["logo_path"]
+TABLE_SORTING: dict[str, Any] = _cfg["table_sorting"]
 PLOT_DIMENSIONS: dict[str, int] = PLOT_CONFIG.get(
     "plot_dimensions", {"width": 1200, "height": 1200}
 )
@@ -123,6 +118,15 @@ def apply_sorting(df: pd.DataFrame, sorting_config: dict[str, Any] | None) -> pd
     return df
 
 
+def _sanitize_for_excel(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert boolean columns to strings to avoid locale-dependent rendering."""
+    result = df.copy()
+    bool_cols = result.select_dtypes(include=["bool"]).columns
+    for col in bool_cols:
+        result[col] = result[col].astype(str)
+    return result
+
+
 def save_tables_as_tsv_and_excel(
     combined_df: pd.DataFrame,
     verdict_df: pd.DataFrame,
@@ -132,8 +136,7 @@ def save_tables_as_tsv_and_excel(
 ) -> None:
     """Save the combined, verdict, ratio, and p-value dataframes as TSV and Excel files."""
     data_dir: str = os.path.join(output_dir, "data")
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
+    os.makedirs(data_dir, exist_ok=True)
 
     # Apply sorting to each DataFrame
     combined_df = apply_sorting(combined_df, TABLE_SORTING.get("combined"))
@@ -150,10 +153,10 @@ def save_tables_as_tsv_and_excel(
     # Save Excel file with multiple sheets
     excel_file: str = os.path.join(data_dir, "summary_report_tables.xlsx")
     with pd.ExcelWriter(excel_file, engine="xlsxwriter") as writer:
-        combined_df.to_excel(writer, sheet_name="Combined", index=False)
-        verdict_df.to_excel(writer, sheet_name="Verdicts", index=False)
-        ratio_df.to_excel(writer, sheet_name="Ratios", index=False)
-        p_values_df.to_excel(writer, sheet_name="P-Values", index=False)
+        _sanitize_for_excel(combined_df).to_excel(writer, sheet_name="Combined", index=False)
+        _sanitize_for_excel(verdict_df).to_excel(writer, sheet_name="Verdicts", index=False)
+        _sanitize_for_excel(ratio_df).to_excel(writer, sheet_name="Ratios", index=False)
+        _sanitize_for_excel(p_values_df).to_excel(writer, sheet_name="P-Values", index=False)
 
     logging.info("TSV and Excel files have been saved.")
 
@@ -226,8 +229,7 @@ def plot_boxplot(boxplot_data: pd.DataFrame, output_dir: str) -> tuple[str, str]
     fig.update_traces(marker=MARKER_STYLE)
 
     plots_dir: str = os.path.join(output_dir, "plots")
-    if not os.path.exists(plots_dir):
-        os.makedirs(plots_dir)
+    os.makedirs(plots_dir, exist_ok=True)
 
     boxplot_filename: str = os.path.join(plots_dir, "boxplot_contamination_ratios.html")
     fig.write_html(boxplot_filename)
@@ -296,8 +298,7 @@ def plot_heatmap(
     fig.update_coloraxes(showscale=False)
 
     plots_dir: str = os.path.join(output_dir, "plots")
-    if not os.path.exists(plots_dir):
-        os.makedirs(plots_dir)
+    os.makedirs(plots_dir, exist_ok=True)
 
     heatmap_filename_interactive: str = os.path.join(
         plots_dir, plot_config["output_filename"].replace(".png", ".html")
@@ -336,7 +337,7 @@ def generate_report(
     p_values_df = pd.read_csv(p_value_table_filename, sep="\t")
     p_values_df = apply_sorting(p_values_df, TABLE_SORTING.get("p_value"))
 
-    env = Environment(loader=FileSystemLoader(os.path.join("plasmicheck", TEMPLATE_DIR)))
+    env = Environment(loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))))
     template = env.get_template("summary_template.html")
 
     # Read the Plotly HTML files content for interactive report
@@ -357,7 +358,7 @@ def generate_report(
     p_value_html = p_values_df.to_html(classes="table table-striped table-bordered", index=False)
 
     # Encode the logo
-    logo_base64 = encode_image_to_base64(os.path.join("plasmicheck", LOGO_PATH))
+    logo_base64 = encode_image_to_base64(str(get_resource_path(LOGO_PATH)))
 
     # Render interactive HTML report
     html_content_interactive = template.render(
@@ -474,14 +475,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--substring_to_remove", help="Substring to remove from sample names", default=None
     )
-    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    parser.add_argument("--log-file", help="Set the log output file", default=None)
+    add_logging_args(parser)
 
     args = parser.parse_args()
 
-    setup_logging(
-        log_level=args.log_level.upper(), log_file=args.log_file
-    )  # Setup logging with arguments
+    configure_logging_from_args(args)
 
     main(
         args.input_dir,

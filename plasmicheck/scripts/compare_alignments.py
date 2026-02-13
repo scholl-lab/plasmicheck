@@ -1,27 +1,21 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
 
 import pysam
 
-from .utils import setup_logging  # Import the setup_logging function
+from plasmicheck.config import get_config
 
-# Resolve the path to config.json in the parent directory of the current script
-config_path: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+from .utils import add_logging_args, configure_logging_from_args
 
-# Load configuration from JSON file
-with open(config_path) as config_file:
-    config: dict[str, Any] = json.load(config_file)
-
-# Configuration variables for scoring
-MATE_BONUS: int = config["scoring"]["mate_bonus"]
-CLIPPING_PENALTY: int = config["scoring"]["clipping_penalty"]
-MISMATCH_PENALTY: int = config["scoring"]["mismatch_penalty"]
-DEFAULT_THRESHOLD: float = config["default_threshold"]
-UNCLEAR_RANGE: dict[str, float] = config["unclear_range"]
+_cfg = get_config()
+MATE_BONUS: int = _cfg["scoring"]["mate_bonus"]
+CLIPPING_PENALTY: int = _cfg["scoring"]["clipping_penalty"]
+MISMATCH_PENALTY: int = _cfg["scoring"]["mismatch_penalty"]
+DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
+UNCLEAR_RANGE: dict[str, float] = _cfg["unclear_range"]
 
 
 def calculate_alignment_score(read: Any) -> int:
@@ -298,11 +292,9 @@ if __name__ == "__main__":
         default=DEFAULT_THRESHOLD,
         help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})",
     )
-    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    parser.add_argument("--log-file", help="Set the log output file", default=None)
+    add_logging_args(parser)
     args = parser.parse_args()
 
-    # Setup logging with the specified log level and file
-    setup_logging(log_level=args.log_level.upper(), log_file=args.log_file)
+    configure_logging_from_args(args)
 
     compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)

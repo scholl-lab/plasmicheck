@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
-import json
 import logging
 import os
 import re
@@ -12,12 +12,10 @@ import time  # Added for retry delay
 from datetime import datetime, timezone
 from typing import Any
 
-# Load configuration from JSON file
-config_path: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
-with open(config_path) as config_file:
-    config: dict[str, Any] = json.load(config_file)
+from plasmicheck.config import get_config
 
-SUPPORTED_FORMATS: dict[str, Any] = config["supported_formats"]
+_cfg = get_config()
+SUPPORTED_FORMATS: dict[str, Any] = _cfg["supported_formats"]
 
 
 def calculate_md5(file_path: str) -> str:
@@ -30,12 +28,19 @@ def calculate_md5(file_path: str) -> str:
 
 
 def write_md5sum(file_path: str, file_type: str, output_folder: str) -> None:
-    """Write the MD5 checksum of a file to md5sum.txt in the output folder."""
+    """Write the MD5 checksum of a file to md5sum.txt, skipping duplicates."""
     md5sum: str = calculate_md5(file_path)
     md5sum_file: str = os.path.join(output_folder, "md5sum.txt")
+    new_line: str = f"{file_type}\t{file_path}\t{md5sum}\n"
 
-    with open(md5sum_file, "a") as f:
-        f.write(f"{file_type}\t{file_path}\t{md5sum}\n")
+    existing_lines: set[str] = set()
+    if os.path.exists(md5sum_file):
+        with open(md5sum_file) as f:
+            existing_lines = set(f.readlines())
+
+    if new_line not in existing_lines:
+        with open(md5sum_file, "a") as f:
+            f.write(new_line)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -62,11 +67,23 @@ def setup_logging(log_level: int = logging.INFO, log_file: str | None = None) ->
         logger.setLevel(log_level)
 
 
+def add_logging_args(parser: argparse.ArgumentParser) -> None:
+    """Add standard --log-level and --log-file arguments to a parser."""
+    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser.add_argument("--log-file", help="Set the log output file", default=None)
+
+
+def configure_logging_from_args(args: argparse.Namespace) -> None:
+    """Configure logging from parsed CLI arguments."""
+    log_level: int = getattr(logging, args.log_level.upper(), logging.INFO)
+    setup_logging(log_level=log_level, log_file=args.log_file)
+
+
 def run_command(command: str) -> subprocess.CompletedProcess[str]:
     """Run a command using subprocess with retry logic and log the output."""
     # Fetch retry settings from config or use default values
-    retries: int = config.get("retry_settings", {}).get("retries", 3)
-    delay: int = config.get("retry_settings", {}).get("delay", 5)
+    retries: int = _cfg.get("retry_settings", {}).get("retries", 3)
+    delay: int = _cfg.get("retry_settings", {}).get("delay", 5)
 
     for attempt in range(retries):
         logging.info(f"Running command: {command} (Attempt {attempt + 1}/{retries})")

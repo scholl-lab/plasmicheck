@@ -185,6 +185,15 @@ class TestWriteMd5sum:
         lines = md5_file.read_text().strip().split("\n")
         assert len(lines) == 2
 
+    @pytest.mark.unit
+    def test_no_duplicate_entries(self, tmp_path: Path) -> None:
+        f = tmp_path / "data.txt"
+        f.write_text("test content")
+        write_md5sum(str(f), "input", str(tmp_path))
+        write_md5sum(str(f), "input", str(tmp_path))  # duplicate call
+        lines = (tmp_path / "md5sum.txt").read_text().strip().split("\n")
+        assert len(lines) == 1
+
 
 # -- archive_output_folder ------------------------------------------------------
 

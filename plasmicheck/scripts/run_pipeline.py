@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
-from typing import Any
 
 from .align_reads import align_reads
 from .compare_alignments import compare_alignments
@@ -18,19 +16,13 @@ from .spliced_alignment import (
     spliced_alignment,
 )
 from .utils import (
+    add_logging_args,
     archive_output_folder,
+    configure_logging_from_args,
     quality_control,
     sanitize_filename,
-    setup_logging,
     write_md5sum,
 )
-
-# Resolve the path to config.json in the parent directory of the current script
-config_path: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
-
-# Load configuration from JSON file
-with open(config_path) as config_file:
-    config: dict[str, Any] = json.load(config_file)
 
 
 def read_file_list(file_path: str) -> list[str]:
@@ -118,9 +110,7 @@ def run_pipeline(
             file_basename = sanitize_filename(os.path.splitext(os.path.basename(plasmid_file))[0])
             output_subfolder = os.path.join(output_folder, bam_basename, file_basename)
 
-            if not os.path.exists(output_subfolder):
-                logging.debug(f"Creating output subfolder: {output_subfolder}")
-                os.makedirs(output_subfolder)
+            os.makedirs(output_subfolder, exist_ok=True)
 
             # Step 1: Convert the plasmid file to a FASTA file or check if it exists
             plasmid_fasta = os.path.join(
@@ -141,7 +131,7 @@ def run_pipeline(
             if md5_level in ["all", "input"]:
                 write_md5sum(plasmid_file, "input", output_subfolder)
 
-            # Step 2: Generate indices for the human and plasmid FASTA files or check if they exist
+            # Step 2: Generate indices for the human and plasmid FASTA files
             human_index = os.path.join(
                 os.path.dirname(human_fasta),
                 os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
@@ -149,12 +139,8 @@ def run_pipeline(
             plasmid_index = os.path.join(
                 output_subfolder, os.path.splitext(os.path.basename(plasmid_fasta))[0] + ".mmi"
             )
-            if not os.path.exists(human_index) or overwrite:
-                logging.info(f"Creating index for human reference: {human_fasta}")
-                create_indexes(human_fasta, overwrite)
-            if not os.path.exists(plasmid_index) or overwrite:
-                logging.info(f"Creating index for plasmid FASTA: {plasmid_fasta}")
-                create_indexes(plasmid_fasta, overwrite)
+            create_indexes(human_fasta, overwrite)
+            create_indexes(plasmid_fasta, overwrite)
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(plasmid_index, "intermediate", output_subfolder)
             if md5_level in ["all"]:
@@ -177,9 +163,7 @@ def run_pipeline(
             spliced_index = os.path.join(
                 output_subfolder, os.path.splitext(os.path.basename(spliced_fasta))[0] + ".mmi"
             )
-            if not os.path.exists(spliced_index) or overwrite:
-                logging.info("Creating index for spliced reference...")
-                create_indexes(spliced_fasta, overwrite)
+            create_indexes(spliced_fasta, overwrite)
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(spliced_index, "intermediate", output_subfolder)
 
@@ -320,12 +304,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Archive and compress the output folder into a .tar.gz file",
     )
-    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    parser.add_argument("--log-file", help="Set the log output file", default=None)
+    add_logging_args(parser)
 
     args = parser.parse_args()
 
-    setup_logging(log_level=getattr(logging, args.log_level.upper(), None), log_file=args.log_file)  # type: ignore[arg-type]
+    configure_logging_from_args(args)
 
     run_pipeline(
         args.human_fasta,

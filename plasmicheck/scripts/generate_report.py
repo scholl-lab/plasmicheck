@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -11,25 +10,20 @@ import pandas as pd
 import plotly.express as px
 from jinja2 import Environment, FileSystemLoader
 
-# Import the version from version.py
+from plasmicheck.config import get_config
+from plasmicheck.resources import get_resource_path
 from plasmicheck.version import __version__ as VERSION
 
-from .utils import setup_logging  # Import the setup_logging function
+from .utils import add_logging_args, configure_logging_from_args
 
-# Resolve the path to config.json in the parent directory of the current script
-config_path: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
-
-# Load configuration from JSON file
-with open(config_path) as config_file:
-    config: dict[str, Any] = json.load(config_file)
-
-DEFAULT_THRESHOLD: float = config["default_threshold"]
-UNCLEAR_RANGE: dict[str, float] = config["unclear_range"]
-PLOT_SAMPLE_REPORT: dict[str, Any] = config["plot_sample_report"]
-TEMPLATE_DIR: str = config["paths"]["template_dir"]
-LOGO_PATH: str = config["paths"]["logo_path"]
+_cfg = get_config()
+DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
+UNCLEAR_RANGE: dict[str, float] = _cfg["unclear_range"]
+PLOT_SAMPLE_REPORT: dict[str, Any] = _cfg["plot_sample_report"]
+TEMPLATE_DIR: str = _cfg["paths"]["template_dir"]
+LOGO_PATH: str = _cfg["paths"]["logo_path"]
 PLOT_DIMENSIONS: dict[str, int] = PLOT_SAMPLE_REPORT.get("figsize", {"width": 1000, "height": 400})
-DOWNSAMPLE_LIMIT: int = config.get("downsample_limit", 5000)  # Add downsample limit to the config
+DOWNSAMPLE_LIMIT: int = _cfg.get("downsample_limit", 5000)
 
 # Setup logging for the libraries used in this script
 logging.getLogger("jinja2").setLevel(logging.ERROR)
@@ -69,8 +63,7 @@ def generate_plots(reads_df: pd.DataFrame, output_folder: str) -> tuple[str, str
 
     # Create directory for plots if not exist
     plots_dir = os.path.join(output_folder, "plots")
-    if not os.path.exists(plots_dir):
-        os.makedirs(plots_dir)
+    os.makedirs(plots_dir, exist_ok=True)
 
     # Box plot using Plotly
     boxplot_df = reads_df.copy()
@@ -166,10 +159,10 @@ def generate_report(
     downsampled: bool = False,
 ) -> None:
     logging.info("Generating report")
-    env = Environment(loader=FileSystemLoader(os.path.join("plasmicheck", TEMPLATE_DIR)))
+    env = Environment(loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))))
     template = env.get_template("report_template.html")
 
-    logo_base64 = encode_image_to_base64(os.path.join("plasmicheck", LOGO_PATH))
+    logo_base64 = encode_image_to_base64(str(get_resource_path(LOGO_PATH)))
 
     verdict_color = (
         "green"
@@ -332,17 +325,14 @@ if __name__ == "__main__":
         default="None",
         help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)",
     )
-    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    parser.add_argument("--log-file", help="Set the log output file", default=None)
+    add_logging_args(parser)
 
     import sys
 
     args = parser.parse_args()
     command_line = " ".join(sys.argv)
 
-    setup_logging(
-        log_level=args.log_level.upper(), log_file=args.log_file
-    )  # Setup logging with arguments
+    configure_logging_from_args(args)
 
     main(
         args.reads_assignment_file,
