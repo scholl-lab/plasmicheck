@@ -37,6 +37,31 @@ class TestCreateIndexes:
 
     @pytest.mark.unit
     @patch("plasmicheck.scripts.create_indexes.subprocess.run")
+    def test_fast_path_skips_without_lock(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """Fast-path avoids acquiring the lock when both indexes exist."""
+        fasta = tmp_path / "ref.fasta"
+        fasta.write_text(">seq\nATCG")
+        (tmp_path / "ref.mmi").write_text("index")
+        (tmp_path / "ref.fasta.fai").write_text("index")
+
+        with patch("plasmicheck.scripts.create_indexes.FileLock") as mock_lock:
+            create_indexes(str(fasta), overwrite=False)
+            mock_lock.assert_not_called()
+
+    @pytest.mark.unit
+    @patch("plasmicheck.scripts.create_indexes.subprocess.run")
+    def test_partial_indexes_recreates_both(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """When only one index file exists, both are recreated."""
+        fasta = tmp_path / "ref.fasta"
+        fasta.write_text(">seq\nATCG")
+        (tmp_path / "ref.mmi").write_text("old")
+        # ref.fasta.fai intentionally missing
+
+        create_indexes(str(fasta), overwrite=False)
+        assert mock_run.call_count == 2  # both minimap2 + samtools
+
+    @pytest.mark.unit
+    @patch("plasmicheck.scripts.create_indexes.subprocess.run")
     def test_overwrite_recreates_indexes(self, mock_run: MagicMock, tmp_path: Path) -> None:
         fasta = tmp_path / "ref.fasta"
         fasta.write_text(">seq\nATCG")

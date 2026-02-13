@@ -85,7 +85,8 @@ class TestSanitizeForExcel:
     def test_converts_bool_columns_to_strings(self) -> None:
         df = pd.DataFrame({"name": ["a", "b"], "flag": [True, False]})
         result = _sanitize_for_excel(df)
-        assert result["flag"].dtype == object  # string dtype
+        # pandas 2.x may return StringDtype instead of object; check values
+        assert result["flag"].dtype != bool
         assert list(result["flag"]) == ["True", "False"]
 
     @pytest.mark.unit
