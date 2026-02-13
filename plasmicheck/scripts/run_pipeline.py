@@ -5,7 +5,6 @@ import logging
 import os
 import shutil
 import sys
-import warnings
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import Any
@@ -98,48 +97,25 @@ def get_file_list(file_or_list: str) -> list[str]:
 
 
 def resolve_sequencing_inputs(
-    sequencing_files: str | None = None,
-    sequencing_files_r1: str | None = None,
+    sequencing_files_r1: str,
     sequencing_files_r2: str | None = None,
 ) -> list[SequencingInput]:
     """Normalize CLI sequencing file arguments into a list of SequencingInput.
 
-    Supports three input modes:
-
-    1. **New explicit paired-end:** ``-sf1`` + ``-sf2`` (preferred).
-    2. **Legacy comma-separated:** ``-sf "r1.fastq,r2.fastq"`` (deprecated).
-    3. **Single-end / BAM:** ``-sf file.fastq`` or ``-sf file.bam``.
+    Args:
+        sequencing_files_r1: Forward (R1) FASTQ/BAM file or file list (.txt).
+        sequencing_files_r2: Reverse (R2) FASTQ file or file list (.txt) for paired-end.
     """
-    if sequencing_files_r1 is not None:
-        r1_list = get_file_list(sequencing_files_r1)
-        r2_list = get_file_list(sequencing_files_r2) if sequencing_files_r2 else []
-        if sequencing_files_r2 and len(r1_list) != len(r2_list):
-            raise ValueError(
-                f"-sf1 has {len(r1_list)} files but -sf2 has {len(r2_list)} files; "
-                "counts must match for paired-end."
-            )
-        if r2_list:
-            return [SequencingInput(r1, r2) for r1, r2 in zip(r1_list, r2_list, strict=True)]
-        return [SequencingInput(r1) for r1 in r1_list]
-
-    if sequencing_files is None:
-        raise ValueError("Either -sf or -sf1 must be provided.")
-
-    raw_list = get_file_list(sequencing_files)
-    inputs: list[SequencingInput] = []
-    for entry in raw_list:
-        if "," in entry:
-            warnings.warn(
-                "Comma-separated paired-end format (-sf 'r1.fastq,r2.fastq') is deprecated. "
-                "Use -sf1 and -sf2 instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            parts = entry.split(",", maxsplit=1)
-            inputs.append(SequencingInput(parts[0].strip(), parts[1].strip()))
-        else:
-            inputs.append(SequencingInput(entry))
-    return inputs
+    r1_list = get_file_list(sequencing_files_r1)
+    r2_list = get_file_list(sequencing_files_r2) if sequencing_files_r2 else []
+    if sequencing_files_r2 and len(r1_list) != len(r2_list):
+        raise ValueError(
+            f"-sf1 has {len(r1_list)} files but -sf2 has {len(r2_list)} files; "
+            "counts must match for paired-end."
+        )
+    if r2_list:
+        return [SequencingInput(r1, r2) for r1, r2 in zip(r1_list, r2_list, strict=True)]
+    return [SequencingInput(r1) for r1 in r1_list]
 
 
 # ---------------------------------------------------------------------------
@@ -152,15 +128,13 @@ def build_plan(
     plasmid_files: str,
     output_folder: str,
     overwrite: bool,
-    sequencing_files: str | None = None,
-    sequencing_files_r1: str | None = None,
+    sequencing_files_r1: str,
     sequencing_files_r2: str | None = None,
     cdna_output: str | None = None,
 ) -> PipelinePlan:
     """Build an execution plan without running anything."""
     plasmid_file_list = get_file_list(plasmid_files)
     seq_inputs = resolve_sequencing_inputs(
-        sequencing_files=sequencing_files,
         sequencing_files_r1=sequencing_files_r1,
         sequencing_files_r2=sequencing_files_r2,
     )
@@ -421,7 +395,6 @@ def _progress_context(enabled: bool, total: int) -> Generator[_ProgressTracker, 
 def run_pipeline(
     human_fasta: str,
     plasmid_files: str,
-    sequencing_files: str | None = None,
     output_folder: str = "output",
     keep_intermediate: bool = True,
     shift_bases: int = 500,
@@ -437,13 +410,15 @@ def run_pipeline(
     dry_run: bool = False,
     progress: bool = False,
 ) -> None:
+    if sequencing_files_r1 is None:
+        raise ValueError("-sf1 (sequencing_files_r1) is required.")
+
     # Build the plan regardless of dry-run
     plan = build_plan(
         human_fasta=human_fasta,
         plasmid_files=plasmid_files,
         output_folder=output_folder,
         overwrite=overwrite,
-        sequencing_files=sequencing_files,
         sequencing_files_r1=sequencing_files_r1,
         sequencing_files_r2=sequencing_files_r2,
         cdna_output=cdna_output,
@@ -465,17 +440,18 @@ def run_pipeline(
     quality_control([human_fasta], expected_formats=["fasta"])
     quality_control(plan.plasmid_files, expected_formats=["genbank", "xdna"])
 
+    fastq_extensions = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
     for seq_input in plan.sequencing_inputs:
         if seq_input.file1.endswith(".bam"):
             quality_control([seq_input.file1], expected_formats=["bam"])
         elif seq_input.file2:
             quality_control([seq_input.file1, seq_input.file2], expected_formats=["fastq"])
-        elif seq_input.file1.endswith(".fastq"):
+        elif seq_input.file1.endswith(fastq_extensions):
             quality_control([seq_input.file1], expected_formats=["fastq"])
         else:
             raise ValueError(
                 f"Unsupported sequencing file type: {seq_input.file1}. "
-                "Must be .bam, .fastq, or paired FASTQ files."
+                "Must be .bam, .fastq, .fastq.gz, or paired FASTQ files."
             )
 
     with _progress_context(progress, plan.total_steps) as prog:
@@ -641,16 +617,10 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument(
-        "-sf",
-        "--sequencing_files",
-        help="(Deprecated) Sequencing files. For paired-end, use -sf1/-sf2 instead.",
-        default=None,
-    )
-    parser.add_argument(
         "-sf1",
         "--sequencing_files_r1",
-        help="Forward (R1) FASTQ files or file list (.txt) for paired-end",
-        default=None,
+        help="Forward (R1) FASTQ/BAM file or file list (.txt)",
+        required=True,
     )
     parser.add_argument(
         "-sf2",
@@ -736,15 +706,9 @@ if __name__ == "__main__":
 
     configure_logging_from_args(args)
 
-    if not args.sequencing_files and not args.sequencing_files_r1:
-        parser.error("Either -sf or -sf1 is required.")
-    if args.sequencing_files and args.sequencing_files_r1:
-        parser.error("Cannot use both -sf and -sf1/-sf2.")
-
     run_pipeline(
         args.human_fasta,
         args.plasmid_files,
-        args.sequencing_files,
         args.output_folder,
         args.keep_intermediate,
         args.shift_bases,

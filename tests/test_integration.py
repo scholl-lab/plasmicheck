@@ -72,16 +72,16 @@ class TestPipelineContaminated:
         plasmid_gb = str(synthetic_data_dir / "plasmid.gb")
         r1 = str(synthetic_data_dir / "contaminated_R1.fastq")
         r2 = str(synthetic_data_dir / "contaminated_R2.fastq")
-        seq_files = f"{r1},{r2}"
 
         run_pipeline(
             human_fasta=human_fasta,
             plasmid_files=plasmid_gb,
-            sequencing_files=seq_files,
             output_folder=str(output_dir),
             keep_intermediate=True,
             overwrite=True,
             threshold=0.8,
+            sequencing_files_r1=r1,
+            sequencing_files_r2=r2,
         )
 
         # Find the summary file
@@ -104,16 +104,16 @@ class TestPipelineClean:
         plasmid_gb = str(synthetic_data_dir / "plasmid.gb")
         r1 = str(synthetic_data_dir / "not_contaminated_R1.fastq")
         r2 = str(synthetic_data_dir / "not_contaminated_R2.fastq")
-        seq_files = f"{r1},{r2}"
 
         run_pipeline(
             human_fasta=human_fasta,
             plasmid_files=plasmid_gb,
-            sequencing_files=seq_files,
             output_folder=str(output_dir),
             keep_intermediate=True,
             overwrite=True,
             threshold=0.8,
+            sequencing_files_r1=r1,
+            sequencing_files_r2=r2,
         )
 
         summaries = list(output_dir.rglob("*.summary.tsv"))

@@ -26,12 +26,14 @@ def align_reads(
         logging.error(f"Invalid alignment type: {alignment_type}")
         raise ValueError("alignment_type must be 'human' or 'plasmid'")
 
+    fastq_extensions = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
+
     if input_file.endswith(".bam"):
         command = (
             f"samtools fasta {input_file} | minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} - "
             f"| samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
         )
-    elif input_file.endswith(".fastq"):
+    elif input_file.endswith(fastq_extensions):
         if fastq2:
             command = (
                 f"minimap2 -t {MINIMAP2_THREADS} -ax sr {reference_index} {input_file} {fastq2} "

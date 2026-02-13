@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 import pytest
@@ -89,33 +88,12 @@ class TestResolveSequencingInputs:
             resolve_sequencing_inputs(sequencing_files_r1=str(r1), sequencing_files_r2=str(list_r2))
 
     @pytest.mark.unit
-    def test_legacy_comma_emits_deprecation(self, tmp_path: Path) -> None:
-        r1 = tmp_path / "r1.fastq"
-        r2 = tmp_path / "r2.fastq"
-        r1.write_text("@read\nACGT\n+\nIIII\n")
-        r2.write_text("@read\nTGCA\n+\nIIII\n")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            result = resolve_sequencing_inputs(sequencing_files=f"{r1},{r2}")
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "deprecated" in str(w[0].message).lower()
-        assert len(result) == 1
-        assert result[0].file1 == str(r1)
-        assert result[0].file2 == str(r2)
-
-    @pytest.mark.unit
-    def test_legacy_single_file(self, tmp_path: Path) -> None:
+    def test_single_file_r1_only(self, tmp_path: Path) -> None:
         bam = tmp_path / "sample.bam"
         bam.write_text("fake")
-        result = resolve_sequencing_inputs(sequencing_files=str(bam))
+        result = resolve_sequencing_inputs(sequencing_files_r1=str(bam))
         assert len(result) == 1
         assert result[0].file2 is None
-
-    @pytest.mark.unit
-    def test_neither_provided_raises(self) -> None:
-        with pytest.raises(ValueError, match="Either -sf or -sf1"):
-            resolve_sequencing_inputs()
 
 
 class TestGetFileList:
@@ -172,7 +150,7 @@ class TestBuildPlan:
             plasmid_files=str(synthetic_data_dir / "plasmid.gb"),
             output_folder=str(tmp_path / "output"),
             overwrite=False,
-            sequencing_files=str(synthetic_data_dir / "contaminated_R1.fastq"),
+            sequencing_files_r1=str(synthetic_data_dir / "contaminated_R1.fastq"),
         )
         assert len(plan.combinations) == 1
         assert plan.total_steps == 7
@@ -185,7 +163,7 @@ class TestBuildPlan:
             plasmid_files=str(synthetic_data_dir / "plasmid.gb"),
             output_folder=str(tmp_path / "output"),
             overwrite=True,
-            sequencing_files=str(synthetic_data_dir / "contaminated_R1.fastq"),
+            sequencing_files_r1=str(synthetic_data_dir / "contaminated_R1.fastq"),
         )
         assert any("Overwrite" in w for w in plan.warnings)
 
@@ -216,7 +194,7 @@ class TestPrintPlan:
             plasmid_files=str(synthetic_data_dir / "plasmid.gb"),
             output_folder=str(tmp_path / "output"),
             overwrite=False,
-            sequencing_files=str(synthetic_data_dir / "contaminated_R1.fastq"),
+            sequencing_files_r1=str(synthetic_data_dir / "contaminated_R1.fastq"),
         )
         print_plan(plan)
         captured = capsys.readouterr()

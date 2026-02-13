@@ -226,16 +226,10 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         required=True,
     )
     parser_pipeline.add_argument(
-        "-sf",
-        "--sequencing_files",
-        help="(Deprecated) Sequencing files. For paired-end, use -sf1/-sf2 instead.",
-        default=None,
-    )
-    parser_pipeline.add_argument(
         "-sf1",
         "--sequencing_files_r1",
-        help="Forward (R1) FASTQ files or file list (.txt) for paired-end",
-        default=None,
+        help="Forward (R1) FASTQ/BAM file or file list (.txt)",
+        required=True,
     )
     parser_pipeline.add_argument(
         "-sf2",
@@ -407,18 +401,11 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline
 
-        # Validate that at least -sf or -sf1 is provided
-        if not args.sequencing_files and not args.sequencing_files_r1:
-            parser.error("Either -sf or -sf1 is required for the pipeline command.")
-        if args.sequencing_files and args.sequencing_files_r1:
-            parser.error("Cannot use both -sf and -sf1/-sf2. Use -sf1/-sf2 for paired-end.")
-
         progress_enabled = sys.stderr.isatty() and not args.no_progress
 
         run_pipeline(
             args.human_fasta,
             args.plasmid_files,
-            args.sequencing_files,
             args.output_folder,
             args.keep_intermediate,
             args.shift_bases,
