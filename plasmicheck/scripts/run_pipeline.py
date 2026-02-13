@@ -138,7 +138,7 @@ def run_pipeline(
                 )
             if md5_level in ["all", "intermediate"]:
                 write_md5sum(plasmid_fasta, "intermediate", output_subfolder)
-            if md5_level in ["all"]:
+            if md5_level in ["all", "input"]:
                 write_md5sum(plasmid_file, "input", output_subfolder)
 
             # Step 2: Generate indices for the human and plasmid FASTA files or check if they exist
@@ -214,11 +214,11 @@ def run_pipeline(
                 reads_assignment_file,
                 summary_file,
                 output_subfolder,
-                threshold,
-                command_line,  # type: ignore[arg-type]
-                human_fasta,
-                plasmid_file,
-                sequencing_file,
+                threshold=threshold,
+                human_fasta=human_fasta,
+                plasmid_gb=plasmid_file,
+                sequencing_file=sequencing_file,
+                command_line=command_line,
             )
 
             # Write MD5 checksums for the output files

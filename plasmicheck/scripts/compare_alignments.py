@@ -115,11 +115,9 @@ def calculate_coverage_outside_insert(plasmid_bam: str, insert_region: tuple[int
                     outside_end = read_end
                     total_aligned_bases_outside_insert += outside_end - outside_start + 1
 
-    # Calculate coverage
-    coverage_outside_insert = (
+    # Calculate coverage (total_reference_bases_outside_insert is guaranteed > 0 here)
+    coverage_outside_insert: float = (
         total_aligned_bases_outside_insert / total_reference_bases_outside_insert
-        if total_reference_bases_outside_insert > 0
-        else 0
     )
 
     return coverage_outside_insert

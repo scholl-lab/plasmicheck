@@ -33,6 +33,8 @@ dependencies = [
     "plotly>=5.23.0",
     "statsmodels>=0.14.2",
     "numpy>=2.0.1",
+    "kaleido",
+    "XlsxWriter",
 ]
 
 [project.optional-dependencies]

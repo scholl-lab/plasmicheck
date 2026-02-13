@@ -237,7 +237,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_pipeline.add_argument(
         "-k",
         "--keep_intermediate",
-        type=bool,
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Keep intermediate files (default: True)",
     )
@@ -367,7 +367,19 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     elif args.command == "align":
         from .scripts.align_reads import align_reads
 
-        align_reads(args.reference_index, args.input_files, args.output_bam, args.alignment_type)
+        input_files: list[str] = args.input_files
+        if len(input_files) == 1:
+            align_reads(args.reference_index, input_files[0], args.output_bam, args.alignment_type)
+        elif len(input_files) == 2:
+            align_reads(
+                args.reference_index,
+                input_files[0],
+                args.output_bam,
+                args.alignment_type,
+                fastq2=input_files[1],
+            )
+        else:
+            parser.error(f"align expects 1 or 2 input files, got {len(input_files)}")
     elif args.command == "compare":
         from .scripts.compare_alignments import compare_alignments
 
