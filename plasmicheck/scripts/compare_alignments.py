@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import itertools
 import logging
 import os
-from typing import Any
+import subprocess
+from collections.abc import Iterator
+from typing import IO, Any
 
 import pysam
 
@@ -16,12 +19,11 @@ CLIPPING_PENALTY: int = _cfg["scoring"]["clipping_penalty"]
 MISMATCH_PENALTY: int = _cfg["scoring"]["mismatch_penalty"]
 DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
 UNCLEAR_RANGE: dict[str, float] = _cfg["unclear_range"]
+SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
 
 
 def calculate_alignment_score(read: Any) -> int:
-    """
-    Calculate a custom alignment score based on multiple criteria.
-    """
+    """Calculate a custom alignment score based on multiple criteria."""
     if read.is_unmapped:
         return 0
 
@@ -44,9 +46,7 @@ def calculate_alignment_score(read: Any) -> int:
 
 
 def parse_insert_region(cdna_positions_file: str) -> tuple[int, int]:
-    """
-    Parse the cDNA_positions.txt file to extract the INSERT_REGION.
-    """
+    """Parse the cDNA_positions.txt file to extract the INSERT_REGION."""
     if not os.path.exists(cdna_positions_file):
         raise FileNotFoundError(
             f"Expected cDNA_positions.txt at {cdna_positions_file} but the file was not found."
@@ -59,24 +59,15 @@ def parse_insert_region(cdna_positions_file: str) -> tuple[int, int]:
 
     cdna_start = int(lines[0].split(": ")[1])
     cdna_end = int(lines[1].split(": ")[1])
-    insert_region = (cdna_start, cdna_end)
-
-    return insert_region
+    return (cdna_start, cdna_end)
 
 
 def calculate_coverage_outside_insert(plasmid_bam: str, insert_region: tuple[int, int]) -> float:
-    """
-    Calculate the coverage of reads mapping outside the INSERT_REGION.
-    Coverage is defined as the total number of aligned bases outside the INSERT_REGION
-    divided by the length of the reference region outside the INSERT_REGION.
-    """
+    """Calculate the coverage of reads mapping outside the INSERT_REGION."""
     total_aligned_bases_outside_insert = 0
 
     with pysam.AlignmentFile(plasmid_bam, "rb") as bamfile:
-        # Calculate the length of the plasmid reference
-        plasmid_length = bamfile.lengths[
-            bamfile.get_tid(bamfile.get_reference_name(0))
-        ]  # Assumes single reference in BAM
+        plasmid_length = bamfile.lengths[bamfile.get_tid(bamfile.get_reference_name(0))]
 
         total_reference_bases_outside_insert = plasmid_length - (
             insert_region[1] - insert_region[0] + 1
@@ -93,44 +84,28 @@ def calculate_coverage_outside_insert(plasmid_bam: str, insert_region: tuple[int
             if read_start is None or read_end is None:
                 continue
 
-            # Check if the read overlaps with the region outside the INSERT_REGION
             if read_end < insert_region[0] or read_start > insert_region[1]:
-                # Entire read is outside the INSERT_REGION
                 total_aligned_bases_outside_insert += read.query_length
             else:
-                # Read overlaps with the INSERT_REGION, split into parts
-                if read_start < insert_region[0]:  # Part of the read is before the INSERT_REGION
+                if read_start < insert_region[0]:
                     outside_start = read_start
                     outside_end = min(read_end, insert_region[0] - 1)
                     total_aligned_bases_outside_insert += outside_end - outside_start + 1
-
-                if read_end > insert_region[1]:  # Part of the read is after the INSERT_REGION
+                if read_end > insert_region[1]:
                     outside_start = max(read_start, insert_region[1] + 1)
                     outside_end = read_end
                     total_aligned_bases_outside_insert += outside_end - outside_start + 1
 
-    # Calculate coverage (total_reference_bases_outside_insert is guaranteed > 0 here)
     coverage_outside_insert: float = (
         total_aligned_bases_outside_insert / total_reference_bases_outside_insert
     )
-
     return coverage_outside_insert
 
 
 def count_mismatches_near_insert_end(
     plasmid_bam: str, insert_region: tuple[int, int], window_size: int = 100
 ) -> dict[str, int]:
-    """
-    Count the number of reads with and without mismatches or clipping near the INSERT_REGION end.
-
-    Parameters:
-    - plasmid_bam: Path to the BAM file for plasmid alignment.
-    - insert_region: Tuple indicating the (start, end) of the INSERT_REGION.
-    - window_size: The number of bases around the insert end to consider for counting mismatches and clipping.
-
-    Returns:
-    - A dictionary with counts of reads with and without mismatches/clipping near the INSERT_REGION end.
-    """
+    """Count reads with/without mismatches or clipping near the INSERT_REGION boundaries."""
     mismatches_near_insert = {"with_mismatches_or_clipping": 0, "without_mismatches_or_clipping": 0}
 
     with pysam.AlignmentFile(plasmid_bam, "rb") as bamfile:
@@ -143,13 +118,10 @@ def count_mismatches_near_insert_end(
             if read_start is None or read_end is None:
                 continue
 
-            # Check if the read is near the start of the INSERT_REGION
             near_insert_start = (
                 read_end >= insert_region[0] - window_size
                 and read_end <= insert_region[0] + window_size
             )
-
-            # Check if the read is near the end of the INSERT_REGION
             near_insert_end = (
                 read_start >= insert_region[1] - window_size
                 and read_start <= insert_region[1] + window_size
@@ -157,20 +129,12 @@ def count_mismatches_near_insert_end(
 
             if near_insert_start or near_insert_end:
                 has_mismatches_or_clipping = False
-
                 cigartuples = read.cigartuples
                 if cigartuples is None:
                     continue
 
-                # Check CIGAR string for mismatches, clipping, or other issues
                 for operation, _length in cigartuples:
-                    if operation in {
-                        1,
-                        2,
-                        3,
-                        4,
-                        5,
-                    }:  # Insertion, Deletion, Skipped region, Soft clipping, Hard clipping
+                    if operation in {1, 2, 3, 4, 5}:
                         has_mismatches_or_clipping = True
                         break
 
@@ -182,21 +146,122 @@ def count_mismatches_near_insert_end(
     return mismatches_near_insert
 
 
+# ---------------------------------------------------------------------------
+# Streaming name-sorted merge (O(1) memory)
+# ---------------------------------------------------------------------------
+
+
+def _namesort_bam(input_bam: str, output_bam: str) -> None:
+    """Sort a BAM by read name using samtools."""
+    subprocess.run(
+        ["samtools", "sort", "-n", "-@", str(SAMTOOLS_THREADS), "-o", output_bam, input_bam],
+        check=True,
+    )
+
+
+def _iter_reads_by_name(bam_path: str) -> Iterator[tuple[str, list[Any]]]:
+    """Yield ``(query_name, [reads])`` groups from a name-sorted BAM."""
+    with pysam.AlignmentFile(bam_path, "rb") as bam:
+        for name, group in itertools.groupby(bam.fetch(until_eof=True), key=lambda r: r.query_name):
+            yield name, list(group)
+
+
+def _best_read(reads: list[Any]) -> Any:
+    """Pick the primary alignment (or first) from a group of reads with the same name."""
+    for r in reads:
+        if not r.is_secondary and not r.is_supplementary:
+            return r
+    return reads[0]
+
+
+def _write_assignment(
+    outfile: IO[str],
+    query_name: str,
+    assigned_to: str,
+    plasmid_score: int,
+    human_score: int,
+    plasmid_read: Any | None,
+    human_read: Any | None,
+) -> None:
+    """Write a single line to the reads_assignment TSV."""
+    p_cigar = plasmid_read.cigarstring if plasmid_read and plasmid_read.cigarstring else "NA"
+    h_cigar = human_read.cigarstring if human_read and human_read.cigarstring else "NA"
+    p_mapq = plasmid_read.mapping_quality if plasmid_read else "NA"
+    h_mapq = human_read.mapping_quality if human_read else "NA"
+    outfile.write(
+        f"{query_name}\t{assigned_to}\t{plasmid_score}\t{human_score}\t{p_cigar}\t{h_cigar}\t{p_mapq}\t{h_mapq}\n"
+    )
+
+
+def _assign(plasmid_score: int, human_score: int) -> str:
+    if plasmid_score > human_score:
+        return "Plasmid"
+    elif human_score > plasmid_score:
+        return "Human"
+    return "Tied"
+
+
+def _streaming_compare(
+    plasmid_ns_bam: str,
+    human_ns_bam: str,
+    outfile: IO[str],
+) -> dict[str, int]:
+    """Two-pointer merge over name-sorted BAMs.  Returns assigned counts."""
+    assigned_counts: dict[str, int] = {"Plasmid": 0, "Human": 0, "Tied": 0}
+
+    plasmid_iter = _iter_reads_by_name(plasmid_ns_bam)
+    human_iter = _iter_reads_by_name(human_ns_bam)
+
+    p_item: tuple[str, list[Any]] | None = next(plasmid_iter, None)
+    h_item: tuple[str, list[Any]] | None = next(human_iter, None)
+
+    while p_item is not None or h_item is not None:
+        p_name = p_item[0] if p_item else None
+        h_name = h_item[0] if h_item else None
+
+        if p_name is not None and p_name == h_name:
+            # Both BAMs have this read — compare scores
+            assert p_item is not None
+            assert h_item is not None
+            p_read = _best_read(p_item[1])
+            h_read = _best_read(h_item[1])
+            ps = calculate_alignment_score(p_read)
+            hs = calculate_alignment_score(h_read)
+            assigned = _assign(ps, hs)
+            assigned_counts[assigned] += 1
+            _write_assignment(outfile, p_name, assigned, ps, hs, p_read, h_read)
+            p_item = next(plasmid_iter, None)
+            h_item = next(human_iter, None)
+
+        elif h_name is None or (p_name is not None and p_name < h_name):
+            # Plasmid-only read
+            assert p_item is not None
+            assert p_name is not None
+            p_read = _best_read(p_item[1])
+            ps = calculate_alignment_score(p_read)
+            assigned = _assign(ps, 0)
+            assigned_counts[assigned] += 1
+            _write_assignment(outfile, p_name, assigned, ps, 0, p_read, None)
+            p_item = next(plasmid_iter, None)
+
+        else:
+            # Human-only read
+            assert h_item is not None
+            h_read = _best_read(h_item[1])
+            hs = calculate_alignment_score(h_read)
+            assigned = _assign(0, hs)
+            assigned_counts[assigned] += 1
+            _write_assignment(outfile, h_name, assigned, 0, hs, None, h_read)
+            h_item = next(human_iter, None)
+
+    return assigned_counts
+
+
 def compare_alignments(
     plasmid_bam: str, human_bam: str, output_basename: str, threshold: float = DEFAULT_THRESHOLD
 ) -> None:
     logging.info("Starting comparison of alignments")
-
-    plasmid_samfile = pysam.AlignmentFile(plasmid_bam, "rb")
-    human_samfile = pysam.AlignmentFile(human_bam, "rb")
-
     logging.debug(f"Processing BAM files: {plasmid_bam} (plasmid), {human_bam} (human)")
-
-    # Create dictionaries to store reads by query name
-    plasmid_reads = {read.query_name: read for read in plasmid_samfile.fetch(until_eof=True)}
-    human_reads = {read.query_name: read for read in human_samfile.fetch(until_eof=True)}
-
-    assigned_counts = {"Plasmid": 0, "Human": 0, "Tied": 0}
 
     # Extract the INSERT_REGION from cDNA_positions.txt
     cdna_positions_file = os.path.join(os.path.dirname(output_basename), "cDNA_positions.txt")
@@ -208,51 +273,38 @@ def compare_alignments(
     insert_region = parse_insert_region(cdna_positions_file)
     logging.debug(f"INSERT_REGION extracted from {cdna_positions_file}: {insert_region}")
 
-    # Calculate the coverage outside the INSERT_REGION
     coverage_outside_insert = calculate_coverage_outside_insert(plasmid_bam, insert_region)
     logging.debug(f"Coverage outside INSERT_REGION: {coverage_outside_insert}")
 
-    # Count mismatches near the INSERT_REGION
     mismatches_near_insert = count_mismatches_near_insert_end(plasmid_bam, insert_region)
     logging.debug(f"Mismatches near INSERT_REGION: {mismatches_near_insert}")
+
+    # Name-sort BAMs into temporary files for streaming merge
+    plasmid_ns = plasmid_bam.replace(".bam", ".namesorted.bam")
+    human_ns = human_bam.replace(".bam", ".namesorted.bam")
+    logging.info("Name-sorting BAMs for streaming comparison...")
+    _namesort_bam(plasmid_bam, plasmid_ns)
+    _namesort_bam(human_bam, human_ns)
 
     logging.debug(f"Writing alignment comparison results to {output_basename}.reads_assignment.tsv")
 
     with open(f"{output_basename}.reads_assignment.tsv", "w") as outfile:
-        # Include headers for the new fields (CIGAR strings and mapping qualities)
         outfile.write(
             "ReadID\tAssignedTo\tPlasmidScore\tHumanScore\tPlasmidCIGAR\tHumanCIGAR\tPlasmidMapQ\tHumanMapQ\n"
         )
-        for query_name, plasmid_read in plasmid_reads.items():
-            plasmid_score = calculate_alignment_score(plasmid_read)
-            plasmid_cigar = plasmid_read.cigarstring if plasmid_read.cigarstring else "NA"
-            plasmid_mapq = plasmid_read.mapping_quality
+        assigned_counts = _streaming_compare(plasmid_ns, human_ns, outfile)
 
-            human_read = human_reads.get(query_name)
-            human_score = calculate_alignment_score(human_read) if human_read else 0
-            human_cigar = human_read.cigarstring if human_read and human_read.cigarstring else "NA"
-            human_mapq = human_read.mapping_quality if human_read else "NA"
-
-            if plasmid_score > human_score:
-                assigned_to = "Plasmid"
-                assigned_counts["Plasmid"] += 1
-            elif human_score > plasmid_score:
-                assigned_to = "Human"
-                assigned_counts["Human"] += 1
-            else:
-                assigned_to = "Tied"
-                assigned_counts["Tied"] += 1
-
-            # Write the extended data to the output file
-            outfile.write(
-                f"{query_name}\t{assigned_to}\t{plasmid_score}\t{human_score}\t{plasmid_cigar}\t{human_cigar}\t{plasmid_mapq}\t{human_mapq}\n"
-            )
+    # Clean up temporary name-sorted BAMs
+    for ns_bam in (plasmid_ns, human_ns):
+        try:
+            os.remove(ns_bam)
+        except OSError:
+            logging.warning(f"Could not remove temporary file: {ns_bam}")
 
     plasmid_count = assigned_counts["Plasmid"]
     human_count = assigned_counts["Human"]
     ratio = plasmid_count / human_count if human_count != 0 else float("inf")
 
-    # Determine classification based on ratio
     if ratio > threshold:
         verdict = "Sample is contaminated with plasmid DNA"
     elif UNCLEAR_RANGE["lower_bound"] <= ratio <= UNCLEAR_RANGE["upper_bound"]:
@@ -268,12 +320,8 @@ def compare_alignments(
             summary_file.write(f"{category}\t{count}\n")
         summary_file.write(f"Verdict\t{verdict}\n")
         summary_file.write(f"Ratio\t{ratio}\n")
-        summary_file.write(
-            f"CoverageOutsideINSERT\t{coverage_outside_insert:.4f}\n"
-        )  # Added coverage information
-        summary_file.write(
-            f"MismatchesNearINSERT\t{mismatches_near_insert}\n"
-        )  # Added mismatches information
+        summary_file.write(f"CoverageOutsideINSERT\t{coverage_outside_insert:.4f}\n")
+        summary_file.write(f"MismatchesNearINSERT\t{mismatches_near_insert}\n")
 
 
 if __name__ == "__main__":
