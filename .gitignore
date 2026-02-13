@@ -143,6 +143,9 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
+# ruff
+.ruff_cache/
+
 # Pyre type checker
 .pyre/
 
@@ -166,6 +169,12 @@ cython_debug/
 
 # commands file
 COMMANDS.md
+
+# audit file
+TOOLING_AUDIT.md
+
+# Windows artifacts
+nul
 
 # claude files and folders
 .claude/

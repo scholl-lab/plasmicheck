@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/*", "fix/*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --output-format=github"
+          src: "plasmicheck/ tests/"
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check --diff"
+          src: "plasmicheck/ tests/"
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv pip install --system -e ".[dev]"
+      - run: python -m mypy plasmicheck/
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv pip install --system -e ".[dev]"
+      - name: Install minimap2 and samtools
+        run: sudo apt-get update && sudo apt-get install -y minimap2 samtools
+      - run: |
+          python -m pytest -m "not slow" tests/ \
+            --verbose \
+            --cov=plasmicheck \
+            --cov-report=xml \
+            --cov-report=term-missing
+
+  ci-success:
+    name: CI Success
+    needs: [lint, type-check, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [[ "${{ needs.lint.result }}" != "success" ]] || \
+             [[ "${{ needs.type-check.result }}" != "success" ]] || \
+             [[ "${{ needs.test.result }}" != "success" ]]; then
+            exit 1
+          fi
