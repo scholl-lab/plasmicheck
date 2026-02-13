@@ -1,0 +1,161 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "plasmicheck"
+dynamic = ["version"]
+description = "Detect and quantify plasmid DNA contamination in sequencing data"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Bernt Popp", email = "bernt.popp.md@gmail.com" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Typing :: Typed",
+]
+dependencies = [
+    "biopython>=1.84",
+    "pysam>=0.22.1",
+    "jinja2>=3.0.0",
+    "matplotlib>=3.9.1",
+    "seaborn>=0.13.2",
+    "pandas>=2.2.2",
+    "scipy>=1.13.1",
+    "plotly>=5.23.0",
+    "statsmodels>=0.14.2",
+    "numpy>=2.0.1",
+    "kaleido",
+    "XlsxWriter",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.11",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.14",
+    "pre-commit",
+    "pandas-stubs",
+    "types-jinja2",
+]
+
+[project.scripts]
+plasmicheck = "plasmicheck.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/berntpopp/plasmicheck"
+Repository = "https://github.com/berntpopp/plasmicheck"
+Issues = "https://github.com/berntpopp/plasmicheck/issues"
+
+[tool.hatch.version]
+path = "plasmicheck/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["plasmicheck"]
+
+[tool.hatch.build.targets.sdist]
+include = ["plasmicheck/"]
+
+# --- Ruff (linter + formatter) ---
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific rules
+    "T20",  # flake8-print
+]
+extend-ignore = [
+    "E501",   # line too long (formatter handles this)
+    "T201",   # print found (CLI tool uses print legitimately)
+    "N812",   # lowercase imported as non-lowercase (__version__ as VERSION)
+]
+per-file-ignores = { "cli.py" = ["E501"], "__init__.py" = ["F401"] }
+
+[tool.ruff.lint.isort]
+known-first-party = ["plasmicheck"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+# --- mypy (strict type checking) ---
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_configs = true
+warn_return_any = true
+warn_unreachable = true
+show_error_codes = true
+enable_error_code = ["ignore-without-code", "redundant-cast", "truthy-bool"]
+
+[[tool.mypy.overrides]]
+module = [
+    "pysam",
+    "pysam.*",
+    "Bio",
+    "Bio.*",
+    "plotly",
+    "plotly.*",
+    "seaborn",
+    "seaborn.*",
+    "statsmodels",
+    "statsmodels.*",
+    "scipy",
+    "scipy.*",
+]
+ignore_missing_imports = true
+
+# --- pytest ---
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-ra --tb=short --strict-markers --color=yes"
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests (require minimap2/samtools)",
+    "slow: Tests that take a long time to run",
+]
+
+# --- coverage ---
+
+[tool.coverage.run]
+source = ["plasmicheck"]
+omit = ["*/tests/*", "*/__pycache__/*", "*/.venv/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
