@@ -68,14 +68,14 @@ class TestValidateFileExistence:
         f1 = tmp_path / "exists.txt"
         f1.write_text("x")
         missing = str(tmp_path / "nope.txt")
-        with pytest.raises(FileNotFoundError, match="nope.txt"):
+        with pytest.raises(FileNotFoundError, match=r"nope\.txt"):
             validate_file_existence([str(f1), missing])
 
     @pytest.mark.unit
     def test_multiple_missing(self, tmp_path: Path) -> None:
         m1 = str(tmp_path / "miss1.txt")
         m2 = str(tmp_path / "miss2.txt")
-        with pytest.raises(FileNotFoundError, match="miss1.txt") as exc_info:
+        with pytest.raises(FileNotFoundError, match=r"miss1\.txt") as exc_info:
             validate_file_existence([m1, m2])
         assert "miss2.txt" in str(exc_info.value)
 

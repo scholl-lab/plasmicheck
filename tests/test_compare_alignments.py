@@ -107,7 +107,7 @@ class TestParseInsertRegion:
 
     @pytest.mark.unit
     def test_missing_file(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="cDNA_positions.txt"):
+        with pytest.raises(FileNotFoundError, match=r"cDNA_positions\.txt"):
             parse_insert_region(str(tmp_path / "nonexistent.txt"))
 
     @pytest.mark.unit

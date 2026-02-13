@@ -96,6 +96,8 @@ def calculate_coverage_outside_insert(plasmid_bam: str, insert_region: tuple[int
 
             read_start = read.reference_start
             read_end = read.reference_end
+            if read_start is None or read_end is None:
+                continue
 
             # Check if the read overlaps with the region outside the INSERT_REGION
             if read_end < insert_region[0] or read_start > insert_region[1]:
@@ -146,6 +148,8 @@ def count_mismatches_near_insert_end(
 
             read_start = read.reference_start
             read_end = read.reference_end
+            if read_start is None or read_end is None:
+                continue
 
             # Check if the read is near the start of the INSERT_REGION
             near_insert_start = (
@@ -162,8 +166,12 @@ def count_mismatches_near_insert_end(
             if near_insert_start or near_insert_end:
                 has_mismatches_or_clipping = False
 
+                cigartuples = read.cigartuples
+                if cigartuples is None:
+                    continue
+
                 # Check CIGAR string for mismatches, clipping, or other issues
-                for operation, _length in read.cigartuples:
+                for operation, _length in cigartuples:
                     if operation in {
                         1,
                         2,

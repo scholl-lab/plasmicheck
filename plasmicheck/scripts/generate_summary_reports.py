@@ -180,7 +180,7 @@ def calculate_variations(ratio_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataF
             for i in range(len(data)):
                 # Exclude the current sample and run the one-sample t-test
                 try:
-                    t_stat, p_value = stats.ttest_1samp(data.drop(data.index[i]), data.iloc[i])
+                    _, p_value = stats.ttest_1samp(data.drop(data.index[i]), data.iloc[i])
                     p_values_list.append(
                         {
                             "Sample": data.index[i],
@@ -411,7 +411,7 @@ def main(
     unclear_range: dict[str, float] = UNCLEAR_RANGE,
     substring_to_remove: str | None = None,
 ) -> None:
-    reads_df, summary_df = read_compare_outputs(input_dir, substring_to_remove=substring_to_remove)
+    _, summary_df = read_compare_outputs(input_dir, substring_to_remove=substring_to_remove)
 
     # Calculate variations
     boxplot_data, p_values_df = calculate_variations(summary_df[summary_df["Category"] == "Ratio"])

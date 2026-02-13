@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -18,7 +19,7 @@ SUBCOMMANDS = [
     "summary_reports",
 ]
 
-PROJECT_ROOT = "C:/development/scholl-lab/plasmicheck"
+PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 
 
 class TestCLI:

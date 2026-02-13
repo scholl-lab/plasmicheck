@@ -105,7 +105,7 @@ class TestCalculateVariations:
                 "Value": [0.5],
             }
         )
-        boxplot_data, p_values_df = calculate_variations(df)
+        _, p_values_df = calculate_variations(df)
         assert p_values_df.empty
 
     @pytest.mark.unit
