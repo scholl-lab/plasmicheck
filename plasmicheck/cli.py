@@ -228,8 +228,20 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_pipeline.add_argument(
         "-sf",
         "--sequencing_files",
-        help="Sequencing files (single file or a file containing paths to multiple files)",
-        required=True,
+        help="(Deprecated) Sequencing files. For paired-end, use -sf1/-sf2 instead.",
+        default=None,
+    )
+    parser_pipeline.add_argument(
+        "-sf1",
+        "--sequencing_files_r1",
+        help="Forward (R1) FASTQ files or file list (.txt) for paired-end",
+        default=None,
+    )
+    parser_pipeline.add_argument(
+        "-sf2",
+        "--sequencing_files_r2",
+        help="Reverse (R2) FASTQ files or file list (.txt) for paired-end",
+        default=None,
     )
     parser_pipeline.add_argument(
         "-o",
@@ -284,6 +296,17 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         "--archive_output",
         action="store_true",
         help="Archive and compress the output folder into a .tar.gz file",
+    )
+    parser_pipeline.add_argument(
+        "-n",
+        "--dry_run",
+        action="store_true",
+        help="Show execution plan without running anything",
+    )
+    parser_pipeline.add_argument(
+        "--no_progress",
+        action="store_true",
+        help="Disable progress bar (auto-disabled in non-interactive terminals)",
     )
 
     # Report Command
@@ -384,6 +407,14 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline
 
+        # Validate that at least -sf or -sf1 is provided
+        if not args.sequencing_files and not args.sequencing_files_r1:
+            parser.error("Either -sf or -sf1 is required for the pipeline command.")
+        if args.sequencing_files and args.sequencing_files_r1:
+            parser.error("Cannot use both -sf and -sf1/-sf2. Use -sf1/-sf2 for paired-end.")
+
+        progress_enabled = sys.stderr.isatty() and not args.no_progress
+
         run_pipeline(
             args.human_fasta,
             args.plasmid_files,
@@ -398,6 +429,10 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             args.md5_level,
             args.cDNA_output,
             args.archive_output,
+            sequencing_files_r1=args.sequencing_files_r1,
+            sequencing_files_r2=args.sequencing_files_r2,
+            dry_run=args.dry_run,
+            progress=progress_enabled,
         )
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report

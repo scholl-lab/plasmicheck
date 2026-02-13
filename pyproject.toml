@@ -36,6 +36,7 @@ dependencies = [
     "kaleido",
     "XlsxWriter",
     "filelock>=3.13",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
@@ -126,6 +127,8 @@ module = [
     "statsmodels.*",
     "scipy",
     "scipy.*",
+    "rich",
+    "rich.*",
 ]
 ignore_missing_imports = true
 
