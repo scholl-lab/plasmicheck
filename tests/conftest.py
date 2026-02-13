@@ -142,3 +142,9 @@ def real_data_dir() -> Path | None:
     if p.is_dir():
         return p
     return None
+
+
+@pytest.fixture
+def synthetic_data_dir() -> Path:
+    """Path to tests/data/synthetic/ containing deterministic test data."""
+    return Path(__file__).resolve().parent / "data" / "synthetic"
