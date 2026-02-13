@@ -74,30 +74,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REPT-01 | TBD | Pending |
-| REPT-02 | TBD | Pending |
-| REPT-03 | TBD | Pending |
-| REPT-04 | TBD | Pending |
-| REPT-05 | TBD | Pending |
-| REPT-06 | TBD | Pending |
-| ALGN-01 | TBD | Pending |
-| ALGN-02 | TBD | Pending |
-| ALGN-03 | TBD | Pending |
-| ALGN-04 | TBD | Pending |
-| COMP-01 | TBD | Pending |
-| COMP-02 | TBD | Pending |
-| ARCH-01 | TBD | Pending |
-| ARCH-02 | TBD | Pending |
-| ARCH-03 | TBD | Pending |
-| TEST-01 | TBD | Pending |
-| TEST-02 | TBD | Pending |
-| TEST-03 | TBD | Pending |
+| TEST-01 | Phase 4 | Pending |
+| TEST-02 | Phase 4 | Pending |
+| TEST-03 | Phase 4 | Pending |
+| REPT-01 | Phase 5 | Pending |
+| REPT-02 | Phase 5 | Pending |
+| REPT-03 | Phase 5 | Pending |
+| REPT-04 | Phase 5 | Pending |
+| REPT-05 | Phase 5 | Pending |
+| REPT-06 | Phase 5 | Pending |
+| ALGN-01 | Phase 6 | Pending |
+| ALGN-02 | Phase 6 | Pending |
+| ALGN-03 | Phase 6 | Pending |
+| ALGN-04 | Phase 6 | Pending |
+| COMP-01 | Phase 7 | Pending |
+| COMP-02 | Phase 7 | Pending |
+| ARCH-01 | Phase 7 | Pending |
+| ARCH-02 | Phase 7 | Pending |
+| ARCH-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 18 total
-- Mapped to phases: 0
-- Unmapped: 18 (pending roadmap creation)
+- Mapped to phases: 18 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-14 after roadmap creation*
