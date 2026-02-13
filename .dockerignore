@@ -1,0 +1,14 @@
+.git
+data/
+output/
+reference/
+tests/data/real/
+*.egg-info
+__pycache__
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.planning/
+htmlcov/
+.coverage
+coverage.xml
