@@ -39,7 +39,7 @@ def create_sanitized_copy(input_file: str) -> str:
 def convert_xdna_to_gb(input_file: str, output_file: str) -> None:
     """Convert xDNA to GenBank using SeqIO."""
     logging.info(f"Converting xDNA file {input_file} to GenBank format")
-    records: Any = SeqIO.parse(input_file, "xdna")
+    records: Any = SeqIO.parse(input_file, "xdna")  # type: ignore[no-untyped-call]
     count: int = SeqIO.write(records, output_file, "genbank")
     logging.info(f"Converted {count} records from xDNA to GenBank")
 
@@ -65,11 +65,11 @@ def convert_plasmidfile_to_fasta(
     # Determine the input file type and convert accordingly
     try:
         if file_type == "genbank":
-            SeqIO.convert(sanitized_input_file, "genbank", output_file, "fasta")
+            SeqIO.convert(sanitized_input_file, "genbank", output_file, "fasta")  # type: ignore[no-untyped-call]
         elif file_type == "xdna":
             temp_gb_file: str = os.path.splitext(output_file)[0] + ".gb"
             convert_xdna_to_gb(sanitized_input_file, temp_gb_file)
-            SeqIO.convert(temp_gb_file, "genbank", output_file, "fasta")
+            SeqIO.convert(temp_gb_file, "genbank", output_file, "fasta")  # type: ignore[no-untyped-call]
             os.remove(temp_gb_file)
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
@@ -82,7 +82,7 @@ def convert_plasmidfile_to_fasta(
         logging.info(f"Generating shifted reference for {output_file}")
         try:
             # Read the converted FASTA file
-            records: list[Any] = list(SeqIO.parse(output_file, "fasta"))
+            records: list[Any] = list(SeqIO.parse(output_file, "fasta"))  # type: ignore[no-untyped-call]
 
             with open(output_file, "a") as output_handle:
                 for record in records:
