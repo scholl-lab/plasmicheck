@@ -28,62 +28,60 @@ Beyond its core logic, 'plasmicheck' offers a comprehensive set of functionaliti
 
 ## Installation
 
-### Option 1: Using pip
-
-You can install plasmicheck using pip:
+### Option 1: Using uv (recommended)
 
 ```bash
-pip install .
+git clone https://github.com/berntpopp/plasmicheck.git
+cd plasmicheck
+uv pip install -e .
 ```
 
-### Option 2: Using Conda Environment
+### Option 2: Using pip
 
-Alternatively, you can set up a Conda environment using the provided `plasmicheck_full_conda.yml` file (which includes all dependencies) as follows:
+```bash
+pip install -e .
+```
 
-1. Clone the repository:
+### Option 3: Using Conda Environment
 
-    ```bash
-    git clone https://github.com/berntpopp/plasmicheck.git
-    cd plasmicheck
-    ```
+You can set up a Conda environment using the provided `plasmicheck_full_conda.yml` file:
 
-2. Create the Conda environment:
+```bash
+git clone https://github.com/berntpopp/plasmicheck.git
+cd plasmicheck
+conda env create -f conda/conda/plasmicheck_full_conda.yml
+conda activate plasmicheck
+```
 
-    ```bash
-    conda env create -f conda/conda/plasmicheck_full_conda.yml
-    ```
+### Requirements
 
-3. Activate the environment:
-
-    ```bash
-    conda activate plasmicheck
-    ```
-
-### Required Tools and Python Packages
-
-Make sure you have the following tools and packages installed:
-
-- **Tools:**
+- **Python** >= 3.10
+- **External tools** (must be on PATH):
   - `minimap2` (version >= 2.17-r941)
   - `samtools` (version >= 1.13)
 
-- **Python Packages:**
-  - `biopython` (version 1.84)
-  - `pysam` (version 0.22.1)
-  - `jinja2` (version 3.0.0)
-  - `matplotlib` (version 3.9.1)
-  - `seaborn` (version 0.13.2)
-  - `pandas` (version 2.2.2)
-  - `scipy` (version 1.13.1)
-  - `plotly` (version 5.23.0)
-  - `statsmodels` (version 0.14.2)
-  - `numpy` (version 2.0.1)
+All Python dependencies are installed automatically from `pyproject.toml`.
 
-You can also install the Python packages using pip:
+## Development
 
 ```bash
-pip install biopython pysam jinja2 weasyprint matplotlib seaborn pandas scipy plotly statsmodels numpy
+# Install with dev dependencies
+uv pip install -e ".[dev]"
+
+# Lint + format + typecheck + test (mirrors CI)
+make ci-check
+
+# Individual targets
+make lint          # ruff linter
+make format        # ruff formatter (auto-fix)
+make typecheck     # mypy (strict)
+make test          # pytest with coverage
+make test-fast     # unit tests only (no integration/slow)
+make fix           # auto-fix then lint
+make clean         # remove build artifacts
 ```
+
+See the [Makefile](Makefile) for all available targets (`make help`).
 
 
 ## Configuration
