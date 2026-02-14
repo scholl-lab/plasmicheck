@@ -187,22 +187,22 @@ def compare_summary_tsv(baseline_text: str, current_text: str) -> list[str]:
 
         if str(category).lower() == "verdict":
             # Exact string match (case-insensitive)
-            baseline_val = str(baseline_row.Value).strip().lower()
-            current_val = str(current_row.Value).strip().lower()
+            baseline_val = str(baseline_row.Count).strip().lower()
+            current_val = str(current_row.Count).strip().lower()
             if baseline_val != current_val:
                 errors.append(f"Verdict mismatch: baseline='{baseline_val}', current='{current_val}'")
 
         elif category in ["Plasmid", "Human", "Tied"]:
             # Exact integer match
-            baseline_int = int(baseline_row.Value)  # type: ignore[arg-type]
-            current_int = int(current_row.Value)  # type: ignore[arg-type]
+            baseline_int = int(baseline_row.Count)  # type: ignore[arg-type]
+            current_int = int(current_row.Count)  # type: ignore[arg-type]
             if baseline_int != current_int:
                 errors.append(f"{category} count mismatch: baseline={baseline_int}, current={current_int}")
 
         elif category in ["Ratio", "CoverageOutsideINSERT"]:
             # Float comparison with tolerance
-            baseline_float = float(baseline_row.Value)  # type: ignore[arg-type]
-            current_float = float(current_row.Value)  # type: ignore[arg-type]
+            baseline_float = float(baseline_row.Count)  # type: ignore[arg-type]
+            current_float = float(current_row.Count)  # type: ignore[arg-type]
             if abs(baseline_float - current_float) > 0.001:
                 errors.append(
                     f"{category} divergence: baseline={baseline_float:.6f}, "
@@ -211,8 +211,8 @@ def compare_summary_tsv(baseline_text: str, current_text: str) -> list[str]:
 
         elif category == "MismatchesNearINSERT":
             # String match (it's a dict representation)
-            baseline_val = str(baseline_row.Value).strip()
-            current_val = str(current_row.Value).strip()
+            baseline_val = str(baseline_row.Count).strip()
+            current_val = str(current_row.Count).strip()
             if baseline_val != current_val:
                 errors.append(f"MismatchesNearINSERT mismatch: baseline='{baseline_val}', current='{current_val}'")
 
