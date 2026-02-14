@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 8 -- Insert-Region-Aware Filtering
-**Plan:** Not yet created (run `/gsd:plan-phase 8`)
-**Status:** Roadmap complete, ready to plan Phase 8
-**Progress:** ░░░░░░░░░░ 0%
+**Phase:** 8 of 11 (Insert-Region-Aware Filtering)
+**Plan:** 1 of 1 in phase
+**Status:** Phase 8 complete, ready for Phase 9
+**Progress:** █░░░░░░░░░ 25% (1/4 phases complete)
 
-Last activity: 2026-02-14 -- Roadmap created for v0.33.0
+Last activity: 2026-02-14 -- Completed 08-01-PLAN.md (insert-region filtering)
 
 ## Milestones
 
@@ -28,19 +28,26 @@ Last activity: 2026-02-14 -- Roadmap created for v0.33.0
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 8 | Insert-Region-Aware Filtering | FILT-01..05 | Not Started |
+| 8 | Insert-Region-Aware Filtering | FILT-01..05 | Complete ✓ |
 | 9 | Coverage Metrics | COV-01..05 | Not Started |
 | 10 | Resistance Gene Detection | RGENE-01..04 | Not Started |
 | 11 | Summary Report Integration | REPT-04..10 | Not Started |
 
 ## Accumulated Context
 
-### Key Outcomes (from v0.32.0)
+### Key Outcomes
 
+**From v0.32.0:**
 - 9.5x faster pipeline for small datasets (5.5s -> 0.577s)
 - 1.97x faster alignment on real datasets (115.2s -> 58.4s)
 - 170 tests passing (up from 125 in v0.31.0)
 - New CLI flags: --static-report, --plotly-mode, --threads, --plot-backend
+
+**From Phase 8 (08-01):**
+- 5-category read classification eliminates false positives from backbone contamination
+- 195 tests passing (up from 170)
+- Graceful fallback when cDNA_positions.txt unavailable
+- Backward compatibility via filter_backbone_only config toggle
 
 ### Key Context for v0.33.0
 
@@ -53,6 +60,15 @@ Last activity: 2026-02-14 -- Roadmap created for v0.33.0
 - Existing matplotlib backend at plasmicheck/scripts/plotting/matplotlib_backend.py
 - Detailed milestone plan: .planning/v0.33.0-MILESTONE-PLAN.md
 
+### Decisions Log
+
+| Phase | Decision | Rationale |
+|-------|----------|-----------|
+| 08-01 | filter_backbone_only defaults to true | New v0.33.0 behavior provides scientific accuracy by default; false restores pre-v0.33.0 |
+| 08-01 | score_margin=0 means disabled | Preserves Tied category; margin > 0 creates Ambiguous category for borderline reads |
+| 08-01 | Exact ties never Ambiguous | Tied (score_diff=0) is distinct from Ambiguous (0 < score_diff < margin) |
+| 08-01 | Graceful fallback for missing insert region | Warning + pre-v0.33.0 behavior instead of crash enables partial functionality |
+
 ### Known Issues
 
 - #75: Some xDNA files don't work (needs reproduction data)
@@ -64,17 +80,26 @@ None.
 
 ## Session Continuity
 
-**What just happened:** Roadmap created for v0.33.0 with 4 phases (8-11) covering 21 requirements.
+**Last session:** 2026-02-14T20:08:39Z
+**Stopped at:** Completed 08-01-PLAN.md (insert-region-aware filtering)
+**Resume file:** None
 
-**Next step:** `/gsd:plan-phase 8` to create the execution plan for Insert-Region-Aware Filtering.
+**What just happened:**
+- Executed Phase 08 Plan 01 successfully
+- Implemented 5-category read classification (Plasmid, Human, Tied, Backbone_Only, Ambiguous)
+- Added 31 new unit tests, bringing total to 195 tests passing
+- All requirements FILT-01 through FILT-05 satisfied
+- Phase 8 complete (1/4 phases of v0.33.0)
 
-**Key context for next session:**
-- Phase 8 targets issue #82 (ambiguous read filtering)
-- 5 requirements: FILT-01 through FILT-05
-- Core change: Add insert_region parameter to _streaming_compare() in compare_alignments.py
-- Must maintain backward compatibility via filter_backbone_only config toggle
-- Milestone plan has detailed implementation guidance: .planning/v0.33.0-MILESTONE-PLAN.md
+**Next step:** `/gsd:plan-phase 9` to create execution plan for Coverage Metrics.
+
+**Key context for Phase 9:**
+- Insert-region-aware classification established in Phase 8
+- read_overlaps_insert() function available for coverage calculations
+- Backbone_Only reads should be excluded from insert coverage metrics
+- Requirements: COV-01 through COV-05
+- Core files: compare_alignments.py (add coverage functions), plotting modules
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after roadmap creation*
+*Last updated: 2026-02-14 after completing Phase 08 Plan 01*
