@@ -43,13 +43,17 @@ Last activity: 2026-02-14 -- Phase 8 verified (12/12 must-haves, 5/5 requirement
 - 170 tests passing (up from 125 in v0.31.0)
 - New CLI flags: --static-report, --plotly-mode, --threads, --plot-backend
 
-**From Phase 8 (08-01, 08-02):**
+**From Phase 8 (08-01, 08-02, report redesign):**
 - 5-category read classification eliminates false positives from backbone contamination
 - HTML reports display all 5 categories with visual distinction for excluded categories
 - 195 tests passing (up from 170)
 - Graceful fallback when cDNA_positions.txt unavailable
 - Backward compatibility via filter_backbone_only config toggle
 - Consistent color mapping across Plotly and matplotlib backends
+- Complete report UI/UX redesign: Bootstrap 5.3 card layout, gradient verdict banner,
+  contamination gauge, responsive Plotly charts (white bg, system fonts, consistent
+  category ordering), sample/plasmid identity bar, comma-formatted numbers,
+  parsed mismatches metrics, collapsible run details, print stylesheet
 
 ### Key Context for v0.33.0
 
@@ -92,6 +96,8 @@ None.
 - Plan 08-02: Report display updates with structured 5-category table, Plotly/matplotlib color mapping
 - Verification passed: 12/12 must-haves, 5/5 requirements (FILT-01..05) complete
 - 195 tests passing (up from 170)
+- Report UI/UX redesign: complete template rewrite based on audit (3.5/10 -> professional design)
+- Validated with Playwright at 1920px, 1366px, 768px viewports on real contaminated + clean data
 
 **Next step:** `/gsd:discuss-phase 9` or `/gsd:plan-phase 9` to plan Coverage Metrics.
 
