@@ -10,10 +10,10 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 **Phase:** 5 - Report Optimization (In Progress)
-**Status:** Plan 01 of 03 complete
-**Progress:** [███░░░░░░░] 3/18 requirements (17%)
+**Status:** Plan 02 of 03 complete
+**Progress:** [████░░░░░░] 4/18 requirements (22%)
 
-Last activity: 2026-02-14 — Completed 05-01-PLAN.md (CLI flags for report optimization)
+Last activity: 2026-02-14 — Completed 05-02-PLAN.md (single-sample report refactor)
 
 ## Performance Metrics
 
@@ -46,6 +46,10 @@ Last activity: 2026-02-14 — Completed 05-01-PLAN.md (CLI flags for report opti
 - Use shared _report_parser parent to avoid flag definition duplication (05-01)
 - Pass output_root to enable shared assets/ directory for plotly.js (05-01)
 - Default plotly-mode to 'directory' for optimal speed/offline balance (05-01)
+- Use TYPE_CHECKING for pd.DataFrame type hints with lazy imports (05-02)
+- write_html with include_plotlyjs=False, full_html=False for template embedding (05-02)
+- Always generate interactive HTML, conditionally generate non-interactive (05-02)
+- Kaleido start_sync_server() called once before write_image() (05-02)
 
 ### Todos
 
@@ -68,18 +72,19 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Completed 05-01 (CLI flags) — added --static-report and --plotly-mode flags to pipeline, report, summary_reports subcommands
+**What just happened:** Completed 05-02 (single-sample report refactor) — lazy imports, conditional PNG export, plotly.js mode support in generate_report.py
 
-**Next step:** Execute 05-02 (PNG export) — implement conditional PNG generation in generate_report
+**Next step:** Execute 05-03 (multi-sample summary refactor) — parallel to 05-02, implements same patterns for generate_summary_reports.py
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
 - Regression test validates correctness: `python scripts/regression_test.py`
 - Benchmark measures per-step timing: `python scripts/benchmark.py`
 - Report generation is 91.7% of pipeline time — Phase 5 targets this bottleneck
-- Expected type errors in mypy (7 errors) until Plans 02/03 update generate_report/generate_summary_reports signatures
-- CLI flags fully wired: cli.py → run_pipeline.py → generate_report() (including output_root)
+- Default pipeline behavior now: interactive HTML only, no PNG, no Kaleido startup
+- Expected mypy errors in generate_summary_reports.py until Plan 05-03 completes
+- generate_report.py complete: lazy imports, conditional PNG, plotly.js modes (directory/cdn/embedded)
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after 05-01 completion*
+*Last updated: 2026-02-14 after 05-02 completion*
