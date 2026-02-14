@@ -18,10 +18,16 @@ This roadmap optimizes PlasmiCheck pipeline performance by targeting the three d
 
 **Dependencies:** None (foundation phase)
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md -- Regression test script (TEST-01)
+- [ ] 04-02-PLAN.md -- Performance benchmark script (TEST-02)
+
 **Requirements:**
 - TEST-01: Regression test suite verifying optimization outputs match pre-optimization baseline
 - TEST-02: Performance benchmark comparing v0.31.0 vs v0.32.0 on synthetic dataset
-- TEST-03: Air-gapped environment test for directory-mode reports
+- TEST-03: Air-gapped environment test for directory-mode reports (deferred to Phase 5)
 
 **Success Criteria:**
 1. Regression test suite compares v0.31.0 contamination ratios, read assignments, and verdicts byte-for-byte
@@ -93,7 +99,7 @@ This roadmap optimizes PlasmiCheck pipeline performance by targeting the three d
 
 | Phase | Requirements | Status | Completion |
 |-------|--------------|--------|------------|
-| 4 - Foundation | TEST-01, TEST-02, TEST-03 | Pending | 0% |
+| 4 - Foundation | TEST-01, TEST-02, TEST-03 | Planning complete | 0% |
 | 5 - Report Optimization | REPT-01 through REPT-06 | Pending | 0% |
 | 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Pending | 0% |
 | 7 - Comparison & Cleanup | COMP-01, COMP-02, ARCH-01, ARCH-02, ARCH-03 | Pending | 0% |
@@ -103,7 +109,7 @@ This roadmap optimizes PlasmiCheck pipeline performance by targeting the three d
 ## Coverage
 
 All 18 v1 requirements mapped to phases:
-- Phase 4: 3 requirements (testing/validation)
+- Phase 4: 3 requirements (testing/validation) -- TEST-03 deferred to Phase 5 per user decision
 - Phase 5: 6 requirements (report optimization)
 - Phase 6: 4 requirements (alignment optimization)
 - Phase 7: 5 requirements (comparison & cleanup)
