@@ -295,9 +295,9 @@ class TestIndexDeduplication:
             human_index_calls = [
                 call for call in mock_create_idx.call_args_list if str(human_fasta) in str(call)
             ]
-            assert (
-                len(human_index_calls) == 1
-            ), f"Expected 1 human index call, got {len(human_index_calls)}"
+            assert len(human_index_calls) == 1, (
+                f"Expected 1 human index call, got {len(human_index_calls)}"
+            )
 
     @pytest.mark.unit
     def test_index_dedup_plasmid_indexes_still_per_combination(self, tmp_path: Path) -> None:
@@ -460,7 +460,9 @@ class TestBatchResilience:
             )
 
     @pytest.mark.unit
-    def test_per_combination_timing_logged(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def test_per_combination_timing_logged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Verify per-combination timing is logged at INFO level."""
         import logging
 
