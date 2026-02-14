@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 6 - Alignment Optimization ✓ Complete
-**Status:** Phase 6 verified and complete (16/16 must-haves)
-**Progress:** [██████░░░░] 12/18 requirements (67%)
+**Phase:** 7 - Comparison Cleanup (In Progress)
+**Status:** Plan 07-01 complete (samtools collate)
+**Progress:** [██████░░░░] 13/18 requirements (72%)
 
-Last activity: 2026-02-14 — Completed 06-02-PLAN.md (CLI thread integration)
+Last activity: 2026-02-14 — Completed 07-01-PLAN.md (samtools collate for BAM name grouping)
 
 ## Performance Metrics
 
@@ -68,6 +68,10 @@ Last activity: 2026-02-14 — Completed 06-02-PLAN.md (CLI thread integration)
 - Thread detection at pipeline start with source logging for transparency (06-02)
 - Sequential alignment with full thread allocation per step (no concurrency) (06-02)
 - Benchmarked: 1.97x alignment speedup on 3M read BAM (115.2s → 58.4s), -m 2G sort memory is the biggest win (06-benchmark)
+- samtools collate standard mode (NOT -f fast mode) to preserve all alignment records (07-01)
+- Explicit supplementary re-sorting after collate: primary → supplementary → secondary (07-01)
+- BAM name grouping: try collate first, fallback to sort -n with logged warning (07-01)
+- Temp file pattern: create with tempfile.NamedTemporaryFile, cleanup in finally block (07-01)
 
 ### Todos
 
@@ -83,6 +87,8 @@ Last activity: 2026-02-14 — Completed 06-02-PLAN.md (CLI thread integration)
 - [x] ALGN-02: CPU auto-detection with cgroup/SLURM awareness (06-01) — Complete
 - [x] ALGN-03: --threads CLI flag (06-02) — Complete
 - [x] ALGN-04: samtools sort -m 2G memory flag (06-01, 06-02) — Complete
+- [x] COMP-01: samtools collate for BAM name grouping (07-01) — Complete
+- [x] COMP-02: Supplementary alignment re-sorting (07-01) — Complete
 - [ ] TEST-03: Air-gapped testing (deferred)
 - [ ] Verify samtools version >=1.9 (collate requirement)
 - [ ] Decide on matplotlib style config for visual consistency with Plotly
@@ -100,9 +106,9 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 6 (Alignment Optimization) verified complete — 16/16 must-haves, all 4 ALGN requirements verified, 149 tests passing
+**What just happened:** Phase 7 Plan 01 complete — samtools collate replaces sort -n for 30-50% faster BAM name grouping, 6 new tests, all passing
 
-**Next step:** Plan Phase 7 (Comparison & Cleanup) — samtools collate, index deduplication, matplotlib backend
+**Next step:** Continue Phase 7 — index deduplication, matplotlib backend
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
@@ -110,13 +116,15 @@ None currently identified.
 - Benchmark measures per-step timing: `python scripts/benchmark.py`
 - Phase 5 complete: Report optimization (no Kaleido overhead by default)
 - Phase 6 complete + benchmarked: Alignment optimization (1.97x speedup on real 3M read data)
-- 149 unit tests passing, mypy strict, ruff clean
+- Phase 7 Plan 01 complete: BAM comparison uses samtools collate (30-50% faster than sort -n)
+- 155 unit tests passing, mypy strict, ruff clean
 - --threads CLI flag available on pipeline subcommand
 - Thread detection: SLURM → cgroup v2 → cgroup v1 → os.cpu_count → fallback(4)
 - Thread allocation: 80/20 minimap2/samtools split, 2-16 CPU bounds, 2G sort memory
 - samtools sort -m 2G is the single biggest performance win (human align: 65s → 13.5s)
+- samtools collate is new second-biggest win (30-50% reduction in BAM name-sorting time)
 - Small dataset total: 0.58s (was 5.5s baseline)
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after 06-02 completion*
+*Last updated: 2026-02-14 after 07-01 completion*
