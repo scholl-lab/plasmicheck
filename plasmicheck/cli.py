@@ -315,6 +315,12 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         action="store_true",
         help="Disable progress bar (auto-disabled in non-interactive terminals)",
     )
+    parser_pipeline.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        help="Total thread count for alignment (default: auto-detect via SLURM/cgroup/os)",
+    )
 
     # Report Command
     parser_report = subparsers.add_parser(
@@ -435,6 +441,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             progress=progress_enabled,
             static_report=args.static_report,
             plotly_mode=args.plotly_mode,
+            threads=args.threads,
         )
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report

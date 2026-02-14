@@ -9,6 +9,8 @@ from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..config import get_config
+from ..thread_config import allocate_threads, detect_cpu_count
 from .align_reads import align_reads
 from .compare_alignments import compare_alignments
 from .convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta
@@ -411,6 +413,7 @@ def run_pipeline(
     progress: bool = False,
     static_report: bool = False,
     plotly_mode: str = "directory",
+    threads: int | None = None,
 ) -> None:
     if sequencing_files_r1 is None:
         raise ValueError("-sf1 (sequencing_files_r1) is required.")
@@ -436,6 +439,20 @@ def run_pipeline(
     logging.info(f"Plasmid files: {plasmid_files}")
     logging.info(f"Output folder: {output_folder}")
     logging.info(f"Sequencing inputs: {len(plan.sequencing_inputs)} entries")
+
+    # Thread detection and allocation
+    if threads is not None:
+        total_threads = threads
+        thread_source = f"CLI --threads={threads}"
+    else:
+        total_threads, thread_source = detect_cpu_count()
+
+    mm2_threads, sam_threads = allocate_threads(total_threads)
+    sort_memory = get_config().get("alignment", {}).get("samtools_sort_memory", "2G")
+
+    logging.info(f"Using {total_threads} threads ({thread_source})")
+    logging.info(f"  minimap2: {mm2_threads} threads, samtools: {sam_threads} threads")
+    logging.info(f"  samtools sort memory: {sort_memory} per thread")
 
     # Perform quality control checks
     logging.info("Performing quality control checks on input files...")
@@ -556,8 +573,26 @@ def run_pipeline(
                 plasmid_bam = os.path.join(output_subfolder, "plasmid_alignment.bam")
                 spliced_human_bam = os.path.join(output_subfolder, "spliced_human_alignment.bam")
                 logging.info("Aligning reads to the plasmid and spliced human reference...")
-                align_reads(plasmid_index, sequencing_file, plasmid_bam, "plasmid", fastq2)
-                align_reads(spliced_index, sequencing_file, spliced_human_bam, "human", fastq2)
+                align_reads(
+                    plasmid_index,
+                    sequencing_file,
+                    plasmid_bam,
+                    "plasmid",
+                    fastq2,
+                    minimap2_threads=mm2_threads,
+                    samtools_threads=sam_threads,
+                    samtools_sort_memory=sort_memory,
+                )
+                align_reads(
+                    spliced_index,
+                    sequencing_file,
+                    spliced_human_bam,
+                    "human",
+                    fastq2,
+                    minimap2_threads=mm2_threads,
+                    samtools_threads=sam_threads,
+                    samtools_sort_memory=sort_memory,
+                )
                 if md5_level in ["all", "intermediate"]:
                     write_md5sum(plasmid_bam, "intermediate", output_subfolder)
                     write_md5sum(spliced_human_bam, "intermediate", output_subfolder)
@@ -716,6 +751,12 @@ if __name__ == "__main__":
         default="directory",
         help="Plotly.js inclusion mode for interactive reports (default: directory)",
     )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        help="Total thread count for alignment (default: auto-detect via SLURM/cgroup/os)",
+    )
     add_logging_args(parser)
 
     args = parser.parse_args()
@@ -741,4 +782,5 @@ if __name__ == "__main__":
         progress=sys.stderr.isatty() and not args.no_progress,
         static_report=args.static_report,
         plotly_mode=args.plotly_mode,
+        threads=args.threads,
     )
