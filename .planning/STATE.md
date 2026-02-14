@@ -9,10 +9,9 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 6 - Alignment Optimization (Complete)
-**Plan:** 2 of 2 in current phase
-**Status:** Phase 6 complete
-**Progress:** [████████░░] 8/8 plans (100%)
+**Phase:** 6 - Alignment Optimization ✓ Complete
+**Status:** Phase 6 verified and complete (16/16 must-haves)
+**Progress:** [██████░░░░] 12/18 requirements (67%)
 
 Last activity: 2026-02-14 — Completed 06-02-PLAN.md (CLI thread integration)
 
@@ -73,6 +72,10 @@ Last activity: 2026-02-14 — Completed 06-02-PLAN.md (CLI thread integration)
 - [x] REPT-04: --plotly-mode CLI flag (05-01, 05-02, 05-03, 05-04) — Complete
 - [x] REPT-05: Kaleido start_sync_server() optimization (05-02, 05-03, 05-04) — Complete
 - [x] REPT-06: Lazy imports (05-02, 05-03, 05-04) — Complete
+- [x] ALGN-01: Sequential alignment with full thread allocation (06-01, 06-02) — Complete
+- [x] ALGN-02: CPU auto-detection with cgroup/SLURM awareness (06-01) — Complete
+- [x] ALGN-03: --threads CLI flag (06-02) — Complete
+- [x] ALGN-04: samtools sort -m 2G memory flag (06-01, 06-02) — Complete
 - [ ] TEST-03: Air-gapped testing (deferred)
 - [ ] Verify samtools version >=1.9 (collate requirement)
 - [ ] Decide on matplotlib style config for visual consistency with Plotly
@@ -90,9 +93,9 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 6 (Alignment Optimization) complete — Integrated thread detection/allocation into CLI and pipeline, 149 tests passing
+**What just happened:** Phase 6 (Alignment Optimization) verified complete — 16/16 must-haves, all 4 ALGN requirements verified, 149 tests passing
 
-**Next step:** Phase 6 complete. Performance optimization complete. Ready for production testing and benchmarking.
+**Next step:** Plan Phase 7 (Comparison & Cleanup) — samtools collate, index deduplication, matplotlib backend
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)

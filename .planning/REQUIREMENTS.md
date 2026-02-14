@@ -18,10 +18,10 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Alignment Optimization
 
-- [ ] **ALGN-01**: Plasmid and human alignments run concurrently via ThreadPoolExecutor (~1.8x speedup)
-- [ ] **ALGN-02**: Pipeline auto-detects CPU count with cgroup/SLURM awareness for thread tuning
-- [ ] **ALGN-03**: User can override thread count with `--threads` CLI flag
-- [ ] **ALGN-04**: All `samtools sort` commands use `-m 2G` memory flag for large BAM performance
+- [x] **ALGN-01**: Plasmid and human alignments run sequentially with full thread allocation (user override of original concurrent design)
+- [x] **ALGN-02**: Pipeline auto-detects CPU count with cgroup/SLURM awareness for thread tuning
+- [x] **ALGN-03**: User can override thread count with `--threads` CLI flag
+- [x] **ALGN-04**: All `samtools sort` commands use `-m 2G` memory flag for large BAM performance
 
 ### Comparison Optimization
 
@@ -36,9 +36,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Testing & Validation
 
-- [ ] **TEST-01**: Regression test suite verifying optimization outputs match pre-optimization baseline (contamination ratios, read assignments)
-- [ ] **TEST-02**: Performance benchmark comparing v0.31.0 vs v0.32.0 on synthetic dataset
-- [ ] **TEST-03**: Air-gapped environment test (Docker with no network) for directory-mode reports
+- [x] **TEST-01**: Regression test suite verifying optimization outputs match pre-optimization baseline (contamination ratios, read assignments)
+- [x] **TEST-02**: Performance benchmark comparing v0.31.0 vs v0.32.0 on synthetic dataset
+- [ ] **TEST-03**: Air-gapped environment test (Docker with no network) for directory-mode reports (DROPPED)
 
 ## v2 Requirements
 
@@ -83,10 +83,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REPT-04 | Phase 5 | Complete |
 | REPT-05 | Phase 5 | Complete |
 | REPT-06 | Phase 5 | Complete |
-| ALGN-01 | Phase 6 | Pending |
-| ALGN-02 | Phase 6 | Pending |
-| ALGN-03 | Phase 6 | Pending |
-| ALGN-04 | Phase 6 | Pending |
+| ALGN-01 | Phase 6 | Complete |
+| ALGN-02 | Phase 6 | Complete |
+| ALGN-03 | Phase 6 | Complete |
+| ALGN-04 | Phase 6 | Complete |
 | COMP-01 | Phase 7 | Pending |
 | COMP-02 | Phase 7 | Pending |
 | ARCH-01 | Phase 7 | Pending |
@@ -100,4 +100,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 5 completion*
+*Last updated: 2026-02-14 after Phase 6 completion*

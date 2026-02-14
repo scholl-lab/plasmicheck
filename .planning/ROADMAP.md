@@ -76,8 +76,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md -- Thread detection module, align_reads parameterization, config update
-- [ ] 06-02-PLAN.md -- CLI --threads flag, pipeline wiring, integration tests
+- [x] 06-01-PLAN.md -- Thread detection module, align_reads parameterization, config update
+- [x] 06-02-PLAN.md -- CLI --threads flag, pipeline wiring, integration tests
 
 **Requirements:**
 - ALGN-01: Plasmid and human alignments run sequentially with full thread allocation (user override of original concurrent design)
@@ -118,10 +118,10 @@ Plans:
 |-------|--------------|--------|------------|
 | 4 - Foundation | TEST-01, TEST-02 | Complete | 100% |
 | 5 - Report Optimization | REPT-01 through REPT-06 | Complete | 100% |
-| 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Planned | 0% |
+| 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Complete | 100% |
 | 7 - Comparison & Cleanup | COMP-01, COMP-02, ARCH-01, ARCH-02, ARCH-03 | Pending | 0% |
 
-**Overall:** 8/18 requirements completed (44%)
+**Overall:** 12/18 requirements completed (67%)
 
 ## Coverage
 
@@ -135,4 +135,4 @@ No orphaned requirements. 1 requirement dropped (TEST-03).
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 5 completion*
+*Last updated: 2026-02-14 after Phase 6 completion*
