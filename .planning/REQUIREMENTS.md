@@ -1,7 +1,7 @@
 # Requirements: PlasmiCheck v0.33.0
 
 **Defined:** 2026-02-14
-**Core Value:** Accurately detect plasmid contamination through comparative alignment scoring — the contamination verdict must be reliable.
+**Core Value:** Accurately detect plasmid contamination through comparative alignment scoring -- the contamination verdict must be reliable.
 
 ## v0.33.0 Requirements
 
@@ -70,37 +70,35 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FILT-01 | — | Pending |
-| FILT-02 | — | Pending |
-| FILT-03 | — | Pending |
-| FILT-04 | — | Pending |
-| FILT-05 | — | Pending |
-| COV-01 | — | Pending |
-| COV-02 | — | Pending |
-| COV-03 | — | Pending |
-| COV-04 | — | Pending |
-| COV-05 | — | Pending |
-| RGENE-01 | — | Pending |
-| RGENE-02 | — | Pending |
-| RGENE-03 | — | Pending |
-| RGENE-04 | — | Pending |
-| REPT-04 | — | Pending |
-| REPT-05 | — | Pending |
-| REPT-06 | — | Pending |
-| REPT-07 | — | Pending |
-| REPT-08 | — | Pending |
-| REPT-09 | — | Pending |
-| REPT-10 | — | Pending |
+| FILT-01 | Phase 8 | Pending |
+| FILT-02 | Phase 8 | Pending |
+| FILT-03 | Phase 8 | Pending |
+| FILT-04 | Phase 8 | Pending |
+| FILT-05 | Phase 8 | Pending |
+| COV-01 | Phase 9 | Pending |
+| COV-02 | Phase 9 | Pending |
+| COV-03 | Phase 9 | Pending |
+| COV-04 | Phase 9 | Pending |
+| COV-05 | Phase 9 | Pending |
+| RGENE-01 | Phase 10 | Pending |
+| RGENE-02 | Phase 10 | Pending |
+| RGENE-03 | Phase 10 | Pending |
+| RGENE-04 | Phase 10 | Pending |
+| REPT-04 | Phase 11 | Pending |
+| REPT-05 | Phase 11 | Pending |
+| REPT-06 | Phase 11 | Pending |
+| REPT-07 | Phase 11 | Pending |
+| REPT-08 | Phase 11 | Pending |
+| REPT-09 | Phase 11 | Pending |
+| REPT-10 | Phase 11 | Pending |
 
 **Coverage:**
 - v0.33.0 requirements: 21 total
-- Mapped to phases: 0
-- Unmapped: 21 (pending roadmap)
+- Mapped to phases: 21
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-14 after roadmap creation (traceability updated)*
