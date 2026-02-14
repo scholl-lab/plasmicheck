@@ -9,11 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 5 - Report Optimization ✓ Complete
-**Status:** Phase 5 verified and complete (20/20 must-haves)
-**Progress:** [████░░░░░░] 8/18 requirements (44%)
+**Phase:** 6 - Alignment Optimization (In progress)
+**Plan:** 1 of 1 in current phase
+**Status:** Phase 6 Plan 01 complete
+**Progress:** [████████░░] 7/8 plans (87%)
 
-Last activity: 2026-02-14 — Completed 05-04-PLAN.md (test coverage and CI validation)
+Last activity: 2026-02-14 — Completed 06-01-PLAN.md (thread detection and allocation)
 
 ## Performance Metrics
 
@@ -54,6 +55,10 @@ Last activity: 2026-02-14 — Completed 05-04-PLAN.md (test coverage and CI vali
 - Use subprocess for lazy import verification tests (05-04)
 - Add type: ignore[import-untyped] for kaleido imports (05-04)
 - Parametrize CLI flag tests across subcommands (05-04)
+- 5-tier CPU detection chain: SLURM → cgroup v2 → cgroup v1 → os.cpu_count → fallback(4) (06-01)
+- Thread allocation: min 2, max 16 total; 80% minimap2, remainder samtools (max 4) (06-01)
+- samtools sort -m 2G flag for predictable memory usage (06-01)
+- align_reads() thread/memory parameters optional with config defaults (06-01)
 
 ### Todos
 
@@ -82,20 +87,21 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 5 (Report Optimization) verified complete — 20/20 must-haves, all 6 REPT requirements verified, 130 tests passing
+**What just happened:** Phase 6 Plan 01 (Thread Detection and Allocation) complete — Created thread_config module with 5-tier CPU detection, updated align_reads() with optional thread/memory params, 144 tests passing
 
-**Next step:** Plan Phase 6 (Alignment Optimization) — thread detection, CLI wiring, integration tests
+**Next step:** Phase 6 complete with only 1 plan. Move to Phase 7 or Phase 8 as needed.
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
 - Regression test validates correctness: `python scripts/regression_test.py`
 - Benchmark measures per-step timing: `python scripts/benchmark.py`
-- Phase 5 complete: All 6 REPT requirements verified, CI passing, regression test passing
-- Default pipeline behavior: interactive HTML only (~19 KB), no PNG, no Kaleido startup
-- Expected performance: 5.5s → <2s for small dataset (eliminates 5.1s Kaleido overhead)
-- Lazy imports verified: pandas, plotly, jinja2, kaleido, numpy, scipy, statsmodels not loaded at import time
-- CLI import time: generate_report (231ms), generate_summary_reports (216ms)
+- Phase 5 complete: All 6 REPT requirements verified, default runs without Kaleido overhead
+- Phase 6 Plan 01 complete: thread_config.detect_cpu_count() and allocate_threads() ready for CLI wiring
+- align_reads() now accepts minimap2_threads, samtools_threads, samtools_sort_memory parameters
+- 144 unit tests passing, mypy strict, ruff clean
+- CPU detection handles SLURM, Docker (cgroup v1/v2), and bare metal environments
+- Thread allocation: 80/20 minimap2/samtools split with 2-16 CPU bounds
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after 05-04 completion*
+*Last updated: 2026-02-14 after 06-01 completion*
