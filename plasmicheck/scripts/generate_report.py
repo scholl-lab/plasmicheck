@@ -13,6 +13,7 @@ from plasmicheck.config import get_config
 from plasmicheck.resources import get_resource_path
 from plasmicheck.version import __version__ as VERSION
 
+from .plotting.colors import ASSIGNMENT_COLORS
 from .utils import add_logging_args, configure_logging_from_args
 
 _cfg = get_config()
@@ -81,6 +82,7 @@ def generate_plots(
         y="PlasmidScore",
         points="all",
         color="AssignedTo",
+        color_discrete_map=ASSIGNMENT_COLORS,
         title=f"{PLOT_SAMPLE_REPORT['title_box_plot']}<br>(Total Reads: {len(reads_df)})",
         labels={
             "PlasmidScore": PLOT_SAMPLE_REPORT["box_plot_y_label"],
@@ -101,6 +103,7 @@ def generate_plots(
         x="PlasmidScore",
         y="HumanScore",
         color="AssignedTo",
+        color_discrete_map=ASSIGNMENT_COLORS,
         title=f"{PLOT_SAMPLE_REPORT['title_scatter_plot']}<br>(Total Reads: {len(reads_df)})",
         labels={
             "PlasmidScore": PLOT_SAMPLE_REPORT["scatter_plot_x_label"],
@@ -218,6 +221,20 @@ def generate_report(
     plotly_version: str = "",
     plotly_js_path: str = "",
     plotly_js_inline: str = "",
+    plasmid_count: int = 0,
+    human_count: int = 0,
+    tied_count: int = 0,
+    backbone_only_count: int = 0,
+    ambiguous_count: int = 0,
+    total_reads: int = 0,
+    plasmid_pct: str = "0.0",
+    human_pct: str = "0.0",
+    tied_pct: str = "0.0",
+    backbone_only_pct: str = "0.0",
+    ambiguous_pct: str = "0.0",
+    coverage_outside_insert: str = "N/A",
+    mismatches_near_insert: str = "N/A",
+    backbone_warning: str = "",
 ) -> None:
     from jinja2 import Environment, FileSystemLoader
 
@@ -272,6 +289,20 @@ def generate_report(
         plotly_version=plotly_version,
         plotly_js_path=plotly_js_path,
         plotly_js_inline=plotly_js_inline,
+        plasmid_count=plasmid_count,
+        human_count=human_count,
+        tied_count=tied_count,
+        backbone_only_count=backbone_only_count,
+        ambiguous_count=ambiguous_count,
+        total_reads=total_reads,
+        plasmid_pct=plasmid_pct,
+        human_pct=human_pct,
+        tied_pct=tied_pct,
+        backbone_only_pct=backbone_only_pct,
+        ambiguous_pct=ambiguous_pct,
+        coverage_outside_insert=coverage_outside_insert,
+        mismatches_near_insert=mismatches_near_insert,
+        backbone_warning=backbone_warning,
     )
 
     # Save interactive HTML report
@@ -308,6 +339,20 @@ def generate_report(
             plotly_version=plotly_version,
             plotly_js_path=plotly_js_path,
             plotly_js_inline=plotly_js_inline,
+            plasmid_count=plasmid_count,
+            human_count=human_count,
+            tied_count=tied_count,
+            backbone_only_count=backbone_only_count,
+            ambiguous_count=ambiguous_count,
+            total_reads=total_reads,
+            plasmid_pct=plasmid_pct,
+            human_pct=human_pct,
+            tied_pct=tied_pct,
+            backbone_only_pct=backbone_only_pct,
+            ambiguous_pct=ambiguous_pct,
+            coverage_outside_insert=coverage_outside_insert,
+            mismatches_near_insert=mismatches_near_insert,
+            backbone_warning=backbone_warning,
         )
 
         # Save non-interactive HTML report
@@ -349,8 +394,31 @@ def main(
     # Extract the verdict from the summary file
     verdict = extract_verdict_from_summary(summary_df)
 
-    plasmid_count = int(summary_df[summary_df["Category"] == "Plasmid"]["Count"].values[0])
-    human_count = int(summary_df[summary_df["Category"] == "Human"]["Count"].values[0])
+    # Extract category counts from summary_df
+    def _get_count(df: pd.DataFrame, category: str) -> int:
+        rows = df[df["Category"] == category]
+        return int(rows["Count"].values[0]) if not rows.empty else 0
+
+    plasmid_count = _get_count(summary_df, "Plasmid")
+    human_count = _get_count(summary_df, "Human")
+    tied_count = _get_count(summary_df, "Tied")
+    backbone_only_count = _get_count(summary_df, "Backbone_Only")
+    ambiguous_count = _get_count(summary_df, "Ambiguous")
+    total_reads = plasmid_count + human_count + tied_count + backbone_only_count + ambiguous_count
+
+    # Calculate percentages
+    def _pct(count: int, total: int) -> str:
+        return f"{count / total * 100:.1f}" if total > 0 else "0.0"
+
+    # Extract additional metrics
+    cov_rows = summary_df[summary_df["Category"] == "CoverageOutsideINSERT"]
+    coverage_outside_insert = str(cov_rows["Count"].values[0]) if not cov_rows.empty else "N/A"
+    mis_rows = summary_df[summary_df["Category"] == "MismatchesNearINSERT"]
+    mismatches_near_insert = str(mis_rows["Count"].values[0]) if not mis_rows.empty else "N/A"
+
+    # Determine if backbone filtering was unavailable
+    backbone_warning = ""
+
     ratio = plasmid_count / human_count if human_count != 0 else float("inf")
 
     # Determine output_root for shared assets
@@ -400,6 +468,20 @@ def main(
         plotly_version=plotly_version,
         plotly_js_path=plotly_js_path,
         plotly_js_inline=plotly_js_inline,
+        plasmid_count=plasmid_count,
+        human_count=human_count,
+        tied_count=tied_count,
+        backbone_only_count=backbone_only_count,
+        ambiguous_count=ambiguous_count,
+        total_reads=total_reads,
+        plasmid_pct=_pct(plasmid_count, total_reads),
+        human_pct=_pct(human_count, total_reads),
+        tied_pct=_pct(tied_count, total_reads),
+        backbone_only_pct=_pct(backbone_only_count, total_reads),
+        ambiguous_pct=_pct(ambiguous_count, total_reads),
+        coverage_outside_insert=coverage_outside_insert,
+        mismatches_near_insert=mismatches_near_insert,
+        backbone_warning=backbone_warning,
     )
 
 

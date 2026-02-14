@@ -70,9 +70,80 @@
         {% endif %}
     </div>
 
-    <h2>Summary</h2>
+    <h2>Read Assignment Summary</h2>
     <div class="container">
-        {{ summary_df|safe }}
+        <table class="table table-bordered" style="width: 60%; margin: 20px auto;">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Count</th>
+                    <th>Proportion</th>
+                    <th>Included in Ratio</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Plasmid</td>
+                    <td>{{ plasmid_count }}</td>
+                    <td>{{ plasmid_pct }}%</td>
+                    <td><span class="badge badge-success">Yes</span></td>
+                </tr>
+                <tr>
+                    <td>Human</td>
+                    <td>{{ human_count }}</td>
+                    <td>{{ human_pct }}%</td>
+                    <td><span class="badge badge-success">Yes</span></td>
+                </tr>
+                <tr class="text-muted">
+                    <td>Tied</td>
+                    <td>{{ tied_count }}</td>
+                    <td>{{ tied_pct }}%</td>
+                    <td><span class="badge badge-secondary">No</span></td>
+                </tr>
+                <tr class="text-muted">
+                    <td>Backbone_Only</td>
+                    <td>{{ backbone_only_count }}</td>
+                    <td>{{ backbone_only_pct }}%</td>
+                    <td><span class="badge badge-secondary">No</span></td>
+                </tr>
+                <tr class="text-muted">
+                    <td>Ambiguous</td>
+                    <td>{{ ambiguous_count }}</td>
+                    <td>{{ ambiguous_pct }}%</td>
+                    <td><span class="badge badge-secondary">No</span></td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td><strong>Total</strong></td>
+                    <td><strong>{{ total_reads }}</strong></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+
+        {% if backbone_warning %}
+        <div class="alert alert-warning text-center" role="alert">
+            {{ backbone_warning }}
+        </div>
+        {% endif %}
+    </div>
+
+    <h2>Additional Metrics</h2>
+    <div class="container">
+        <table class="table table-bordered" style="width: 60%; margin: 20px auto;">
+            <tbody>
+                <tr>
+                    <td>Coverage Outside Insert Region</td>
+                    <td>{{ coverage_outside_insert }}</td>
+                </tr>
+                <tr>
+                    <td>Mismatches Near Insert Boundaries</td>
+                    <td>{{ mismatches_near_insert }}</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 
     <div class="details">
