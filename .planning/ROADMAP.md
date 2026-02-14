@@ -15,6 +15,11 @@ This roadmap delivers multi-dimensional contamination evidence by correcting rea
 
 **Issue:** #82
 **Dependencies:** None (first phase)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md -- Core filtering logic, config, pipeline wiring, and unit tests
+- [ ] 08-02-PLAN.md -- Report display updates for new read categories
 
 **Requirements:**
 - FILT-01: Backbone_Only classification and exclusion from ratio
@@ -96,7 +101,7 @@ This roadmap delivers multi-dimensional contamination evidence by correcting rea
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 8 | Insert-Region-Aware Filtering | FILT-01..05 (5) | Not Started |
+| 8 | Insert-Region-Aware Filtering | FILT-01..05 (5) | Planning Complete |
 | 9 | Coverage Metrics | COV-01..05 (5) | Not Started |
 | 10 | Resistance Gene Detection | RGENE-01..04 (4) | Not Started |
 | 11 | Summary Report Integration | REPT-04..10 (7) | Not Started |
