@@ -193,8 +193,7 @@ def test_allocate_threads_minimum() -> None:
     """Test thread allocation with minimum CPUs (2)."""
     minimap2, samtools = allocate_threads(2)
     assert minimap2 == 2
-    assert samtools == 2
-    # Total may exceed input due to min enforcement, but both get minimum
+    assert samtools == 1
 
 
 @pytest.mark.unit
@@ -202,19 +201,17 @@ def test_allocate_threads_below_minimum() -> None:
     """Test thread allocation with below-minimum CPUs (1) clamps to 2."""
     minimap2, samtools = allocate_threads(1)
     assert minimap2 == 2
-    assert samtools == 2
+    assert samtools == 1
 
 
 @pytest.mark.unit
 def test_allocate_threads_4_cpus() -> None:
     """Test thread allocation with 4 CPUs."""
     minimap2, samtools = allocate_threads(4)
-    # 80% of 4 = 3.2 -> 3, but min is 2, so minimap2=3
-    # Remainder: 4-3=1, but min is 2, so samtools=2
-    # Since 3+2=5 > 4, samtools becomes max(2, 4-3)=2
-    assert minimap2 >= 2
-    assert samtools >= 2
-    assert samtools <= 4
+    # 80% of 4 = 3.2 -> 3, remainder: 4-3=1
+    assert minimap2 == 3
+    assert samtools == 1
+    assert minimap2 + samtools <= 4
 
 
 @pytest.mark.unit
@@ -253,10 +250,15 @@ def test_allocate_threads_bounds() -> None:
     """Test thread allocation respects bounds across various inputs."""
     for total in range(1, 33):
         minimap2, samtools = allocate_threads(total)
-        # Both must be at least 2
+        # minimap2 at least 2, samtools at least 1
         assert minimap2 >= 2, f"minimap2={minimap2} < 2 for total={total}"
-        assert samtools >= 2, f"samtools={samtools} < 2 for total={total}"
+        assert samtools >= 1, f"samtools={samtools} < 1 for total={total}"
         # samtools capped at 4
         assert samtools <= 4, f"samtools={samtools} > 4 for total={total}"
         # minimap2 should be in reasonable range (capped at 16 total)
         assert minimap2 <= 16, f"minimap2={minimap2} > 16 for total={total}"
+        # Sum should not exceed clamped total (except total=2 where mm2 min forces 3)
+        clamped = max(2, min(16, total))
+        assert minimap2 + samtools <= clamped + 1, (
+            f"sum={minimap2 + samtools} > {clamped}+1 for total={total}"
+        )

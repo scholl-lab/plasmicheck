@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from plasmicheck.version import __version__
+
 SUBCOMMANDS = [
     "convert",
     "index",
@@ -54,7 +56,7 @@ class TestCLI:
             cwd=PROJECT_ROOT,
         )
         assert result.returncode == 0
-        assert "0.31.0" in result.stdout
+        assert __version__ in result.stdout
 
     @pytest.mark.unit
     @pytest.mark.parametrize("subcommand", ["pipeline", "report", "summary_reports"])

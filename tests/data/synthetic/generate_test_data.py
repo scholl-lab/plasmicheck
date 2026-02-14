@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import random
-from datetime import datetime, timezone
 from pathlib import Path
 
 SEED = 42
@@ -72,7 +71,7 @@ def _write_fasta(path: Path, records: list[tuple[str, str]]) -> None:
 
 def _write_genbank(path: Path, name: str, seq: str, insert_start: int, insert_end: int) -> None:
     """Write a minimal GenBank file with a CDS feature marking the insert."""
-    today = datetime.now(tz=timezone.utc).strftime("%d-%b-%Y").upper()
+    today = "13-FEB-2026"  # Fixed date for reproducible regeneration
     locus_len = len(seq)
 
     # GenBank fixed-width format

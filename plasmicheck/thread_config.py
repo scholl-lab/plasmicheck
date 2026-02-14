@@ -83,7 +83,7 @@ def allocate_threads(total_cpus: int) -> tuple[int, int]:
     """Allocate threads between minimap2 and samtools.
 
     Applies bounds (min 2, max 16), then allocates ~80% to minimap2,
-    remainder to samtools (max 4).
+    remainder to samtools (min 1, max 4).
 
     Args:
         total_cpus: Total CPUs available
@@ -97,11 +97,7 @@ def allocate_threads(total_cpus: int) -> tuple[int, int]:
     # Allocate ~80% to minimap2, at least 2
     minimap2_threads = max(2, int(total_cpus * 0.8))
 
-    # Remainder to samtools, at least 2, max 4
-    samtools_threads = max(2, min(4, total_cpus - minimap2_threads))
-
-    # If samtools min requirement pushes us over total, reduce samtools
-    if minimap2_threads + samtools_threads > total_cpus:
-        samtools_threads = max(2, total_cpus - minimap2_threads)
+    # Remainder to samtools, at least 1, max 4
+    samtools_threads = max(1, min(4, total_cpus - minimap2_threads))
 
     return (minimap2_threads, samtools_threads)
