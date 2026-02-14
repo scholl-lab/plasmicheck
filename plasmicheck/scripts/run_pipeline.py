@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import Any
@@ -68,6 +69,7 @@ class PipelinePlan:
     combinations: list[tuple[str, SequencingInput]] = field(default_factory=list)
     combination_steps: dict[str, list[PipelineStep]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    built_indexes: set[str] = field(default_factory=set)
 
     @property
     def total_steps(self) -> int:
@@ -76,6 +78,16 @@ class PipelinePlan:
     @property
     def skipped_steps(self) -> int:
         return sum(1 for steps in self.combination_steps.values() for s in steps if s.skip)
+
+
+@dataclass
+class CombinationResult:
+    """Result of processing a single combination (plasmid x sequencing file)."""
+
+    combo_label: str
+    success: bool
+    duration: float
+    error: Exception | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +326,12 @@ def print_plan(plan: PipelinePlan) -> None:
 
     # Steps
     n_combos = len(plan.combinations)
+    human_index_path = os.path.join(
+        os.path.dirname(plan.human_fasta),
+        os.path.splitext(os.path.basename(plan.human_fasta))[0] + ".mmi",
+    )
     print(f"Execution Plan ({n_combos} combinations, {plan.total_steps} steps):")
+    print(f"  Human index: {human_index_path} (built once, shared across all combinations)")
     print()
     for idx, (combo_label, _seq_input) in enumerate(plan.combinations, 1):
         print(f"  [{idx}/{n_combos}] {combo_label}")
@@ -473,6 +490,23 @@ def run_pipeline(
                 "Must be .bam, .fastq, .fastq.gz, or paired FASTQ files."
             )
 
+    # Upfront human reference indexing (shared across all combinations)
+    human_index_path = os.path.join(
+        os.path.dirname(human_fasta),
+        os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
+    )
+    if not os.path.exists(human_index_path) or overwrite:
+        logging.info("Building human reference index (shared across all combinations)...")
+        create_indexes(human_fasta, overwrite)
+        plan.built_indexes.add(human_index_path)
+        logging.info(f"Built human reference index: {human_index_path}")
+    else:
+        plan.built_indexes.add(human_index_path)
+        logging.info(f"Skipping index for {human_fasta} (already built)")
+
+    # Track results for batch resilience
+    results: list[CombinationResult] = []
+
     with _progress_context(progress, plan.total_steps) as prog:
         for plasmid_file in plan.plasmid_files:
             plasmid_file_type: str = (
@@ -485,162 +519,207 @@ def run_pipeline(
             for seq_input in plan.sequencing_inputs:
                 sequencing_file = seq_input.file1
                 fastq2 = seq_input.file2
-                logging.info(f"Processing sequencing file: {sequencing_file}")
+                combo_label = f"{os.path.basename(plasmid_file)} x {os.path.basename(sequencing_file)}"
+                start_time = time.time()
 
-                bam_basename = sanitize_filename(
-                    os.path.splitext(os.path.basename(sequencing_file))[0]
-                )
-                file_basename = sanitize_filename(
-                    os.path.splitext(os.path.basename(plasmid_file))[0]
-                )
-                output_subfolder = os.path.join(output_folder, bam_basename, file_basename)
+                try:
+                    logging.info(f"Processing sequencing file: {sequencing_file}")
 
-                os.makedirs(output_subfolder, exist_ok=True)
-
-                # Step 1: Convert the plasmid file to a FASTA file
-                plasmid_fasta = os.path.join(
-                    output_subfolder,
-                    os.path.splitext(os.path.basename(plasmid_file))[0] + ".fasta",
-                )
-                if not os.path.exists(plasmid_fasta) or overwrite:
-                    logging.info(f"Converting {plasmid_file} to FASTA format.")
-                    convert_plasmidfile_to_fasta(
-                        plasmid_file,
-                        plasmid_fasta,
-                        plasmid_file_type,
-                        shift_bases,
-                        generate_shifted,
-                        overwrite,
+                    bam_basename = sanitize_filename(
+                        os.path.splitext(os.path.basename(sequencing_file))[0]
                     )
-                if md5_level in ["all", "intermediate"]:
-                    write_md5sum(plasmid_fasta, "intermediate", output_subfolder)
-                if md5_level in ["all", "input"]:
-                    write_md5sum(plasmid_file, "input", output_subfolder)
-                prog.advance()
+                    file_basename = sanitize_filename(
+                        os.path.splitext(os.path.basename(plasmid_file))[0]
+                    )
+                    output_subfolder = os.path.join(output_folder, bam_basename, file_basename)
 
-                # Step 2: Generate indices
-                human_index = os.path.join(
-                    os.path.dirname(human_fasta),
-                    os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
-                )
-                plasmid_index = os.path.join(
-                    output_subfolder,
-                    os.path.splitext(os.path.basename(plasmid_fasta))[0] + ".mmi",
-                )
-                create_indexes(human_fasta, overwrite)
-                create_indexes(plasmid_fasta, overwrite)
-                if md5_level in ["all", "intermediate"]:
-                    write_md5sum(plasmid_index, "intermediate", output_subfolder)
-                if md5_level in ["all"]:
-                    write_md5sum(human_index, "intermediate", output_subfolder)
-                prog.advance()
+                    os.makedirs(output_subfolder, exist_ok=True)
 
-                # Step 3: Spliced alignment
-                spliced_bam = os.path.join(output_subfolder, "spliced_alignment.bam")
-                spliced_fasta = os.path.join(output_subfolder, "spliced_reference.fasta")
-                logging.info(
-                    f"Performing spliced alignment for {sequencing_file} and {plasmid_file}..."
-                )
-                spanned_regions = spliced_alignment(
-                    human_index, plasmid_fasta, spliced_bam, padding
-                )
-                logging.info("Extracting human reference regions...")
-                extract_human_reference(human_fasta, spanned_regions, spliced_fasta)
-                if md5_level in ["all", "intermediate"]:
-                    write_md5sum(spliced_bam, "intermediate", output_subfolder)
-                    write_md5sum(spliced_fasta, "intermediate", output_subfolder)
+                    # Step 1: Convert the plasmid file to a FASTA file
+                    plasmid_fasta = os.path.join(
+                        output_subfolder,
+                        os.path.splitext(os.path.basename(plasmid_file))[0] + ".fasta",
+                    )
+                    if not os.path.exists(plasmid_fasta) or overwrite:
+                        logging.info(f"Converting {plasmid_file} to FASTA format.")
+                        convert_plasmidfile_to_fasta(
+                            plasmid_file,
+                            plasmid_fasta,
+                            plasmid_file_type,
+                            shift_bases,
+                            generate_shifted,
+                            overwrite,
+                        )
+                    if md5_level in ["all", "intermediate"]:
+                        write_md5sum(plasmid_fasta, "intermediate", output_subfolder)
+                    if md5_level in ["all", "input"]:
+                        write_md5sum(plasmid_file, "input", output_subfolder)
+                    prog.advance()
 
-                spliced_index = os.path.join(
-                    output_subfolder,
-                    os.path.splitext(os.path.basename(spliced_fasta))[0] + ".mmi",
-                )
-                create_indexes(spliced_fasta, overwrite)
-                if md5_level in ["all", "intermediate"]:
-                    write_md5sum(spliced_index, "intermediate", output_subfolder)
-                prog.advance()
+                    # Step 2: Generate indices
+                    human_index = os.path.join(
+                        os.path.dirname(human_fasta),
+                        os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
+                    )
+                    plasmid_index = os.path.join(
+                        output_subfolder,
+                        os.path.splitext(os.path.basename(plasmid_fasta))[0] + ".mmi",
+                    )
+                    # Human index already built in upfront phase, skip redundant call
+                    if human_index not in plan.built_indexes:
+                        # Defensive: should not happen after upfront phase
+                        create_indexes(human_fasta, overwrite)
+                        plan.built_indexes.add(human_index)
+                    # Always create plasmid index (per-combination, no dedup)
+                    create_indexes(plasmid_fasta, overwrite)
+                    if md5_level in ["all", "intermediate"]:
+                        write_md5sum(plasmid_index, "intermediate", output_subfolder)
+                    if md5_level in ["all"]:
+                        write_md5sum(human_index, "intermediate", output_subfolder)
+                    prog.advance()
 
-                # Step 4: cDNA positions
-                unique_cdna_output = cdna_output or os.path.join(
-                    output_subfolder, "cDNA_positions.txt"
-                )
-                logging.info("Extracting cDNA positions from the spliced alignment...")
-                extract_plasmid_cdna_positions(plasmid_fasta, spliced_bam, unique_cdna_output)
-                if md5_level in ["all", "intermediate"]:
-                    write_md5sum(unique_cdna_output, "intermediate", output_subfolder)
-                prog.advance()
+                    # Step 3: Spliced alignment
+                    spliced_bam = os.path.join(output_subfolder, "spliced_alignment.bam")
+                    spliced_fasta = os.path.join(output_subfolder, "spliced_reference.fasta")
+                    logging.info(
+                        f"Performing spliced alignment for {sequencing_file} and {plasmid_file}..."
+                    )
+                    spanned_regions = spliced_alignment(
+                        human_index, plasmid_fasta, spliced_bam, padding
+                    )
+                    logging.info("Extracting human reference regions...")
+                    extract_human_reference(human_fasta, spanned_regions, spliced_fasta)
+                    if md5_level in ["all", "intermediate"]:
+                        write_md5sum(spliced_bam, "intermediate", output_subfolder)
+                        write_md5sum(spliced_fasta, "intermediate", output_subfolder)
 
-                # Step 5: Align reads
-                plasmid_bam = os.path.join(output_subfolder, "plasmid_alignment.bam")
-                spliced_human_bam = os.path.join(output_subfolder, "spliced_human_alignment.bam")
-                logging.info("Aligning reads to the plasmid and spliced human reference...")
-                align_reads(
-                    plasmid_index,
-                    sequencing_file,
-                    plasmid_bam,
-                    "plasmid",
-                    fastq2,
-                    minimap2_threads=mm2_threads,
-                    samtools_threads=sam_threads,
-                    samtools_sort_memory=sort_memory,
-                )
-                align_reads(
-                    spliced_index,
-                    sequencing_file,
-                    spliced_human_bam,
-                    "human",
-                    fastq2,
-                    minimap2_threads=mm2_threads,
-                    samtools_threads=sam_threads,
-                    samtools_sort_memory=sort_memory,
-                )
-                if md5_level in ["all", "intermediate"]:
-                    write_md5sum(plasmid_bam, "intermediate", output_subfolder)
-                    write_md5sum(spliced_human_bam, "intermediate", output_subfolder)
-                prog.advance()
+                    spliced_index = os.path.join(
+                        output_subfolder,
+                        os.path.splitext(os.path.basename(spliced_fasta))[0] + ".mmi",
+                    )
+                    create_indexes(spliced_fasta, overwrite)
+                    if md5_level in ["all", "intermediate"]:
+                        write_md5sum(spliced_index, "intermediate", output_subfolder)
+                    prog.advance()
 
-                # Step 6: Compare alignments
-                comparison_output = os.path.join(output_subfolder, "comparison_result")
-                logging.info("Comparing the two alignments...")
-                compare_alignments(plasmid_bam, spliced_human_bam, comparison_output)
-                prog.advance()
+                    # Step 4: cDNA positions
+                    unique_cdna_output = cdna_output or os.path.join(
+                        output_subfolder, "cDNA_positions.txt"
+                    )
+                    logging.info("Extracting cDNA positions from the spliced alignment...")
+                    extract_plasmid_cdna_positions(plasmid_fasta, spliced_bam, unique_cdna_output)
+                    if md5_level in ["all", "intermediate"]:
+                        write_md5sum(unique_cdna_output, "intermediate", output_subfolder)
+                    prog.advance()
 
-                # Step 7: Generate report
-                logging.info("Generating report...")
-                reads_assignment_file = f"{comparison_output}.reads_assignment.tsv"
-                summary_file = f"{comparison_output}.summary.tsv"
-                command_line = " ".join(sys.argv)
-                generate_report(
-                    reads_assignment_file,
-                    summary_file,
-                    output_subfolder,
-                    threshold=threshold,
-                    human_fasta=human_fasta,
-                    plasmid_gb=plasmid_file,
-                    sequencing_file=sequencing_file,
-                    command_line=command_line,
-                    static_report=static_report,
-                    plotly_mode=plotly_mode,
-                    output_root=output_folder,
-                )
+                    # Step 5: Align reads
+                    plasmid_bam = os.path.join(output_subfolder, "plasmid_alignment.bam")
+                    spliced_human_bam = os.path.join(output_subfolder, "spliced_human_alignment.bam")
+                    logging.info("Aligning reads to the plasmid and spliced human reference...")
+                    align_reads(
+                        plasmid_index,
+                        sequencing_file,
+                        plasmid_bam,
+                        "plasmid",
+                        fastq2,
+                        minimap2_threads=mm2_threads,
+                        samtools_threads=sam_threads,
+                        samtools_sort_memory=sort_memory,
+                    )
+                    align_reads(
+                        spliced_index,
+                        sequencing_file,
+                        spliced_human_bam,
+                        "human",
+                        fastq2,
+                        minimap2_threads=mm2_threads,
+                        samtools_threads=sam_threads,
+                        samtools_sort_memory=sort_memory,
+                    )
+                    if md5_level in ["all", "intermediate"]:
+                        write_md5sum(plasmid_bam, "intermediate", output_subfolder)
+                        write_md5sum(spliced_human_bam, "intermediate", output_subfolder)
+                    prog.advance()
 
-                # Write MD5 checksums for the output files
-                if md5_level in ["all", "intermediate", "output"]:
-                    write_md5sum(reads_assignment_file, "output", output_subfolder)
-                    write_md5sum(summary_file, "output", output_subfolder)
-                prog.advance()
+                    # Step 6: Compare alignments
+                    comparison_output = os.path.join(output_subfolder, "comparison_result")
+                    logging.info("Comparing the two alignments...")
+                    compare_alignments(plasmid_bam, spliced_human_bam, comparison_output)
+                    prog.advance()
 
-                # Step 8: Optionally delete intermediate files
-                if not keep_intermediate:
-                    logging.info("Deleting intermediate files...")
-                    os.remove(plasmid_bam)
-                    os.remove(spliced_human_bam)
-                    os.remove(spliced_bam)
+                    # Step 7: Generate report
+                    logging.info("Generating report...")
+                    reads_assignment_file = f"{comparison_output}.reads_assignment.tsv"
+                    summary_file = f"{comparison_output}.summary.tsv"
+                    command_line = " ".join(sys.argv)
+                    generate_report(
+                        reads_assignment_file,
+                        summary_file,
+                        output_subfolder,
+                        threshold=threshold,
+                        human_fasta=human_fasta,
+                        plasmid_gb=plasmid_file,
+                        sequencing_file=sequencing_file,
+                        command_line=command_line,
+                        static_report=static_report,
+                        plotly_mode=plotly_mode,
+                        output_root=output_folder,
+                    )
 
-                # Step 9: Optionally archive the output folder
-                if archive_output:
-                    archive_output_folder(output_subfolder)
+                    # Write MD5 checksums for the output files
+                    if md5_level in ["all", "intermediate", "output"]:
+                        write_md5sum(reads_assignment_file, "output", output_subfolder)
+                        write_md5sum(summary_file, "output", output_subfolder)
+                    prog.advance()
 
-    logging.info("Pipeline completed successfully.")
+                    # Step 8: Optionally delete intermediate files
+                    if not keep_intermediate:
+                        logging.info("Deleting intermediate files...")
+                        os.remove(plasmid_bam)
+                        os.remove(spliced_human_bam)
+                        os.remove(spliced_bam)
+
+                    # Step 9: Optionally archive the output folder
+                    if archive_output:
+                        archive_output_folder(output_subfolder)
+
+                    # Record successful completion
+                    duration = time.time() - start_time
+                    results.append(
+                        CombinationResult(
+                            combo_label=combo_label, success=True, duration=duration, error=None
+                        )
+                    )
+                    logging.info(f"{combo_label}: {duration:.1f}s")
+
+                except Exception as e:
+                    # Record failure and continue to next combination
+                    duration = time.time() - start_time
+                    results.append(
+                        CombinationResult(
+                            combo_label=combo_label, success=False, duration=duration, error=e
+                        )
+                    )
+                    logging.error(f"{combo_label} FAILED after {duration:.1f}s: {e}")
+
+    # Log batch summary
+    successful = [r for r in results if r.success]
+    failed = [r for r in results if not r.success]
+
+    logging.info(f"Pipeline complete: {len(successful)} succeeded, {len(failed)} failed")
+
+    if failed:
+        logging.warning("Failed combinations:")
+        for result in failed:
+            logging.warning(f"  - {result.combo_label}: {result.error}")
+
+    # If ALL combinations failed, raise an error
+    if len(failed) == len(results) and results:
+        error_summary = "; ".join(f"{r.combo_label}: {r.error}" for r in failed)
+        raise RuntimeError(f"All {len(failed)} combinations failed. Errors: {error_summary}")
+
+    if successful:
+        logging.info("Pipeline completed successfully for successful combinations.")
 
 
 if __name__ == "__main__":
