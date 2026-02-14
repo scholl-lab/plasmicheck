@@ -409,6 +409,8 @@ def run_pipeline(
     sequencing_files_r2: str | None = None,
     dry_run: bool = False,
     progress: bool = False,
+    static_report: bool = False,
+    plotly_mode: str = "directory",
 ) -> None:
     if sequencing_files_r1 is None:
         raise ValueError("-sf1 (sequencing_files_r1) is required.")
@@ -581,6 +583,9 @@ def run_pipeline(
                     plasmid_gb=plasmid_file,
                     sequencing_file=sequencing_file,
                     command_line=command_line,
+                    static_report=static_report,
+                    plotly_mode=plotly_mode,
+                    output_root=output_folder,
                 )
 
                 # Write MD5 checksums for the output files
@@ -700,6 +705,17 @@ if __name__ == "__main__":
         action="store_true",
         help="Disable progress bar",
     )
+    parser.add_argument(
+        "--static-report",
+        action="store_true",
+        help="Generate static PNG reports alongside interactive HTML (opt-in, slower)",
+    )
+    parser.add_argument(
+        "--plotly-mode",
+        choices=["cdn", "directory", "embedded"],
+        default="directory",
+        help="Plotly.js inclusion mode for interactive reports (default: directory)",
+    )
     add_logging_args(parser)
 
     args = parser.parse_args()
@@ -723,4 +739,6 @@ if __name__ == "__main__":
         sequencing_files_r2=args.sequencing_files_r2,
         dry_run=args.dry_run,
         progress=sys.stderr.isatty() and not args.no_progress,
+        static_report=args.static_report,
+        plotly_mode=args.plotly_mode,
     )
