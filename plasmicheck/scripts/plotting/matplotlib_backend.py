@@ -54,7 +54,7 @@ def generate_boxplot_matplotlib(
     fig, ax = plt.subplots(figsize=(width / 100, height / 100))
 
     # Create boxplot with custom colors
-    categories = ["Plasmid", "Human", "Tied"]
+    categories = ["Plasmid", "Human", "Tied", "Backbone_Only", "Ambiguous"]
     colors = [ASSIGNMENT_COLORS.get(cat, "#999999") for cat in categories]
 
     # Prepare data for boxplot
@@ -139,7 +139,7 @@ def generate_scatter_matplotlib(
     fig, ax = plt.subplots(figsize=(width / 100, height / 100))
 
     # Plot each category with its color
-    categories = ["Plasmid", "Human", "Tied"]
+    categories = ["Plasmid", "Human", "Tied", "Backbone_Only", "Ambiguous"]
     for cat in categories:
         cat_data = reads_df[reads_df["AssignedTo"] == cat]
         if not cat_data.empty:
