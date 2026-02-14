@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 4 - Foundation ✓ Complete
-**Status:** Phase 4 verified and complete
-**Progress:** [██░░░░░░░░] 2/18 requirements (11%)
+**Phase:** 5 - Report Optimization (In Progress)
+**Status:** Plan 01 of 03 complete
+**Progress:** [███░░░░░░░] 3/18 requirements (17%)
 
-Last activity: 2026-02-14 — Phase 4 execution complete, verified 11/11 must-haves
+Last activity: 2026-02-14 — Completed 05-01-PLAN.md (CLI flags for report optimization)
 
 ## Performance Metrics
 
@@ -43,6 +43,9 @@ Last activity: 2026-02-14 — Phase 4 execution complete, verified 11/11 must-ha
 - Use atomic write pattern (tempfile + os.replace) for baseline caching
 - Store baselines as JSON for human readability and easy diff inspection
 - Compare verdicts exactly, ratios with ±0.001 tolerance for regression tests
+- Use shared _report_parser parent to avoid flag definition duplication (05-01)
+- Pass output_root to enable shared assets/ directory for plotly.js (05-01)
+- Default plotly-mode to 'directory' for optimal speed/offline balance (05-01)
 
 ### Todos
 
@@ -65,18 +68,18 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 4 (Foundation) complete — regression test and benchmark scripts verified
+**What just happened:** Completed 05-01 (CLI flags) — added --static-report and --plotly-mode flags to pipeline, report, summary_reports subcommands
 
-**Next step:** Plan Phase 5 (Report Optimization)
+**Next step:** Execute 05-02 (PNG export) — implement conditional PNG generation in generate_report
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
 - Regression test validates correctness: `python scripts/regression_test.py`
 - Benchmark measures per-step timing: `python scripts/benchmark.py`
 - Report generation is 91.7% of pipeline time — Phase 5 targets this bottleneck
-- Research identified critical pitfalls: CDN breaks air-gapped, collate != sort -n for supplementary alignments
-- All optimizations must pass regression tests (contamination ratios/verdicts unchanged)
+- Expected type errors in mypy (7 errors) until Plans 02/03 update generate_report/generate_summary_reports signatures
+- CLI flags fully wired: cli.py → run_pipeline.py → generate_report() (including output_root)
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 4 completion*
+*Last updated: 2026-02-14 after 05-01 completion*
