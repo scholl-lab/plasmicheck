@@ -190,9 +190,7 @@ def _resort_supplementary(input_bam: str, output_bam: str) -> None:
                 outfile.write(read)
 
 
-def _collate_bam(
-    input_bam: str, output_bam: str, threads: int = SAMTOOLS_THREADS
-) -> None:
+def _collate_bam(input_bam: str, output_bam: str, threads: int = SAMTOOLS_THREADS) -> None:
     """Group reads by name using samtools collate (faster than sort -n).
 
     Uses standard collate mode (NOT fast mode -f) to preserve all alignments.
@@ -201,9 +199,7 @@ def _collate_bam(
     tmp_path = None
     try:
         # Create temp file for collate output
-        with tempfile.NamedTemporaryFile(
-            prefix="collate_", suffix=".bam", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(prefix="collate_", suffix=".bam", delete=False) as tmp:
             tmp_path = tmp.name
 
         # Run samtools collate (standard mode, not -f fast mode)

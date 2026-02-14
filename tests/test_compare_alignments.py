@@ -252,9 +252,7 @@ class TestCollateBam:
 
         with (
             patch("subprocess.run") as mock_run,
-            patch(
-                "plasmicheck.scripts.compare_alignments._resort_supplementary"
-            ) as mock_resort,
+            patch("plasmicheck.scripts.compare_alignments._resort_supplementary") as mock_resort,
         ):
             mock_run.return_value = None
             _collate_bam(input_bam, output_bam, threads=4)
@@ -284,9 +282,7 @@ class TestCollateBam:
 
         with (
             patch("subprocess.run") as mock_run,
-            patch(
-                "plasmicheck.scripts.compare_alignments._namesort_bam_fallback"
-            ) as mock_fallback,
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam_fallback") as mock_fallback,
         ):
             # First call (collate) fails, second call (fallback) succeeds
             mock_run.side_effect = [
@@ -308,9 +304,7 @@ class TestCollateBam:
 
         with (
             patch("subprocess.run") as mock_run,
-            patch(
-                "plasmicheck.scripts.compare_alignments._namesort_bam_fallback"
-            ) as mock_fallback,
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam_fallback") as mock_fallback,
         ):
             # First call (collate) fails with FileNotFoundError
             mock_run.side_effect = [FileNotFoundError("samtools not found"), None]
@@ -434,12 +428,8 @@ class TestNameGroupBam:
         output_bam = str(tmp_path / "output.bam")
 
         with (
-            patch(
-                "plasmicheck.scripts.compare_alignments._collate_bam"
-            ) as mock_collate,
-            patch(
-                "plasmicheck.scripts.compare_alignments._namesort_bam_fallback"
-            ) as mock_fallback,
+            patch("plasmicheck.scripts.compare_alignments._collate_bam") as mock_collate,
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam_fallback") as mock_fallback,
         ):
             mock_collate.return_value = None
 

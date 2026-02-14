@@ -74,8 +74,7 @@ def detect_cpu_count() -> tuple[int, str]:
 
     # Fallback
     logging.warning(
-        "Could not detect CPU count from SLURM, cgroups, or os.cpu_count(). "
-        "Falling back to 4 CPUs."
+        "Could not detect CPU count from SLURM, cgroups, or os.cpu_count(). Falling back to 4 CPUs."
     )
     return (4, "fallback")
 
