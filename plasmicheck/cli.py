@@ -80,6 +80,19 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         help=f"Threshold for contamination verdict (default: {default_threshold})",
     )
 
+    _report_parser = argparse.ArgumentParser(add_help=False)
+    _report_parser.add_argument(
+        "--static-report",
+        action="store_true",
+        help="Generate static PNG reports alongside interactive HTML (opt-in, slower)",
+    )
+    _report_parser.add_argument(
+        "--plotly-mode",
+        choices=["cdn", "directory", "embedded"],
+        default="directory",
+        help="Plotly.js inclusion mode for interactive reports (default: directory)",
+    )
+
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="plasmicheck: Detect and quantify plasmid DNA contamination in sequencing data",
         parents=[_logging_parser],
@@ -214,7 +227,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_pipeline = subparsers.add_parser(
         "pipeline",
         help="Run the full pipeline to detect and quantify plasmid DNA contamination in sequencing data",
-        parents=[_logging_parser, _threshold_parser],
+        parents=[_logging_parser, _threshold_parser, _report_parser],
     )
     parser_pipeline.add_argument(
         "-hf", "--human_fasta", help="Human reference FASTA file", required=True
@@ -307,7 +320,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_report = subparsers.add_parser(
         "report",
         help="Generate a visualized HTML/PDF report from alignment comparison results",
-        parents=[_logging_parser, _threshold_parser],
+        parents=[_logging_parser, _threshold_parser, _report_parser],
     )
     parser_report.add_argument(
         "-r",
@@ -326,7 +339,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_summary_reports = subparsers.add_parser(
         "summary_reports",
         help="Generate summary reports for multiple samples and plasmids.",
-        parents=[_logging_parser, _threshold_parser],
+        parents=[_logging_parser, _threshold_parser, _report_parser],
     )
     parser_summary_reports.add_argument(
         "-i", "--input_dir", help="Directory containing compare outputs", required=True
@@ -420,6 +433,8 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             sequencing_files_r2=args.sequencing_files_r2,
             dry_run=args.dry_run,
             progress=progress_enabled,
+            static_report=args.static_report,
+            plotly_mode=args.plotly_mode,
         )
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
@@ -431,6 +446,8 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             args.output_folder,
             args.threshold,
             command_line=command_line,
+            static_report=args.static_report,
+            plotly_mode=args.plotly_mode,
         )
     elif args.command == "summary_reports":
         from .scripts.generate_summary_reports import main as generate_summary_reports
@@ -440,6 +457,8 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             args.output_dir,
             args.threshold,
             substring_to_remove=args.substring_to_remove,  # Pass the substring correctly
+            static_report=args.static_report,
+            plotly_mode=args.plotly_mode,
         )
     else:
         parser.print_help()
