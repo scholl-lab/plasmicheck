@@ -80,6 +80,26 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         help=f"Threshold for contamination verdict (default: {default_threshold})",
     )
 
+    _report_parser = argparse.ArgumentParser(add_help=False)
+    _report_parser.add_argument(
+        "--static-report",
+        action="store_true",
+        help="Generate static PNG reports alongside interactive HTML (opt-in, slower)",
+    )
+    _report_parser.add_argument(
+        "--plotly-mode",
+        choices=["cdn", "directory", "embedded"],
+        default="directory",
+        help="Plotly.js inclusion mode for interactive reports (default: directory)",
+    )
+    _report_parser.add_argument(
+        "--plot-backend",
+        choices=["plotly", "matplotlib"],
+        default="plotly",
+        help="Backend for static PNG plot generation (default: plotly/kaleido). "
+        "Only applies when --static-report is used.",
+    )
+
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="plasmicheck: Detect and quantify plasmid DNA contamination in sequencing data",
         parents=[_logging_parser],
@@ -214,7 +234,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_pipeline = subparsers.add_parser(
         "pipeline",
         help="Run the full pipeline to detect and quantify plasmid DNA contamination in sequencing data",
-        parents=[_logging_parser, _threshold_parser],
+        parents=[_logging_parser, _threshold_parser, _report_parser],
     )
     parser_pipeline.add_argument(
         "-hf", "--human_fasta", help="Human reference FASTA file", required=True
@@ -226,10 +246,16 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         required=True,
     )
     parser_pipeline.add_argument(
-        "-sf",
-        "--sequencing_files",
-        help="Sequencing files (single file or a file containing paths to multiple files)",
+        "-sf1",
+        "--sequencing_files_r1",
+        help="Forward (R1) FASTQ/BAM file or file list (.txt)",
         required=True,
+    )
+    parser_pipeline.add_argument(
+        "-sf2",
+        "--sequencing_files_r2",
+        help="Reverse (R2) FASTQ files or file list (.txt) for paired-end",
+        default=None,
     )
     parser_pipeline.add_argument(
         "-o",
@@ -285,12 +311,29 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         action="store_true",
         help="Archive and compress the output folder into a .tar.gz file",
     )
+    parser_pipeline.add_argument(
+        "-n",
+        "--dry_run",
+        action="store_true",
+        help="Show execution plan without running anything",
+    )
+    parser_pipeline.add_argument(
+        "--no_progress",
+        action="store_true",
+        help="Disable progress bar (auto-disabled in non-interactive terminals)",
+    )
+    parser_pipeline.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        help="Total thread count for alignment (default: auto-detect via SLURM/cgroup/os)",
+    )
 
     # Report Command
     parser_report = subparsers.add_parser(
         "report",
         help="Generate a visualized HTML/PDF report from alignment comparison results",
-        parents=[_logging_parser, _threshold_parser],
+        parents=[_logging_parser, _threshold_parser, _report_parser],
     )
     parser_report.add_argument(
         "-r",
@@ -309,7 +352,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_summary_reports = subparsers.add_parser(
         "summary_reports",
         help="Generate summary reports for multiple samples and plasmids.",
-        parents=[_logging_parser, _threshold_parser],
+        parents=[_logging_parser, _threshold_parser, _report_parser],
     )
     parser_summary_reports.add_argument(
         "-i", "--input_dir", help="Directory containing compare outputs", required=True
@@ -384,10 +427,11 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline
 
+        progress_enabled = sys.stderr.isatty() and not args.no_progress
+
         run_pipeline(
             args.human_fasta,
             args.plasmid_files,
-            args.sequencing_files,
             args.output_folder,
             args.keep_intermediate,
             args.shift_bases,
@@ -398,6 +442,14 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             args.md5_level,
             args.cDNA_output,
             args.archive_output,
+            sequencing_files_r1=args.sequencing_files_r1,
+            sequencing_files_r2=args.sequencing_files_r2,
+            dry_run=args.dry_run,
+            progress=progress_enabled,
+            static_report=args.static_report,
+            plotly_mode=args.plotly_mode,
+            plot_backend=args.plot_backend,
+            threads=args.threads,
         )
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
@@ -409,6 +461,9 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             args.output_folder,
             args.threshold,
             command_line=command_line,
+            static_report=args.static_report,
+            plotly_mode=args.plotly_mode,
+            plot_backend=args.plot_backend,
         )
     elif args.command == "summary_reports":
         from .scripts.generate_summary_reports import main as generate_summary_reports
@@ -418,6 +473,9 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             args.output_dir,
             args.threshold,
             substring_to_remove=args.substring_to_remove,  # Pass the substring correctly
+            static_report=args.static_report,
+            plotly_mode=args.plotly_mode,
+            plot_backend=args.plot_backend,
         )
     else:
         parser.print_help()

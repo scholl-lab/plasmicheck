@@ -164,6 +164,11 @@ cython_debug/
 /output/
 /reference/
 
+# Generated index/lock files in test data
+tests/data/synthetic/*.mmi
+tests/data/synthetic/*.fai
+tests/data/synthetic/*.lock
+
 # commands file
 COMMANDS.md
 
@@ -176,3 +181,7 @@ nul
 # claude files and folders
 .claude/
 CLAUDE.md
+
+# Regression and benchmark cache
+scripts/.regression_cache/
+BENCHMARK.md

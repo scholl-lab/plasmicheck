@@ -16,6 +16,7 @@
   "alignment": {
     "minimap2_threads": 8,
     "samtools_threads": 4,
+    "samtools_sort_memory": "2G",
     "fasta_extensions": [".fasta", ".fa", ".fna", ".fsa", ".ffn"]
   },
   "indexing": {

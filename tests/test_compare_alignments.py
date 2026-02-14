@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from plasmicheck.scripts.compare_alignments import (
+    _assign,
+    _best_read,
+    _streaming_compare,
+    _write_assignment,
     calculate_alignment_score,
     parse_insert_region,
 )
@@ -118,3 +124,117 @@ class TestParseInsertRegion:
             f"INSERT_REGION: ({start}, {end})\n"
         )
         assert parse_insert_region(str(f)) == (start, end)
+
+
+class TestAssign:
+    @pytest.mark.unit
+    def test_plasmid_wins(self) -> None:
+        assert _assign(70, 30) == "Plasmid"
+
+    @pytest.mark.unit
+    def test_human_wins(self) -> None:
+        assert _assign(30, 70) == "Human"
+
+    @pytest.mark.unit
+    def test_tied(self) -> None:
+        assert _assign(50, 50) == "Tied"
+
+
+class TestBestRead:
+    @pytest.mark.unit
+    def test_picks_primary(self, mock_pysam_read: Any) -> None:
+        primary = mock_pysam_read(query_name="r1")
+        primary.is_secondary = False
+        primary.is_supplementary = False
+        secondary = mock_pysam_read(query_name="r1")
+        secondary.is_secondary = True
+        secondary.is_supplementary = False
+        result = _best_read([secondary, primary])
+        assert result is primary
+
+    @pytest.mark.unit
+    def test_falls_back_to_first(self, mock_pysam_read: Any) -> None:
+        sec1 = mock_pysam_read(query_name="r1")
+        sec1.is_secondary = True
+        sec1.is_supplementary = False
+        sec2 = mock_pysam_read(query_name="r1")
+        sec2.is_secondary = True
+        sec2.is_supplementary = False
+        result = _best_read([sec1, sec2])
+        assert result is sec1
+
+
+class TestWriteAssignment:
+    @pytest.mark.unit
+    def test_full_data(self, mock_pysam_read: Any) -> None:
+        buf = io.StringIO()
+        p_read = mock_pysam_read(cigarstring="100M", mapping_quality=60)
+        h_read = mock_pysam_read(cigarstring="50M50S", mapping_quality=30)
+        _write_assignment(buf, "read1", "Plasmid", 70, 30, p_read, h_read)
+        line = buf.getvalue()
+        assert line.startswith("read1\tPlasmid\t70\t30\t100M\t50M50S\t60\t30\n")
+
+    @pytest.mark.unit
+    def test_missing_human_read(self, mock_pysam_read: Any) -> None:
+        buf = io.StringIO()
+        p_read = mock_pysam_read(cigarstring="100M", mapping_quality=60)
+        _write_assignment(buf, "read1", "Plasmid", 70, 0, p_read, None)
+        line = buf.getvalue()
+        assert "NA" in line  # human CIGAR/MAPQ should be NA
+
+
+class TestStreamingCompare:
+    @pytest.mark.unit
+    def test_matched_reads(self, mock_pysam_read: Any) -> None:
+        """Both BAMs have the same reads — should compare and assign."""
+        p_read = mock_pysam_read(query_name="r1", mapping_quality=60)
+        p_read.is_secondary = False
+        p_read.is_supplementary = False
+        h_read = mock_pysam_read(query_name="r1", mapping_quality=30)
+        h_read.is_secondary = False
+        h_read.is_supplementary = False
+
+        with (
+            patch(
+                "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+                side_effect=[iter([("r1", [p_read])]), iter([("r1", [h_read])])],
+            ),
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+            assert counts["Plasmid"] == 1
+            assert counts["Human"] == 0
+
+    @pytest.mark.unit
+    def test_plasmid_only_read(self, mock_pysam_read: Any) -> None:
+        """Read in plasmid BAM only."""
+        p_read = mock_pysam_read(query_name="r1", mapping_quality=60)
+        p_read.is_secondary = False
+        p_read.is_supplementary = False
+
+        with (
+            patch(
+                "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+                side_effect=[iter([("r1", [p_read])]), iter([])],
+            ),
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+            assert counts["Plasmid"] == 1
+
+    @pytest.mark.unit
+    def test_human_only_read(self, mock_pysam_read: Any) -> None:
+        """Read in human BAM only."""
+        h_read = mock_pysam_read(query_name="r1", mapping_quality=60)
+        h_read.is_secondary = False
+        h_read.is_supplementary = False
+
+        with (
+            patch(
+                "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+                side_effect=[iter([]), iter([("r1", [h_read])])],
+            ),
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+            assert counts["Human"] == 1

@@ -4,11 +4,10 @@ import base64
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
-import plotly.express as px
-from jinja2 import Environment, FileSystemLoader
+if TYPE_CHECKING:
+    import pandas as pd
 
 from plasmicheck.config import get_config
 from plasmicheck.resources import get_resource_path
@@ -31,6 +30,8 @@ logging.getLogger("fontTools").setLevel(logging.ERROR)
 
 
 def load_data(reads_assignment_file: str, summary_file: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    import pandas as pd
+
     logging.info(f"Loading data from {reads_assignment_file} and {summary_file}")
     reads_df = pd.read_csv(reads_assignment_file, sep="\t")
     summary_df = pd.read_csv(summary_file, sep="\t")
@@ -47,7 +48,14 @@ def downsample_data(df: pd.DataFrame, limit: int) -> tuple[pd.DataFrame, bool]:
     return df, downsampled
 
 
-def generate_plots(reads_df: pd.DataFrame, output_folder: str) -> tuple[str, str, str, str]:
+def generate_plots(
+    reads_df: pd.DataFrame,
+    output_folder: str,
+    static_report: bool = False,
+    plot_backend: str = "plotly",
+) -> tuple[str, str | None, str, str | None]:
+    import plotly.express as px
+
     logging.info("Generating plots")
     # Ensure default values for width and height
     width = PLOT_SAMPLE_REPORT.get("figsize", {}).get("width", 1000)  # Convert inches to pixels
@@ -85,10 +93,7 @@ def generate_plots(reads_df: pd.DataFrame, output_folder: str) -> tuple[str, str
     boxplot_filename_interactive = os.path.join(
         plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"].replace(".png", ".html")
     )
-    fig_box.write_html(boxplot_filename_interactive)
-
-    boxplot_filename_png = os.path.join(plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"])
-    fig_box.write_image(boxplot_filename_png)
+    fig_box.write_html(boxplot_filename_interactive, include_plotlyjs=False, full_html=False)
 
     # Scatter plot using Plotly
     fig_scatter = px.scatter(
@@ -109,12 +114,45 @@ def generate_plots(reads_df: pd.DataFrame, output_folder: str) -> tuple[str, str
     scatter_filename_interactive = os.path.join(
         plots_dir, PLOT_SAMPLE_REPORT["output_scatter_plot_filename"].replace(".png", ".html")
     )
-    fig_scatter.write_html(scatter_filename_interactive)
+    fig_scatter.write_html(scatter_filename_interactive, include_plotlyjs=False, full_html=False)
 
-    scatter_filename_png = os.path.join(
-        plots_dir, PLOT_SAMPLE_REPORT["output_scatter_plot_filename"]
-    )
-    fig_scatter.write_image(scatter_filename_png)
+    # Only generate PNGs when static_report=True
+    boxplot_filename_png = None
+    scatter_filename_png = None
+    if static_report:
+        boxplot_filename_png = os.path.join(
+            plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"]
+        )
+        scatter_filename_png = os.path.join(
+            plots_dir, PLOT_SAMPLE_REPORT["output_scatter_plot_filename"]
+        )
+
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import (
+                generate_boxplot_matplotlib,
+                generate_scatter_matplotlib,
+            )
+
+            # Generate plots using matplotlib
+            boxplot_title = f"{PLOT_SAMPLE_REPORT['title_box_plot']} (Total Reads: {len(reads_df)})"
+            scatter_title = (
+                f"{PLOT_SAMPLE_REPORT['title_scatter_plot']} (Total Reads: {len(reads_df)})"
+            )
+
+            generate_boxplot_matplotlib(
+                reads_df, boxplot_filename_png, boxplot_title, width, height
+            )
+            generate_scatter_matplotlib(
+                reads_df, scatter_filename_png, scatter_title, width, height
+            )
+        else:
+            # Default plotly/kaleido backend
+            import kaleido  # type: ignore[import-untyped]
+
+            kaleido.start_sync_server()
+
+            fig_box.write_image(boxplot_filename_png)
+            fig_scatter.write_image(scatter_filename_png)
 
     logging.info("Plots generated.")
 
@@ -124,6 +162,24 @@ def generate_plots(reads_df: pd.DataFrame, output_folder: str) -> tuple[str, str
         scatter_filename_interactive,
         scatter_filename_png,
     )
+
+
+def _ensure_plotly_assets(output_root: str) -> None:
+    """Copy plotly.min.js to {output_root}/assets/ if not already present."""
+    import plotly
+
+    plotly_dir = os.path.dirname(plotly.__file__)
+    plotly_js_source = os.path.join(plotly_dir, "package_data", "plotly.min.js")
+
+    assets_dir = os.path.join(output_root, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+
+    dest = os.path.join(assets_dir, "plotly.min.js")
+    if not os.path.exists(dest):
+        import shutil
+
+        shutil.copy2(plotly_js_source, dest)
+        logging.info(f"Copied plotly.min.js to {dest}")
 
 
 def encode_image_to_base64(image_path: str) -> str:
@@ -153,11 +209,18 @@ def generate_report(
     plasmid_gb: str = "None",
     sequencing_file: str = "None",
     boxplot_filename_interactive: str = "",
-    boxplot_filename_png: str = "",
+    boxplot_filename_png: str | None = None,
     scatter_filename_interactive: str = "",
-    scatter_filename_png: str = "",
+    scatter_filename_png: str | None = None,
     downsampled: bool = False,
+    static_report: bool = False,
+    plotly_mode: str = "directory",
+    plotly_version: str = "",
+    plotly_js_path: str = "",
+    plotly_js_inline: str = "",
 ) -> None:
+    from jinja2 import Environment, FileSystemLoader
+
     logging.info("Generating report")
     env = Environment(loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))))
     template = env.get_template("report_template.html")
@@ -186,10 +249,6 @@ def generate_report(
     with open(scatter_filename_interactive) as f:
         scatter_html_content = f.read()
 
-    # Convert the static PNG files to Base64
-    boxplot_png_base64 = encode_image_to_base64(boxplot_filename_png)
-    scatter_png_base64 = encode_image_to_base64(scatter_filename_png)
-
     # Render the interactive HTML report
     html_content_interactive = template.render(
         summary_df=summary_df.to_html(classes="table table-striped"),
@@ -208,28 +267,11 @@ def generate_report(
         run_date=datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         command_line=command_line,
         interactive=True,
-        downsample_message=downsample_message,  # Pass downsample message
-    )
-
-    # Render the non-interactive HTML report
-    html_content_non_interactive = template.render(
-        summary_df=summary_df.to_html(classes="table table-striped"),
-        box_plot=boxplot_png_base64,
-        scatter_plot=scatter_png_base64,
-        verdict=verdict,
-        ratio=f"{ratio:.3f}",
-        threshold=threshold,
-        unclear_range=unclear,
-        verdict_color=verdict_color,
-        version=VERSION,
-        logo_base64=logo_base64,
-        human_fasta=human_fasta,
-        plasmid_gb=plasmid_gb,
-        sequencing_file=sequencing_file,
-        run_date=datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        command_line=command_line,
-        interactive=False,
-        downsample_message=downsample_message,  # Pass downsample message
+        downsample_message=downsample_message,
+        plotly_mode=plotly_mode,
+        plotly_version=plotly_version,
+        plotly_js_path=plotly_js_path,
+        plotly_js_inline=plotly_js_inline,
     )
 
     # Save interactive HTML report
@@ -237,10 +279,41 @@ def generate_report(
     with open(html_report_interactive, "w") as f:
         f.write(html_content_interactive)
 
-    # Save non-interactive HTML report
-    html_report_non_interactive = os.path.join(output_folder, "report_non_interactive.html")
-    with open(html_report_non_interactive, "w") as f:
-        f.write(html_content_non_interactive)
+    # Only generate non-interactive HTML report when static_report=True
+    if static_report and boxplot_filename_png and scatter_filename_png:
+        # Convert the static PNG files to Base64
+        boxplot_png_base64 = encode_image_to_base64(boxplot_filename_png)
+        scatter_png_base64 = encode_image_to_base64(scatter_filename_png)
+
+        # Render the non-interactive HTML report
+        html_content_non_interactive = template.render(
+            summary_df=summary_df.to_html(classes="table table-striped"),
+            box_plot=boxplot_png_base64,
+            scatter_plot=scatter_png_base64,
+            verdict=verdict,
+            ratio=f"{ratio:.3f}",
+            threshold=threshold,
+            unclear_range=unclear,
+            verdict_color=verdict_color,
+            version=VERSION,
+            logo_base64=logo_base64,
+            human_fasta=human_fasta,
+            plasmid_gb=plasmid_gb,
+            sequencing_file=sequencing_file,
+            run_date=datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            command_line=command_line,
+            interactive=False,
+            downsample_message=downsample_message,
+            plotly_mode=plotly_mode,
+            plotly_version=plotly_version,
+            plotly_js_path=plotly_js_path,
+            plotly_js_inline=plotly_js_inline,
+        )
+
+        # Save non-interactive HTML report
+        html_report_non_interactive = os.path.join(output_folder, "report_non_interactive.html")
+        with open(html_report_non_interactive, "w") as f:
+            f.write(html_content_non_interactive)
 
 
 def main(
@@ -253,6 +326,10 @@ def main(
     plasmid_gb: str = "None",
     sequencing_file: str = "None",
     command_line: str = "",
+    static_report: bool = False,
+    plotly_mode: str = "directory",
+    plot_backend: str = "plotly",
+    output_root: str | None = None,
 ) -> None:
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
 
@@ -265,7 +342,9 @@ def main(
         boxplot_filename_png,
         scatter_filename_interactive,
         scatter_filename_png,
-    ) = generate_plots(reads_df, output_folder)
+    ) = generate_plots(
+        reads_df, output_folder, static_report=static_report, plot_backend=plot_backend
+    )
 
     # Extract the verdict from the summary file
     verdict = extract_verdict_from_summary(summary_df)
@@ -273,6 +352,31 @@ def main(
     plasmid_count = int(summary_df[summary_df["Category"] == "Plasmid"]["Count"].values[0])
     human_count = int(summary_df[summary_df["Category"] == "Human"]["Count"].values[0])
     ratio = plasmid_count / human_count if human_count != 0 else float("inf")
+
+    # Determine output_root for shared assets
+    effective_root = output_root if output_root else output_folder
+
+    plotly_js_path = ""
+    plotly_version = ""
+    plotly_js_inline = ""
+
+    if plotly_mode in ("directory", "cdn"):
+        import plotly
+
+        plotly_version = plotly.__version__
+    if plotly_mode == "directory":
+        _ensure_plotly_assets(effective_root)
+        # Compute relative path from output_folder to assets/plotly.min.js
+        assets_js = os.path.join(effective_root, "assets", "plotly.min.js")
+        plotly_js_path = os.path.relpath(assets_js, output_folder)
+    elif plotly_mode == "embedded":
+        import plotly as _plotly
+
+        plotly_js_source = os.path.join(
+            os.path.dirname(_plotly.__file__), "package_data", "plotly.min.js"
+        )
+        with open(plotly_js_source) as f:
+            plotly_js_inline = f"<script>{f.read()}</script>"
 
     # Generate report
     generate_report(
@@ -290,7 +394,12 @@ def main(
         boxplot_filename_png=boxplot_filename_png,
         scatter_filename_interactive=scatter_filename_interactive,
         scatter_filename_png=scatter_filename_png,
-        downsampled=downsampled,  # Pass the downsampled flag
+        downsampled=downsampled,
+        static_report=static_report,
+        plotly_mode=plotly_mode,
+        plotly_version=plotly_version,
+        plotly_js_path=plotly_js_path,
+        plotly_js_inline=plotly_js_inline,
     )
 
 
@@ -325,6 +434,22 @@ if __name__ == "__main__":
         default="None",
         help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)",
     )
+    parser.add_argument(
+        "--static-report",
+        action="store_true",
+        help="Generate static PNG plots and non-interactive HTML report (slow)",
+    )
+    parser.add_argument(
+        "--plotly-mode",
+        choices=["directory", "cdn", "embedded"],
+        default="directory",
+        help="Plotly.js inclusion mode: directory (local file), cdn (CDN), or embedded (inline)",
+    )
+    parser.add_argument(
+        "--output-root",
+        default=None,
+        help="Root directory for shared assets (plotly.min.js). Defaults to output_folder.",
+    )
     add_logging_args(parser)
 
     import sys
@@ -344,4 +469,7 @@ if __name__ == "__main__":
         args.plasmid_gb,
         args.sequencing_file,
         command_line,
+        args.static_report,
+        args.plotly_mode,
+        args.output_root,
     )

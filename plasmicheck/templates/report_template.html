@@ -4,6 +4,22 @@
     <meta charset="UTF-8">
     <title>plasmicheck Report</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+
+    {% if plotly_mode is not defined %}{% set plotly_mode = 'embedded' %}{% endif %}
+
+    {% if plotly_mode == 'cdn' %}
+        <script src="https://cdn.plot.ly/plotly-{{ plotly_version }}.min.js"></script>
+    {% elif plotly_mode == 'directory' %}
+        <script src="{{ plotly_js_path }}"></script>
+        <script>
+        if (typeof Plotly === 'undefined') {
+            document.write('<script src="https://cdn.plot.ly/plotly-{{ plotly_version }}.min.js"><\/script>');
+        }
+        </script>
+    {% elif plotly_mode == 'embedded' %}
+        {{ plotly_js_inline|safe }}
+    {% endif %}
+
     <style>
         body { margin: 20px; }
         h1, h2, h3 { text-align: center; margin-top: 20px; }
