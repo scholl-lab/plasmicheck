@@ -264,8 +264,11 @@ def _streaming_compare(
 ) -> dict[str, int]:
     """Two-pointer merge over name-sorted BAMs.  Returns assigned counts."""
     assigned_counts: dict[str, int] = {
-        "Plasmid": 0, "Human": 0, "Tied": 0,
-        "Backbone_Only": 0, "Ambiguous": 0,
+        "Plasmid": 0,
+        "Human": 0,
+        "Tied": 0,
+        "Backbone_Only": 0,
+        "Ambiguous": 0,
     }
 
     plasmid_iter = _iter_reads_by_name(plasmid_ns_bam)
@@ -286,7 +289,9 @@ def _streaming_compare(
             h_read = _best_read(h_item[1])
             ps = calculate_alignment_score(p_read)
             hs = calculate_alignment_score(h_read)
-            assigned = _assign(ps, hs, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin)
+            assigned = _assign(
+                ps, hs, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin
+            )
             assigned_counts[assigned] += 1
             _write_assignment(outfile, p_name, assigned, ps, hs, p_read, h_read)
             p_item = next(plasmid_iter, None)
@@ -298,7 +303,9 @@ def _streaming_compare(
             assert p_name is not None
             p_read = _best_read(p_item[1])
             ps = calculate_alignment_score(p_read)
-            assigned = _assign(ps, 0, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin)
+            assigned = _assign(
+                ps, 0, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin
+            )
             assigned_counts[assigned] += 1
             _write_assignment(outfile, p_name, assigned, ps, 0, p_read, None)
             p_item = next(plasmid_iter, None)
@@ -361,7 +368,9 @@ def compare_alignments(
             "ReadID\tAssignedTo\tPlasmidScore\tHumanScore\tPlasmidCIGAR\tHumanCIGAR\tPlasmidMapQ\tHumanMapQ\n"
         )
         assigned_counts = _streaming_compare(
-            plasmid_ns, human_ns, outfile,
+            plasmid_ns,
+            human_ns,
+            outfile,
             insert_region=insert_region,
             score_margin=SCORE_MARGIN,
         )
@@ -380,7 +389,9 @@ def compare_alignments(
         ratio = plasmid_count / human_count if human_count != 0 else float("inf")
     else:
         # Include all plasmid-favoring categories (pre-v0.33.0 behavior)
-        effective_plasmid = plasmid_count + assigned_counts["Backbone_Only"] + assigned_counts["Ambiguous"]
+        effective_plasmid = (
+            plasmid_count + assigned_counts["Backbone_Only"] + assigned_counts["Ambiguous"]
+        )
         ratio = effective_plasmid / human_count if human_count != 0 else float("inf")
 
     if ratio > threshold:

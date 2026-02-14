@@ -16,6 +16,7 @@ from plasmicheck.scripts.compare_alignments import (
     _write_assignment,
     calculate_alignment_score,
     parse_insert_region,
+    read_overlaps_insert,
 )
 
 
@@ -238,3 +239,260 @@ class TestStreamingCompare:
             buf = io.StringIO()
             counts = _streaming_compare("p.bam", "h.bam", buf)
             assert counts["Human"] == 1
+
+
+class TestReadOverlapsInsert:
+    """Test the read_overlaps_insert() function with boundary cases."""
+
+    @pytest.mark.unit
+    def test_read_entirely_within_insert(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=200, reference_end=400)
+        assert read_overlaps_insert(read, (100, 500)) is True
+
+    @pytest.mark.unit
+    def test_read_entirely_outside_before(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=0, reference_end=50)
+        assert read_overlaps_insert(read, (100, 500)) is False
+
+    @pytest.mark.unit
+    def test_read_entirely_outside_after(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=600, reference_end=700)
+        assert read_overlaps_insert(read, (100, 500)) is False
+
+    @pytest.mark.unit
+    def test_read_overlaps_insert_start(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=50, reference_end=150)
+        assert read_overlaps_insert(read, (100, 500)) is True
+
+    @pytest.mark.unit
+    def test_read_overlaps_insert_end(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=450, reference_end=550)
+        assert read_overlaps_insert(read, (100, 500)) is True
+
+    @pytest.mark.unit
+    def test_read_exactly_at_insert_start_boundary(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=100, reference_end=200)
+        assert read_overlaps_insert(read, (100, 500)) is True
+
+    @pytest.mark.unit
+    def test_read_exactly_at_insert_end_boundary(self, mock_pysam_read: Any) -> None:
+        # reference_end=501 is exclusive, so last base is 500 which IS in insert
+        read = mock_pysam_read(reference_start=400, reference_end=501)
+        assert read_overlaps_insert(read, (100, 500)) is True
+
+    @pytest.mark.unit
+    def test_read_ends_exactly_at_insert_start(self, mock_pysam_read: Any) -> None:
+        # reference_end=100 is exclusive, so last base is 99, BEFORE insert
+        read = mock_pysam_read(reference_start=0, reference_end=100)
+        assert read_overlaps_insert(read, (100, 500)) is False
+
+    @pytest.mark.unit
+    def test_read_starts_exactly_after_insert_end(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=501, reference_end=600)
+        assert read_overlaps_insert(read, (100, 500)) is False
+
+    @pytest.mark.unit
+    def test_unmapped_read(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(is_unmapped=True)
+        assert read_overlaps_insert(read, (100, 500)) is False
+
+    @pytest.mark.unit
+    def test_none_reference_positions(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=None, reference_end=None)
+        assert read_overlaps_insert(read, (100, 500)) is False
+
+
+class TestAssignExtended:
+    """Test the extended _assign() function with 5 categories."""
+
+    @pytest.mark.unit
+    def test_plasmid_wins_no_filtering(self) -> None:
+        # Backward compat: no insert_region
+        assert _assign(70, 30) == "Plasmid"
+
+    @pytest.mark.unit
+    def test_human_wins_no_filtering(self) -> None:
+        assert _assign(30, 70) == "Human"
+
+    @pytest.mark.unit
+    def test_tied_no_filtering(self) -> None:
+        assert _assign(50, 50) == "Tied"
+
+    @pytest.mark.unit
+    def test_plasmid_wins_overlaps_insert(self, mock_pysam_read: Any) -> None:
+        read_in_insert = mock_pysam_read(reference_start=200, reference_end=400)
+        assert _assign(70, 30, plasmid_read=read_in_insert, insert_region=(100, 500)) == "Plasmid"
+
+    @pytest.mark.unit
+    def test_plasmid_wins_outside_insert(self, mock_pysam_read: Any) -> None:
+        read_outside = mock_pysam_read(reference_start=0, reference_end=50)
+        assert (
+            _assign(70, 0, plasmid_read=read_outside, insert_region=(100, 500)) == "Backbone_Only"
+        )
+
+    @pytest.mark.unit
+    def test_plasmid_only_read_outside_insert(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=0, reference_end=50)
+        assert _assign(55, 0, plasmid_read=read, insert_region=(100, 500)) == "Backbone_Only"
+
+    @pytest.mark.unit
+    def test_plasmid_only_read_overlaps_insert(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=200, reference_end=400)
+        assert _assign(55, 0, plasmid_read=read, insert_region=(100, 500)) == "Plasmid"
+
+    @pytest.mark.unit
+    def test_score_margin_makes_ambiguous(self) -> None:
+        # diff=2 < margin=5
+        assert _assign(52, 50, score_margin=5) == "Ambiguous"
+
+    @pytest.mark.unit
+    def test_score_margin_not_triggered_when_diff_exceeds(self) -> None:
+        # diff=40 >= margin=5
+        assert _assign(70, 30, score_margin=5) == "Plasmid"
+
+    @pytest.mark.unit
+    def test_score_margin_zero_disabled(self) -> None:
+        # margin=0 disabled, diff=1 enough
+        assert _assign(51, 50, score_margin=0) == "Plasmid"
+
+    @pytest.mark.unit
+    def test_tied_not_ambiguous_with_margin(self) -> None:
+        # Exact tie is always Tied, never Ambiguous
+        assert _assign(50, 50, score_margin=10) == "Tied"
+
+    @pytest.mark.unit
+    def test_human_not_affected_by_insert_region(self, mock_pysam_read: Any) -> None:
+        read = mock_pysam_read(reference_start=200, reference_end=400)
+        # Human wins regardless of insert region
+        assert _assign(30, 70, plasmid_read=read, insert_region=(100, 500)) == "Human"
+
+
+class TestStreamingCompareWithFiltering:
+    """Test _streaming_compare() with insert_region parameter."""
+
+    @pytest.mark.unit
+    def test_plasmid_only_read_classified_backbone_only(self, mock_pysam_read: Any) -> None:
+        # Plasmid-only read outside insert region
+        p_read = mock_pysam_read(
+            query_name="r1",
+            mapping_quality=60,
+            reference_start=0,
+            reference_end=50,
+        )
+        p_read.is_secondary = False
+        p_read.is_supplementary = False
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r1", [p_read])]), iter([])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf, insert_region=(100, 500))
+            assert counts["Backbone_Only"] == 1
+            assert counts["Plasmid"] == 0
+
+    @pytest.mark.unit
+    def test_plasmid_only_read_classified_plasmid_when_overlaps_insert(
+        self, mock_pysam_read: Any
+    ) -> None:
+        # Plasmid-only read inside insert region
+        p_read = mock_pysam_read(
+            query_name="r1",
+            mapping_quality=60,
+            reference_start=200,
+            reference_end=400,
+        )
+        p_read.is_secondary = False
+        p_read.is_supplementary = False
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r1", [p_read])]), iter([])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf, insert_region=(100, 500))
+            assert counts["Plasmid"] == 1
+            assert counts["Backbone_Only"] == 0
+
+    @pytest.mark.unit
+    def test_no_insert_region_falls_back_to_old_behavior(self, mock_pysam_read: Any) -> None:
+        # insert_region=None -> all plasmid-only reads are Plasmid
+        p_read = mock_pysam_read(
+            query_name="r1",
+            mapping_quality=60,
+            reference_start=0,
+            reference_end=50,
+        )
+        p_read.is_secondary = False
+        p_read.is_supplementary = False
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r1", [p_read])]), iter([])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf, insert_region=None)
+            assert counts["Plasmid"] == 1
+            assert counts["Backbone_Only"] == 0
+
+    @pytest.mark.unit
+    def test_score_margin_creates_ambiguous_in_stream(self, mock_pysam_read: Any) -> None:
+        # Both reads with small score diff
+        p_read = mock_pysam_read(
+            query_name="r1",
+            mapping_quality=52,
+            cigartuples=[(0, 100)],
+            nm_tag=0,
+            mate_is_unmapped=False,
+        )
+        p_read.is_secondary = False
+        p_read.is_supplementary = False
+
+        h_read = mock_pysam_read(
+            query_name="r1",
+            mapping_quality=50,
+            cigartuples=[(0, 100)],
+            nm_tag=0,
+            mate_is_unmapped=False,
+        )
+        h_read.is_secondary = False
+        h_read.is_supplementary = False
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r1", [p_read])]), iter([("r1", [h_read])])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf, score_margin=5)
+            # ps=62, hs=60, diff=2 < margin=5 -> Ambiguous
+            assert counts["Ambiguous"] == 1
+
+
+class TestBackwardCompatibility:
+    """Test backward compatibility with existing code."""
+
+    @pytest.mark.unit
+    def test_existing_assign_api_unchanged(self) -> None:
+        # Positional args still work
+        assert _assign(70, 30) == "Plasmid"
+        assert _assign(30, 70) == "Human"
+        assert _assign(50, 50) == "Tied"
+
+    @pytest.mark.unit
+    def test_existing_streaming_compare_api_unchanged(self, mock_pysam_read: Any) -> None:
+        # _streaming_compare without insert_region works identically
+        p_read = mock_pysam_read(query_name="r1", mapping_quality=60)
+        p_read.is_secondary = False
+        p_read.is_supplementary = False
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r1", [p_read])]), iter([])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+            # Old behavior: plasmid-only -> Plasmid
+            assert counts["Plasmid"] == 1
+            # New categories initialized but zero
+            assert counts["Backbone_Only"] == 0
+            assert counts["Ambiguous"] == 0

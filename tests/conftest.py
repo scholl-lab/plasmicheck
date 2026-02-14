@@ -57,6 +57,31 @@ def sample_reads_assignment_df() -> pd.DataFrame:
 
 
 @pytest.fixture
+def sample_reads_assignment_df_extended() -> pd.DataFrame:
+    """Extended DataFrame with Backbone_Only and Ambiguous reads."""
+    return pd.DataFrame(
+        {
+            "ReadID": ["read1", "read2", "read3", "read4", "read5", "read6", "read7"],
+            "AssignedTo": [
+                "Plasmid",
+                "Human",
+                "Tied",
+                "Plasmid",
+                "Human",
+                "Backbone_Only",
+                "Ambiguous",
+            ],
+            "PlasmidScore": [70, 30, 50, 65, 20, 55, 42],
+            "HumanScore": [30, 70, 50, 25, 60, 0, 40],
+            "PlasmidCIGAR": ["100M", "50M50S", "75M25S", "100M", "30M70S", "100M", "80M20S"],
+            "HumanCIGAR": ["50M50S", "100M", "75M25S", "30M70S", "100M", "NA", "90M10S"],
+            "PlasmidMapQ": [60, 20, 40, 55, 10, 50, 45],
+            "HumanMapQ": [20, 60, 40, 15, 55, 0, 35],
+        }
+    )
+
+
+@pytest.fixture
 def sample_summary_df() -> pd.DataFrame:
     """DataFrame matching summary.tsv schema."""
     return pd.DataFrame(
@@ -65,6 +90,8 @@ def sample_summary_df() -> pd.DataFrame:
                 "Plasmid",
                 "Human",
                 "Tied",
+                "Backbone_Only",
+                "Ambiguous",
                 "Verdict",
                 "Ratio",
                 "CoverageOutsideINSERT",
@@ -74,6 +101,8 @@ def sample_summary_df() -> pd.DataFrame:
                 100,
                 50,
                 10,
+                15,
+                5,
                 "Sample is contaminated with plasmid DNA",
                 2.0,
                 0.1234,
