@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 **Phase:** 8 of 11 (Insert-Region-Aware Filtering)
-**Plan:** 1 of 1 in phase
+**Plan:** 2 of 2 in phase
 **Status:** Phase 8 complete, ready for Phase 9
-**Progress:** █░░░░░░░░░ 25% (1/4 phases complete)
+**Progress:** ██░░░░░░░░ 50% (2/4 phases complete)
 
-Last activity: 2026-02-14 -- Completed 08-01-PLAN.md (insert-region filtering)
+Last activity: 2026-02-14 -- Completed 08-02-PLAN.md (report display updates)
 
 ## Milestones
 
@@ -43,11 +43,13 @@ Last activity: 2026-02-14 -- Completed 08-01-PLAN.md (insert-region filtering)
 - 170 tests passing (up from 125 in v0.31.0)
 - New CLI flags: --static-report, --plotly-mode, --threads, --plot-backend
 
-**From Phase 8 (08-01):**
+**From Phase 8 (08-01, 08-02):**
 - 5-category read classification eliminates false positives from backbone contamination
+- HTML reports display all 5 categories with visual distinction for excluded categories
 - 195 tests passing (up from 170)
 - Graceful fallback when cDNA_positions.txt unavailable
 - Backward compatibility via filter_backbone_only config toggle
+- Consistent color mapping across Plotly and matplotlib backends
 
 ### Key Context for v0.33.0
 
@@ -80,21 +82,23 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-14T20:08:39Z
-**Stopped at:** Completed 08-01-PLAN.md (insert-region-aware filtering)
+**Last session:** 2026-02-14T20:18:09Z
+**Stopped at:** Completed 08-02-PLAN.md (report display updates)
 **Resume file:** None
 
 **What just happened:**
-- Executed Phase 08 Plan 01 successfully
-- Implemented 5-category read classification (Plasmid, Human, Tied, Backbone_Only, Ambiguous)
-- Added 31 new unit tests, bringing total to 195 tests passing
+- Executed Phase 08 Plan 02 successfully (4 min 40 sec)
+- Updated HTML reports to display all 5 read categories with visual distinction
+- Structured read assignment table with Bootstrap styling and badges
+- Extended Plotly and matplotlib backends to use ASSIGNMENT_COLORS for all 5 categories
 - All requirements FILT-01 through FILT-05 satisfied
-- Phase 8 complete (1/4 phases of v0.33.0)
+- Phase 8 complete (2/4 phases of v0.33.0)
 
 **Next step:** `/gsd:plan-phase 9` to create execution plan for Coverage Metrics.
 
 **Key context for Phase 9:**
-- Insert-region-aware classification established in Phase 8
+- Insert-region-aware classification established (08-01)
+- Report display infrastructure updated (08-02)
 - read_overlaps_insert() function available for coverage calculations
 - Backbone_Only reads should be excluded from insert coverage metrics
 - Requirements: COV-01 through COV-05
@@ -102,4 +106,4 @@ None.
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after completing Phase 08 Plan 01*
+*Last updated: 2026-02-14 after completing Phase 08 Plan 02*
