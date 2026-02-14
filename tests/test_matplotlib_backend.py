@@ -1,4 +1,5 @@
 """Tests for matplotlib plotting backend."""
+
 from __future__ import annotations
 
 import os
@@ -206,7 +207,9 @@ def test_plot_backend_default_is_plotly() -> None:
 
 
 @pytest.mark.unit
-def test_matplotlib_backend_no_kaleido_import(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_matplotlib_backend_no_kaleido_import(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test that matplotlib backend doesn't import kaleido."""
     # Block kaleido import by making it unavailable
     import sys
@@ -247,9 +250,7 @@ def test_matplotlib_backend_no_kaleido_import(tmp_path: Path, monkeypatch: pytes
             boxplot_png,
             _scatter_interactive,
             scatter_png,
-        ) = generate_plots(
-            reads_df, output_folder, static_report=True, plot_backend="matplotlib"
-        )
+        ) = generate_plots(reads_df, output_folder, static_report=True, plot_backend="matplotlib")
 
         # Verify PNG files were created
         assert boxplot_png is not None

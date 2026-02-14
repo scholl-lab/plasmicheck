@@ -1,4 +1,5 @@
 """Shared color constants matching Plotly default categorical colors."""
+
 from __future__ import annotations
 
 # Plotly's default categorical color sequence (plotly.colors.qualitative.Plotly)

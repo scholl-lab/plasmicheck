@@ -135,7 +135,9 @@ def generate_plots(
 
             # Generate plots using matplotlib
             boxplot_title = f"{PLOT_SAMPLE_REPORT['title_box_plot']} (Total Reads: {len(reads_df)})"
-            scatter_title = f"{PLOT_SAMPLE_REPORT['title_scatter_plot']} (Total Reads: {len(reads_df)})"
+            scatter_title = (
+                f"{PLOT_SAMPLE_REPORT['title_scatter_plot']} (Total Reads: {len(reads_df)})"
+            )
 
             generate_boxplot_matplotlib(
                 reads_df, boxplot_filename_png, boxplot_title, width, height
@@ -340,7 +342,9 @@ def main(
         boxplot_filename_png,
         scatter_filename_interactive,
         scatter_filename_png,
-    ) = generate_plots(reads_df, output_folder, static_report=static_report, plot_backend=plot_backend)
+    ) = generate_plots(
+        reads_df, output_folder, static_report=static_report, plot_backend=plot_backend
+    )
 
     # Extract the verdict from the summary file
     verdict = extract_verdict_from_summary(summary_df)

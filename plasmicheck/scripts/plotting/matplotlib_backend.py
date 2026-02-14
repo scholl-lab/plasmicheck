@@ -1,4 +1,5 @@
 """Matplotlib backend for static PNG plot generation."""
+
 from __future__ import annotations
 
 import logging
@@ -58,8 +59,7 @@ def generate_boxplot_matplotlib(
 
     # Prepare data for boxplot
     data_list = [
-        reads_df[reads_df["AssignedTo"] == cat]["PlasmidScore"].tolist()
-        for cat in categories
+        reads_df[reads_df["AssignedTo"] == cat]["PlasmidScore"].tolist() for cat in categories
     ]
 
     bp = ax.boxplot(
@@ -240,9 +240,7 @@ def generate_summary_boxplot_matplotlib(
     import seaborn as sns
 
     if boxplot_data.empty:
-        logger.warning(
-            "Empty DataFrame provided to generate_summary_boxplot_matplotlib"
-        )
+        logger.warning("Empty DataFrame provided to generate_summary_boxplot_matplotlib")
         fig, ax = plt.subplots(figsize=(10, 8))
         ax.text(
             0.5,
@@ -269,9 +267,7 @@ def generate_summary_boxplot_matplotlib(
 
     # Create boxplot by Plasmid
     plasmids = melted["Plasmid"].unique().tolist()
-    data_list = [
-        melted[melted["Plasmid"] == p]["LogRatio"].tolist() for p in plasmids
-    ]
+    data_list = [melted[melted["Plasmid"] == p]["LogRatio"].tolist() for p in plasmids]
 
     ax.boxplot(
         data_list,
