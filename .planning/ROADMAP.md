@@ -41,6 +41,11 @@ Plans:
 
 **Issue:** #65
 **Dependencies:** Phase 8 (insert-region concept established, correct read assignments in place)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md -- Coverage computation engine, config, summary.tsv integration, and unit tests
+- [ ] 09-02-PLAN.md -- Coverage Analysis card in per-sample HTML report
 
 **Requirements:**
 - COV-01: Per-region mean and median depth
@@ -140,4 +145,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 8 completion*
+*Last updated: 2026-02-15 after Phase 9 planning*
