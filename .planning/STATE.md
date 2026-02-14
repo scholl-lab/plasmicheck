@@ -10,10 +10,10 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 **Phase:** 7 - Comparison Cleanup (In Progress)
-**Status:** Plan 07-02 complete (index dedup & batch resilience)
-**Progress:** [███████░░░] 14/18 requirements (78%)
+**Status:** Plan 07-03 complete (matplotlib backend)
+**Progress:** [████████░░] 15/18 requirements (83%)
 
-Last activity: 2026-02-14 — Completed 07-02-PLAN.md (index deduplication and batch resilience)
+Last activity: 2026-02-14 — Completed 07-03-PLAN.md (matplotlib plotting backend)
 
 ## Performance Metrics
 
@@ -78,6 +78,11 @@ Last activity: 2026-02-14 — Completed 07-02-PLAN.md (index deduplication and b
 - Batch resilience: Continue processing remaining combinations after one fails (07-02)
 - Raise RuntimeError only if ALL combinations fail (07-02)
 - Log per-combination timing at INFO level (format: 'label: NN.Ns') (07-02)
+- matplotlib backend only for static PNG generation (interactive HTML always uses Plotly.js) (07-03)
+- Default plot_backend='plotly' for backward compatibility (07-03)
+- kaleido import only when static_report=True AND plot_backend='plotly' (07-03)
+- Use seaborn whitegrid theme for matplotlib plots to match Plotly aesthetics (07-03)
+- Plotly color constants shared via colors.py for consistent appearance (07-03)
 
 ### Todos
 
@@ -97,9 +102,9 @@ Last activity: 2026-02-14 — Completed 07-02-PLAN.md (index deduplication and b
 - [x] COMP-02: Supplementary alignment re-sorting (07-01) — Complete
 - [x] ARCH-01: Hoist human index to upfront phase (07-02) — Complete
 - [x] ARCH-02: PipelinePlan.built_indexes tracking (07-02) — Complete
+- [x] ARCH-03: matplotlib backend for static PNG generation (07-03) — Complete
 - [ ] TEST-03: Air-gapped testing (deferred)
 - [ ] Verify samtools version >=1.9 (collate requirement)
-- [ ] Decide on matplotlib style config for visual consistency with Plotly
 
 ### Blockers
 
@@ -114,9 +119,9 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 7 Plan 02 complete — Human reference indexing hoisted to upfront phase, batch-resilient pipeline with continue-on-failure, 8 new tests, 163 total passing
+**What just happened:** Phase 7 Plan 03 complete — matplotlib plotting backend as Kaleido alternative, --plot-backend CLI flag, 9 new tests, 172 total passing
 
-**Next step:** Continue Phase 7 — matplotlib backend configuration (07-03)
+**Next step:** Continue Phase 7 or proceed to benchmarking/verification
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
@@ -126,7 +131,8 @@ None currently identified.
 - Phase 6 complete + benchmarked: Alignment optimization (1.97x speedup on real 3M read data)
 - Phase 7 Plan 01 complete: BAM comparison uses samtools collate (30-50% faster than sort -n)
 - Phase 7 Plan 02 complete: Human index upfront phase, batch resilience with timing logs
-- 163 unit tests passing, mypy strict, ruff clean
+- Phase 7 Plan 03 complete: matplotlib backend for static PNGs (Kaleido alternative)
+- 172 unit tests passing, mypy strict, ruff clean
 - --threads CLI flag available on pipeline subcommand
 - Thread detection: SLURM → cgroup v2 → cgroup v1 → os.cpu_count → fallback(4)
 - Thread allocation: 80/20 minimap2/samtools split, 2-16 CPU bounds, 2G sort memory
@@ -136,4 +142,4 @@ None currently identified.
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after 07-02 completion*
+*Last updated: 2026-02-14 after 07-03 completion*
