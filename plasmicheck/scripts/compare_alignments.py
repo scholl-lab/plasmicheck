@@ -4,9 +4,7 @@ import itertools
 import logging
 import os
 import subprocess
-import tempfile
 from collections.abc import Iterator
-from pathlib import Path
 from typing import IO, Any
 
 import pysam
@@ -153,80 +151,12 @@ def count_mismatches_near_insert_end(
 # ---------------------------------------------------------------------------
 
 
-def _namesort_bam_fallback(input_bam: str, output_bam: str) -> None:
-    """Sort a BAM by read name using samtools (fallback when collate fails)."""
+def _namesort_bam(input_bam: str, output_bam: str) -> None:
+    """Sort a BAM by read name using samtools sort -n."""
     subprocess.run(
         ["samtools", "sort", "-n", "-@", str(SAMTOOLS_THREADS), "-o", output_bam, input_bam],
         check=True,
     )
-
-
-def _resort_supplementary(input_bam: str, output_bam: str) -> None:
-    """Re-sort supplementary alignments within each read group after collate.
-
-    samtools collate groups reads by name but doesn't guarantee ordering within
-    each group. We need primary reads first, then supplementary, then secondary.
-    """
-    with (
-        pysam.AlignmentFile(input_bam, "rb") as infile,
-        pysam.AlignmentFile(output_bam, "wb", header=infile.header) as outfile,
-    ):
-        for _name, group in itertools.groupby(
-            infile.fetch(until_eof=True), key=lambda r: r.query_name
-        ):
-            # Sort within group: primary first, supplementary second, secondary last
-            # Key: (is_secondary + is_supplementary, is_secondary and not is_supplementary)
-            # - Primary (F, F): (0, False) = (0, 0)
-            # - Supplementary (F, T): (1, False) = (1, 0)
-            # - Secondary (T, F): (1, True) = (1, 1)
-            sorted_group = sorted(
-                group,
-                key=lambda r: (
-                    r.is_secondary + r.is_supplementary,
-                    r.is_secondary and not r.is_supplementary,
-                ),
-            )
-            for read in sorted_group:
-                outfile.write(read)
-
-
-def _collate_bam(input_bam: str, output_bam: str, threads: int = SAMTOOLS_THREADS) -> None:
-    """Group reads by name using samtools collate (faster than sort -n).
-
-    Uses standard collate mode (NOT fast mode -f) to preserve all alignments.
-    Falls back to _namesort_bam_fallback on failure.
-    """
-    tmp_path = None
-    try:
-        # Create temp file for collate output
-        with tempfile.NamedTemporaryFile(prefix="collate_", suffix=".bam", delete=False) as tmp:
-            tmp_path = tmp.name
-
-        # Run samtools collate (standard mode, not -f fast mode)
-        # Prefix is used for temp files during collate operation
-        collate_prefix = f"{input_bam}.collate_tmp"
-        subprocess.run(
-            ["samtools", "collate", "-@", str(threads), "-o", tmp_path, input_bam, collate_prefix],
-            check=True,
-        )
-
-        # Re-sort supplementary alignments within each read group
-        _resort_supplementary(tmp_path, output_bam)
-
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logging.warning(
-            f"samtools collate failed ({type(e).__name__}), falling back to sort -n: {e}"
-        )
-        _namesort_bam_fallback(input_bam, output_bam)
-    finally:
-        # Clean up temp file
-        if tmp_path:
-            Path(tmp_path).unlink(missing_ok=True)
-
-
-def _name_group_bam(input_bam: str, output_bam: str) -> None:
-    """Group BAM reads by name, trying collate first then falling back to sort -n."""
-    _collate_bam(input_bam, output_bam)
 
 
 def _iter_reads_by_name(bam_path: str) -> Iterator[tuple[str, list[Any]]]:
@@ -353,8 +283,8 @@ def compare_alignments(
     plasmid_ns = plasmid_bam.replace(".bam", ".namesorted.bam")
     human_ns = human_bam.replace(".bam", ".namesorted.bam")
     logging.info("Grouping BAMs by read name for streaming comparison...")
-    _name_group_bam(plasmid_bam, plasmid_ns)
-    _name_group_bam(human_bam, human_ns)
+    _namesort_bam(plasmid_bam, plasmid_ns)
+    _namesort_bam(human_bam, human_ns)
 
     logging.debug(f"Writing alignment comparison results to {output_basename}.reads_assignment.tsv")
 
