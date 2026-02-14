@@ -52,6 +52,7 @@ def generate_plots(
     reads_df: pd.DataFrame,
     output_folder: str,
     static_report: bool = False,
+    plot_backend: str = "plotly",
 ) -> tuple[str, str | None, str, str | None]:
     import plotly.express as px
 
@@ -119,19 +120,37 @@ def generate_plots(
     boxplot_filename_png = None
     scatter_filename_png = None
     if static_report:
-        import kaleido  # type: ignore[import-untyped]
-
-        kaleido.start_sync_server()
-
         boxplot_filename_png = os.path.join(
             plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"]
         )
-        fig_box.write_image(boxplot_filename_png)
-
         scatter_filename_png = os.path.join(
             plots_dir, PLOT_SAMPLE_REPORT["output_scatter_plot_filename"]
         )
-        fig_scatter.write_image(scatter_filename_png)
+
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import (
+                generate_boxplot_matplotlib,
+                generate_scatter_matplotlib,
+            )
+
+            # Generate plots using matplotlib
+            boxplot_title = f"{PLOT_SAMPLE_REPORT['title_box_plot']} (Total Reads: {len(reads_df)})"
+            scatter_title = f"{PLOT_SAMPLE_REPORT['title_scatter_plot']} (Total Reads: {len(reads_df)})"
+
+            generate_boxplot_matplotlib(
+                reads_df, boxplot_filename_png, boxplot_title, width, height
+            )
+            generate_scatter_matplotlib(
+                reads_df, scatter_filename_png, scatter_title, width, height
+            )
+        else:
+            # Default plotly/kaleido backend
+            import kaleido  # type: ignore[import-untyped]
+
+            kaleido.start_sync_server()
+
+            fig_box.write_image(boxplot_filename_png)
+            fig_scatter.write_image(scatter_filename_png)
 
     logging.info("Plots generated.")
 
@@ -307,6 +326,7 @@ def main(
     command_line: str = "",
     static_report: bool = False,
     plotly_mode: str = "directory",
+    plot_backend: str = "plotly",
     output_root: str | None = None,
 ) -> None:
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
@@ -320,7 +340,7 @@ def main(
         boxplot_filename_png,
         scatter_filename_interactive,
         scatter_filename_png,
-    ) = generate_plots(reads_df, output_folder, static_report=static_report)
+    ) = generate_plots(reads_df, output_folder, static_report=static_report, plot_backend=plot_backend)
 
     # Extract the verdict from the summary file
     verdict = extract_verdict_from_summary(summary_df)

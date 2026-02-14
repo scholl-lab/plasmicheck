@@ -430,6 +430,7 @@ def run_pipeline(
     progress: bool = False,
     static_report: bool = False,
     plotly_mode: str = "directory",
+    plot_backend: str = "plotly",
     threads: int | None = None,
 ) -> None:
     if sequencing_files_r1 is None:
@@ -519,7 +520,9 @@ def run_pipeline(
             for seq_input in plan.sequencing_inputs:
                 sequencing_file = seq_input.file1
                 fastq2 = seq_input.file2
-                combo_label = f"{os.path.basename(plasmid_file)} x {os.path.basename(sequencing_file)}"
+                combo_label = (
+                    f"{os.path.basename(plasmid_file)} x {os.path.basename(sequencing_file)}"
+                )
                 start_time = time.time()
 
                 try:
@@ -614,7 +617,9 @@ def run_pipeline(
 
                     # Step 5: Align reads
                     plasmid_bam = os.path.join(output_subfolder, "plasmid_alignment.bam")
-                    spliced_human_bam = os.path.join(output_subfolder, "spliced_human_alignment.bam")
+                    spliced_human_bam = os.path.join(
+                        output_subfolder, "spliced_human_alignment.bam"
+                    )
                     logging.info("Aligning reads to the plasmid and spliced human reference...")
                     align_reads(
                         plasmid_index,
@@ -663,6 +668,7 @@ def run_pipeline(
                         command_line=command_line,
                         static_report=static_report,
                         plotly_mode=plotly_mode,
+                        plot_backend=plot_backend,
                         output_root=output_folder,
                     )
 
@@ -831,6 +837,13 @@ if __name__ == "__main__":
         help="Plotly.js inclusion mode for interactive reports (default: directory)",
     )
     parser.add_argument(
+        "--plot-backend",
+        choices=["plotly", "matplotlib"],
+        default="plotly",
+        help="Backend for static PNG plot generation (default: plotly/kaleido). "
+        "Only applies when --static-report is used.",
+    )
+    parser.add_argument(
         "--threads",
         type=int,
         default=None,
@@ -861,5 +874,6 @@ if __name__ == "__main__":
         progress=sys.stderr.isatty() and not args.no_progress,
         static_report=args.static_report,
         plotly_mode=args.plotly_mode,
+        plot_backend=args.plot_backend,
         threads=args.threads,
     )

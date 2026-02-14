@@ -210,6 +210,7 @@ def plot_boxplot(
     boxplot_data: pd.DataFrame,
     output_dir: str,
     static_report: bool = False,
+    plot_backend: str = "plotly",
 ) -> tuple[str, str | None]:
     """Generate and save boxplots for contamination ratios by plasmid."""
     import numpy as np
@@ -249,7 +250,14 @@ def plot_boxplot(
     boxplot_filename_png: str | None = None
     if static_report:
         boxplot_filename_png = os.path.join(plots_dir, "boxplot_contamination_ratios.png")
-        fig.write_image(boxplot_filename_png)
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import generate_summary_boxplot_matplotlib
+
+            generate_summary_boxplot_matplotlib(
+                boxplot_data, boxplot_filename_png, LOG_OFFSET, "outliers"
+            )
+        else:
+            fig.write_image(boxplot_filename_png)
 
     logging.info("Boxplots generated.")
 
@@ -263,6 +271,7 @@ def plot_heatmap(
     unclear_range: dict[str, float],
     plot_config: dict[str, Any],
     static_report: bool = False,
+    plot_backend: str = "plotly",
 ) -> tuple[str, str | None]:
     """Generate and save heatmap for contamination ratios by plasmid without the color bar."""
     import pandas as pd
@@ -326,7 +335,12 @@ def plot_heatmap(
     heatmap_filename_png: str | None = None
     if static_report:
         heatmap_filename_png = os.path.join(plots_dir, plot_config["output_filename"])
-        fig.write_image(heatmap_filename_png)
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import generate_heatmap_matplotlib
+
+            generate_heatmap_matplotlib(ratio_data, heatmap_filename_png, threshold, plot_config)
+        else:
+            fig.write_image(heatmap_filename_png)
 
     logging.info("Heatmap generated.")
 
@@ -454,9 +468,10 @@ def main(
     substring_to_remove: str | None = None,
     static_report: bool = False,
     plotly_mode: str = "directory",
+    plot_backend: str = "plotly",
 ) -> None:
-    # Initialize kaleido once before plotting if static_report is True
-    if static_report:
+    # Initialize kaleido once before plotting if static_report is True and using plotly backend
+    if static_report and plot_backend == "plotly":
         import kaleido  # type: ignore[import-untyped]
 
         kaleido.start_sync_server()
@@ -502,7 +517,7 @@ def main(
 
     # Generate plots
     boxplot_filename_interactive, boxplot_filename_png = plot_boxplot(
-        boxplot_data, output_dir, static_report=static_report
+        boxplot_data, output_dir, static_report=static_report, plot_backend=plot_backend
     )
     heatmap_filename_interactive, heatmap_filename_png = plot_heatmap(
         summary_df[summary_df["Category"] == "Ratio"],
@@ -511,6 +526,7 @@ def main(
         unclear_range,
         PLOT_CONFIG,
         static_report=static_report,
+        plot_backend=plot_backend,
     )
 
     # Save tables

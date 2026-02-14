@@ -92,6 +92,13 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         default="directory",
         help="Plotly.js inclusion mode for interactive reports (default: directory)",
     )
+    _report_parser.add_argument(
+        "--plot-backend",
+        choices=["plotly", "matplotlib"],
+        default="plotly",
+        help="Backend for static PNG plot generation (default: plotly/kaleido). "
+        "Only applies when --static-report is used.",
+    )
 
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="plasmicheck: Detect and quantify plasmid DNA contamination in sequencing data",
@@ -441,6 +448,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             progress=progress_enabled,
             static_report=args.static_report,
             plotly_mode=args.plotly_mode,
+            plot_backend=args.plot_backend,
             threads=args.threads,
         )
     elif args.command == "report":
@@ -455,6 +463,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             command_line=command_line,
             static_report=args.static_report,
             plotly_mode=args.plotly_mode,
+            plot_backend=args.plot_backend,
         )
     elif args.command == "summary_reports":
         from .scripts.generate_summary_reports import main as generate_summary_reports
@@ -466,6 +475,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             substring_to_remove=args.substring_to_remove,  # Pass the substring correctly
             static_report=args.static_report,
             plotly_mode=args.plotly_mode,
+            plot_backend=args.plot_backend,
         )
     else:
         parser.print_help()
