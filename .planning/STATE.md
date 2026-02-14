@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 5 - Report Optimization (In Progress)
-**Status:** Plan 03 of 03 complete
-**Progress:** [████░░░░░░] 5/18 requirements (28%)
+**Phase:** 5 - Report Optimization (Complete)
+**Status:** All 4 plans complete (01-04)
+**Progress:** [███████░░░] 11/18 requirements (61%)
 
-Last activity: 2026-02-14 — Completed 05-03-PLAN.md (multi-sample summary report refactor)
+Last activity: 2026-02-14 — Completed 05-04-PLAN.md (test coverage and CI validation)
 
 ## Performance Metrics
 
@@ -51,12 +51,21 @@ Last activity: 2026-02-14 — Completed 05-03-PLAN.md (multi-sample summary repo
 - Always generate interactive HTML, conditionally generate non-interactive (05-02, 05-03)
 - Kaleido start_sync_server() called once before write_image() (05-02, 05-03)
 - Summary reports apply same optimization pattern as single-sample reports (05-03)
+- Use subprocess for lazy import verification tests (05-04)
+- Add type: ignore[import-untyped] for kaleido imports (05-04)
+- Parametrize CLI flag tests across subcommands (05-04)
 
 ### Todos
 
 - [x] TEST-01: Regression tests (04-01) — Complete
 - [x] TEST-02: Benchmark script (04-02) — Complete
-- [ ] TEST-03: Air-gapped testing (deferred to Phase 5)
+- [x] REPT-01: Default runs WITHOUT PNGs (05-02, 05-03, 05-04) — Complete
+- [x] REPT-02: --static-report flag (05-01, 05-02, 05-03, 05-04) — Complete
+- [x] REPT-03: Directory mode shared plotly.min.js (05-02, 05-03, 05-04) — Complete
+- [x] REPT-04: --plotly-mode CLI flag (05-01, 05-02, 05-03, 05-04) — Complete
+- [x] REPT-05: Kaleido start_sync_server() optimization (05-02, 05-03, 05-04) — Complete
+- [x] REPT-06: Lazy imports (05-02, 05-03, 05-04) — Complete
+- [ ] TEST-03: Air-gapped testing (deferred)
 - [ ] Verify samtools version >=1.9 (collate requirement)
 - [ ] Decide on matplotlib style config for visual consistency with Plotly
 
@@ -73,20 +82,20 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Completed 05-03 (multi-sample summary refactor) — lazy imports, conditional PNG export, plotly.js mode support in generate_summary_reports.py
+**What just happened:** Completed Phase 05 (Report Optimization) — eliminated 91.7% bottleneck through lazy imports, conditional PNG export, and plotly.js mode optimization
 
-**Next step:** Execute 05-04 (integrate summary_reports flags) — wire CLI flags through to generate_summary_reports.main()
+**Next step:** Phase 06 (Alignment Optimization) — parallel alignment, threadpool execution, samtools collate
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
 - Regression test validates correctness: `python scripts/regression_test.py`
 - Benchmark measures per-step timing: `python scripts/benchmark.py`
-- Report generation is 91.7% of pipeline time — Phase 5 targets this bottleneck
-- Default pipeline behavior now: interactive HTML only, no PNG, no Kaleido startup
-- Both generate_report.py and generate_summary_reports.py refactored with lazy imports and conditional PNG
-- Expected mypy errors resolved: generate_report.main() and generate_summary_reports.main() now accept static_report and plotly_mode parameters
-- Phase 05 plans 02 and 03 ran in parallel, both complete
+- Phase 5 complete: All 6 REPT requirements verified, CI passing, regression test passing
+- Default pipeline behavior: interactive HTML only (~19 KB), no PNG, no Kaleido startup
+- Expected performance: 5.5s → <2s for small dataset (eliminates 5.1s Kaleido overhead)
+- Lazy imports verified: pandas, plotly, jinja2, kaleido, numpy, scipy, statsmodels not loaded at import time
+- CLI import time: generate_report (231ms), generate_summary_reports (216ms)
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after 05-03 completion*
+*Last updated: 2026-02-14 after 05-04 completion*
