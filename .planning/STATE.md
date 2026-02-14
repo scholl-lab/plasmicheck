@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 8 of 11 (Insert-Region-Aware Filtering)
-**Plan:** 2 of 2 in phase
-**Status:** Phase 8 complete, ready for Phase 9
-**Progress:** ██░░░░░░░░ 50% (2/4 phases complete)
+**Phase:** 8 of 11 (Insert-Region-Aware Filtering) — VERIFIED ✓
+**Plan:** All plans complete, verified
+**Status:** Phase 8 verified, ready for Phase 9
+**Progress:** ██▓░░░░░░░ 25% (1/4 phases complete)
 
-Last activity: 2026-02-14 -- Completed 08-02-PLAN.md (report display updates)
+Last activity: 2026-02-14 -- Phase 8 verified (12/12 must-haves, 5/5 requirements)
 
 ## Milestones
 
@@ -82,19 +82,18 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-14T20:18:09Z
-**Stopped at:** Completed 08-02-PLAN.md (report display updates)
+**Last session:** 2026-02-14
+**Stopped at:** Phase 8 verified and complete
 **Resume file:** None
 
 **What just happened:**
-- Executed Phase 08 Plan 02 successfully (4 min 40 sec)
-- Updated HTML reports to display all 5 read categories with visual distinction
-- Structured read assignment table with Bootstrap styling and badges
-- Extended Plotly and matplotlib backends to use ASSIGNMENT_COLORS for all 5 categories
-- All requirements FILT-01 through FILT-05 satisfied
-- Phase 8 complete (2/4 phases of v0.33.0)
+- Executed Phase 8 (Insert-Region-Aware Filtering) — 2 plans across 2 waves
+- Plan 08-01: Core filtering logic with 5-category read classification, config toggle, 31 new tests
+- Plan 08-02: Report display updates with structured 5-category table, Plotly/matplotlib color mapping
+- Verification passed: 12/12 must-haves, 5/5 requirements (FILT-01..05) complete
+- 195 tests passing (up from 170)
 
-**Next step:** `/gsd:plan-phase 9` to create execution plan for Coverage Metrics.
+**Next step:** `/gsd:discuss-phase 9` or `/gsd:plan-phase 9` to plan Coverage Metrics.
 
 **Key context for Phase 9:**
 - Insert-region-aware classification established (08-01)
@@ -103,7 +102,8 @@ None.
 - Backbone_Only reads should be excluded from insert coverage metrics
 - Requirements: COV-01 through COV-05
 - Core files: compare_alignments.py (add coverage functions), plotting modules
+- pysam.count_coverage() for per-base depth calculations
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after completing Phase 08 Plan 02*
+*Last updated: 2026-02-14 after Phase 8 verification*

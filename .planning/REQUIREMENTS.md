@@ -9,11 +9,11 @@ Requirements for v0.33.0: Scientific & Reporting Enhancements. Each maps to road
 
 ### Scoring & Filtering (#82)
 
-- [ ] **FILT-01**: Reads mapping only to backbone (outside insert region) are classified as Backbone_Only and excluded from contamination ratio
-- [ ] **FILT-02**: Optional score margin parameter requires minimum score difference for confident Plasmid/Human assignment
-- [ ] **FILT-03**: New read categories (Backbone_Only, Ambiguous) tracked in comparison output alongside existing Plasmid/Human/Tied
-- [ ] **FILT-04**: `filter_backbone_only` config toggle (default: true) with `false` restoring pre-v0.33.0 behavior
-- [ ] **FILT-05**: New categories displayed in single-sample HTML reports
+- [x] **FILT-01**: Reads mapping only to backbone (outside insert region) are classified as Backbone_Only and excluded from contamination ratio
+- [x] **FILT-02**: Optional score margin parameter requires minimum score difference for confident Plasmid/Human assignment
+- [x] **FILT-03**: New read categories (Backbone_Only, Ambiguous) tracked in comparison output alongside existing Plasmid/Human/Tied
+- [x] **FILT-04**: `filter_backbone_only` config toggle (default: true) with `false` restoring pre-v0.33.0 behavior
+- [x] **FILT-05**: New categories displayed in single-sample HTML reports
 
 ### Coverage Metrics (#65)
 
@@ -72,11 +72,11 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FILT-01 | Phase 8 | Pending |
-| FILT-02 | Phase 8 | Pending |
-| FILT-03 | Phase 8 | Pending |
-| FILT-04 | Phase 8 | Pending |
-| FILT-05 | Phase 8 | Pending |
+| FILT-01 | Phase 8 | Complete |
+| FILT-02 | Phase 8 | Complete |
+| FILT-03 | Phase 8 | Complete |
+| FILT-04 | Phase 8 | Complete |
+| FILT-05 | Phase 8 | Complete |
 | COV-01 | Phase 9 | Pending |
 | COV-02 | Phase 9 | Pending |
 | COV-03 | Phase 9 | Pending |
@@ -101,4 +101,4 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after roadmap creation (traceability updated)*
+*Last updated: 2026-02-14 after Phase 8 completion (FILT-01..05 complete)*
