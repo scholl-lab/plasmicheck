@@ -43,20 +43,28 @@ Plans:
 
 **Dependencies:** Phase 4 (regression tests must pass)
 
+**Plans:** 4 plans
+
+Plans:
+- [ ] 05-01-PLAN.md -- CLI flags and pipeline wiring (--static-report, --plotly-mode)
+- [ ] 05-02-PLAN.md -- Single-sample report optimization (generate_report.py + template)
+- [ ] 05-03-PLAN.md -- Summary report optimization (generate_summary_reports.py + template)
+- [ ] 05-04-PLAN.md -- Test fixes, CI validation, and regression verification
+
 **Requirements:**
 - REPT-01: User can run pipeline without generating static PNG reports
 - REPT-02: User can opt into static PNG report generation with `--static-report` CLI flag
 - REPT-03: Interactive HTML reports use shared plotly.min.js file (directory mode)
-- REPT-04: User can choose plotly.js inclusion mode via config (cdn, directory, embedded)
+- REPT-04: User can choose plotly.js inclusion mode via CLI flag (cdn, directory, embedded)
 - REPT-05: Kaleido uses start_sync_server() initialization for faster PNG export
 - REPT-06: Report-related imports are lazy-loaded inside functions
-- TEST-03: Air-gapped environment test for directory-mode reports (moved from Phase 4)
+- ~~TEST-03: Air-gapped environment test for directory-mode reports~~ (DROPPED per user decision)
 
 **Success Criteria:**
 1. Default pipeline run (no `--static-report`) completes in <2s for small dataset (was 13.2s with Kaleido PNG export)
 2. Interactive HTML reports are 19 KB (was 9.6 MB) when using directory mode with shared plotly.min.js
 3. User can generate static PNG reports by adding `--static-report` flag, with no change to outputs
-4. Air-gapped Docker test passes with directory mode fallback to embedded mode (TEST-03)
+4. ~~Air-gapped Docker test passes with directory mode fallback to embedded mode (TEST-03)~~ (DROPPED)
 5. CLI startup time reduced by 200-400ms through lazy imports of pandas/plotly/jinja2
 
 ### Phase 6: Alignment Optimization
@@ -102,8 +110,8 @@ Plans:
 
 | Phase | Requirements | Status | Completion |
 |-------|--------------|--------|------------|
-| 4 - Foundation | TEST-01, TEST-02 | ✓ Complete | 100% |
-| 5 - Report Optimization | REPT-01 through REPT-06, TEST-03 | Pending | 0% |
+| 4 - Foundation | TEST-01, TEST-02 | Complete | 100% |
+| 5 - Report Optimization | REPT-01 through REPT-06 | Planned | 0% |
 | 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Pending | 0% |
 | 7 - Comparison & Cleanup | COMP-01, COMP-02, ARCH-01, ARCH-02, ARCH-03 | Pending | 0% |
 
@@ -112,13 +120,13 @@ Plans:
 ## Coverage
 
 All 18 v1 requirements mapped to phases:
-- Phase 4: 2 requirements (testing/validation) -- TEST-03 moved to Phase 5
-- Phase 5: 7 requirements (report optimization + TEST-03 air-gapped test)
+- Phase 4: 2 requirements (testing/validation) -- TEST-03 moved to Phase 5 then DROPPED
+- Phase 5: 6 requirements (report optimization; TEST-03 DROPPED)
 - Phase 6: 4 requirements (alignment optimization)
 - Phase 7: 5 requirements (comparison & cleanup)
 
-No orphaned requirements.
+No orphaned requirements. 1 requirement dropped (TEST-03).
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 4 completion*
+*Last updated: 2026-02-14 after Phase 5 planning*
