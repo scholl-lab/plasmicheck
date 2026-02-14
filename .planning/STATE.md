@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 6 - Alignment Optimization (In progress)
-**Plan:** 1 of 1 in current phase
-**Status:** Phase 6 Plan 01 complete
-**Progress:** [████████░░] 7/8 plans (87%)
+**Phase:** 6 - Alignment Optimization (Complete)
+**Plan:** 2 of 2 in current phase
+**Status:** Phase 6 complete
+**Progress:** [████████░░] 8/8 plans (100%)
 
-Last activity: 2026-02-14 — Completed 06-01-PLAN.md (thread detection and allocation)
+Last activity: 2026-02-14 — Completed 06-02-PLAN.md (CLI thread integration)
 
 ## Performance Metrics
 
@@ -59,6 +59,9 @@ Last activity: 2026-02-14 — Completed 06-01-PLAN.md (thread detection and allo
 - Thread allocation: min 2, max 16 total; 80% minimap2, remainder samtools (max 4) (06-01)
 - samtools sort -m 2G flag for predictable memory usage (06-01)
 - align_reads() thread/memory parameters optional with config defaults (06-01)
+- --threads CLI flag with None default enables optional override pattern (06-02)
+- Thread detection at pipeline start with source logging for transparency (06-02)
+- Sequential alignment with full thread allocation per step (no concurrency) (06-02)
 
 ### Todos
 
@@ -87,21 +90,22 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 6 Plan 01 (Thread Detection and Allocation) complete — Created thread_config module with 5-tier CPU detection, updated align_reads() with optional thread/memory params, 144 tests passing
+**What just happened:** Phase 6 (Alignment Optimization) complete — Integrated thread detection/allocation into CLI and pipeline, 149 tests passing
 
-**Next step:** Phase 6 complete with only 1 plan. Move to Phase 7 or Phase 8 as needed.
+**Next step:** Phase 6 complete. Performance optimization complete. Ready for production testing and benchmarking.
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
 - Regression test validates correctness: `python scripts/regression_test.py`
 - Benchmark measures per-step timing: `python scripts/benchmark.py`
-- Phase 5 complete: All 6 REPT requirements verified, default runs without Kaleido overhead
-- Phase 6 Plan 01 complete: thread_config.detect_cpu_count() and allocate_threads() ready for CLI wiring
-- align_reads() now accepts minimap2_threads, samtools_threads, samtools_sort_memory parameters
-- 144 unit tests passing, mypy strict, ruff clean
-- CPU detection handles SLURM, Docker (cgroup v1/v2), and bare metal environments
-- Thread allocation: 80/20 minimap2/samtools split with 2-16 CPU bounds
+- Phase 5 complete: Report optimization (no Kaleido overhead by default)
+- Phase 6 complete: Alignment optimization (automatic CPU detection + optimal thread allocation)
+- 149 unit tests passing, mypy strict, ruff clean
+- --threads CLI flag available on pipeline subcommand
+- Thread detection: SLURM → cgroup v2 → cgroup v1 → os.cpu_count → fallback(4)
+- Thread allocation: 80/20 minimap2/samtools split, 2-16 CPU bounds, 2G sort memory
+- All thread parameters logged with source for transparency
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after 06-01 completion*
+*Last updated: 2026-02-14 after 06-02 completion*
