@@ -24,16 +24,18 @@ Plans:
 - [ ] 04-01-PLAN.md -- Regression test script (TEST-01)
 - [ ] 04-02-PLAN.md -- Performance benchmark script (TEST-02)
 
-**Requirements:**
+**Requirements (delivered in Phase 4):**
 - TEST-01: Regression test suite verifying optimization outputs match pre-optimization baseline
 - TEST-02: Performance benchmark comparing v0.31.0 vs v0.32.0 on synthetic dataset
-- TEST-03: Air-gapped environment test for directory-mode reports (deferred to Phase 5)
+
+**Requirements (deferred from Phase 4 to Phase 5):**
+- TEST-03: Air-gapped environment test for directory-mode reports -- deferred because directory-mode reports are implemented in Phase 5; test should be built alongside the feature it validates
 
 **Success Criteria:**
 1. Regression test suite compares v0.31.0 contamination ratios, read assignments, and verdicts byte-for-byte
-2. Benchmark protocol runs 5 iterations on synthetic dataset (200 reads, 100K reads, 1M reads) and reports mean/std timing per pipeline step
-3. Docker container with `--network=none` successfully generates reports in offline mode
-4. CI workflow runs regression tests automatically on every optimization PR
+2. Benchmark protocol runs 3 iterations on synthetic dataset and reports mean/std timing per pipeline step
+3. ~~Docker container with `--network=none` successfully generates reports in offline mode~~ (deferred to Phase 5 with TEST-03)
+4. ~~CI workflow runs regression tests automatically on every optimization PR~~ (not in scope -- local-only tooling per user decision)
 
 ### Phase 5: Report Optimization
 
@@ -48,12 +50,13 @@ Plans:
 - REPT-04: User can choose plotly.js inclusion mode via config (cdn, directory, embedded)
 - REPT-05: Kaleido uses start_sync_server() initialization for faster PNG export
 - REPT-06: Report-related imports are lazy-loaded inside functions
+- TEST-03: Air-gapped environment test for directory-mode reports (moved from Phase 4)
 
 **Success Criteria:**
 1. Default pipeline run (no `--static-report`) completes in <2s for small dataset (was 13.2s with Kaleido PNG export)
 2. Interactive HTML reports are 19 KB (was 9.6 MB) when using directory mode with shared plotly.min.js
 3. User can generate static PNG reports by adding `--static-report` flag, with no change to outputs
-4. Air-gapped Docker test (Phase 4) passes with directory mode fallback to embedded mode
+4. Air-gapped Docker test passes with directory mode fallback to embedded mode (TEST-03)
 5. CLI startup time reduced by 200-400ms through lazy imports of pandas/plotly/jinja2
 
 ### Phase 6: Alignment Optimization
@@ -99,8 +102,8 @@ Plans:
 
 | Phase | Requirements | Status | Completion |
 |-------|--------------|--------|------------|
-| 4 - Foundation | TEST-01, TEST-02, TEST-03 | Planning complete | 0% |
-| 5 - Report Optimization | REPT-01 through REPT-06 | Pending | 0% |
+| 4 - Foundation | TEST-01, TEST-02 | Planning complete | 0% |
+| 5 - Report Optimization | REPT-01 through REPT-06, TEST-03 | Pending | 0% |
 | 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Pending | 0% |
 | 7 - Comparison & Cleanup | COMP-01, COMP-02, ARCH-01, ARCH-02, ARCH-03 | Pending | 0% |
 
@@ -109,8 +112,8 @@ Plans:
 ## Coverage
 
 All 18 v1 requirements mapped to phases:
-- Phase 4: 3 requirements (testing/validation) -- TEST-03 deferred to Phase 5 per user decision
-- Phase 5: 6 requirements (report optimization)
+- Phase 4: 2 requirements (testing/validation) -- TEST-03 moved to Phase 5
+- Phase 5: 7 requirements (report optimization + TEST-03 air-gapped test)
 - Phase 6: 4 requirements (alignment optimization)
 - Phase 7: 5 requirements (comparison & cleanup)
 
