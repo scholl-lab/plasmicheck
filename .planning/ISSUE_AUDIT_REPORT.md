@@ -1,19 +1,18 @@
 # PlasmiCheck Open Issues Audit Report
 
-**Date:** 2026-02-13 (updated after Phase 3 implementation)
-**Codebase version:** v0.31.0 (branch `feat/phase3-v0.31.0`)
-**Branch:** `feat/phase3-v0.31.0`
-**Total open issues:** 30 (18 closed total: 6 during audit + 6 in PR #91 + 6 in Phase 3)
+**Date:** 2026-02-14 (updated after v0.32.0 milestone)
+**Codebase version:** v0.32.0 (branch `main`)
+**Total open issues:** 29 (24 closed total: 6 during audit + 6 in PR #91 + 6 in PR #92)
 
 ---
 
 ## Executive Summary
 
-Of the original 48 open issues, **18 have been closed** (6 already resolved during audit + 6 fixed in PR #91 / v0.30.0 + 6 implemented in Phase 3 / v0.31.0), **3 were updated** with status comments reflecting partial resolution, and **30 remain open and valid**. The remaining issues span bugs (2), features (24), and documentation (4). Below is a full categorization with priority ratings and actionability assessment.
+Of the original 48 open issues, **24 have been closed** (6 already resolved during audit + 6 fixed in PR #91 / v0.30.0 + 6 implemented in Phase 3 / v0.31.0 and merged in PR #92), and **29 remain open and valid**. v0.32.0 (Performance Optimization, Phases 4-7) did not close any GitHub issues but delivered significant internal improvements. The remaining issues span bugs (2), features (23), and documentation (4). Below is a full categorization with priority ratings and actionability assessment.
 
 ---
 
-## 1. Issues Closed During This Audit
+## 1. Issues Closed During Audit (2026-02-13)
 
 These issues were confirmed resolved and closed on 2026-02-13 with comments referencing the resolving commits.
 
@@ -45,22 +44,44 @@ These 6 Tier 2 issues were fixed in [PR #91](https://github.com/scholl-lab/plasm
 
 ---
 
+## 1c. Issues Closed in PR #92 (v0.31.0 + v0.32.0)
+
+These 6 issues were implemented in Phase 3 (v0.31.0) and closed when [PR #92](https://github.com/scholl-lab/plasmicheck/pull/92) merged to main on 2026-02-14.
+
+| # | Title | Fix Summary |
+|---|-------|-------------|
+| **#89** | Improve paired-end file handling | Replaced comma-separated convention with explicit `-sf1`/`-sf2` arguments. `SequencingInput` dataclass. |
+| **#85** | Optimize memory in compare_alignments.py | Streaming name-sorted BAM merge. Memory O(1) regardless of BAM size. |
+| **#33** | Docker containerization | Multi-stage Dockerfile + `.dockerignore` + CI workflow. Builds minimap2/samtools from source. |
+| **#32** | Dry-run mode | `--dry-run` / `-n` flag. Plan-execute refactor: `build_plan()` + `print_plan()` + execute. |
+| **#29** | Progress bar for long operations | Rich progress bar wrapping pipeline steps. `--no-progress` flag + auto-disable on non-TTY. |
+| **#71** | Test dataset creation | Synthetic FASTA/FASTQ/GenBank test data (~50 KB). Integration tests. 125 → 170 tests. |
+
+---
+
+## 1d. v0.32.0 Performance Optimization (Phases 4-7)
+
+v0.32.0 did not close any GitHub issues (performance goals were tracked internally as requirements, not as issues). Key deliverables that affect future issue work:
+
+| Improvement | Relevant Issues |
+|-------------|-----------------|
+| `PipelinePlan.built_indexes` — within-run index dedup | Partially addresses **#39** (cross-run md5sum caching still open) |
+| `scripts/benchmark.py` — per-step timing tool | Partially addresses **#72** (standardized benchmark dataset still needed) |
+| `--plot-backend matplotlib` — Kaleido-free PNG | Resolves Kaleido dependency concern (not a tracked issue) |
+| Lazy imports, opt-in static reports | Performance improvements (not tracked issues) |
+
+---
+
 ## 2. Issues Updated With Status Comments (Partially Resolved)
 
-These issues were updated on 2026-02-13 with comments clarifying remaining work.
-
-| # | Title | What's Done | What Remains | Comment Link |
-|---|-------|------------|--------------|--------------|
-| **#31** | Feat: Automated versioning with each commit | Manual semver works. GitHub release v0.28.0 created. Basic semver (#4) closed. | No automated bump on commit (no `semantic-release` or CI release workflow). Issue now specifically tracks automation. | [comment](https://github.com/scholl-lab/plasmicheck/issues/31#issuecomment-3898193949) |
-| **#78** | Bug: Jobs not finished in snakemake | Snakemake workflow exists in `snakemake/plasmicheck.smk` and is functional. Race condition (#86) now fixed in v0.30.0. | Re-test with v0.30.0 to confirm fix. If still failing, investigate other causes. | [comment](https://github.com/scholl-lab/plasmicheck/issues/78#issuecomment-3898194259) |
-
-> **Note:** #81 was previously in this section but has been fully resolved in PR #91 (v0.30.0) — moved to "Issues Closed in PR #91" below.
+| # | Title | What's Done | What Remains |
+|---|-------|------------|--------------|
+| **#31** | Feat: Automated versioning with each commit | Manual semver works. Tags v0.28.0 through v0.32.0 exist. GitHub releases created. | No automated bump on commit (no `semantic-release` or CI release workflow). |
+| **#78** | Bug: Jobs not finished in snakemake | Race condition (#86) fixed in v0.30.0. | Re-test with v0.30.0+ to confirm fix. If still failing, investigate other causes. |
 
 ---
 
 ## 3. Active Bugs (Open, Valid, Should Fix)
-
-Sorted by priority (Critical > High > Medium > Low).
 
 ### HIGH
 
@@ -76,29 +97,7 @@ Sorted by priority (Critical > High > Medium > Low).
 
 ---
 
-## 4. Code Quality & Refactoring — Closed in Phase 3
-
-Both code quality issues from Tier 3 have been resolved in Phase 3 (v0.31.0):
-
-| # | Title | Resolution |
-|---|-------|------------|
-| **#89** | Improve paired-end file handling | **CLOSED** — Replaced comma-separated convention with explicit `-sf1`/`-sf2` arguments. Legacy `-sf` removed entirely (alpha stage — no backward compatibility needed). `SequencingInput` dataclass normalizes all input styles. |
-| **#85** | Optimize memory in compare_alignments.py | **CLOSED** — Replaced dict-based approach with streaming name-sorted BAM merge (`_iter_reads_by_name` + two-pointer merge). Memory usage now O(1) regardless of BAM size. |
-
----
-
-## 5. Feature Requests — Infrastructure & DevOps
-
-| # | Title | Priority | Status | Notes |
-|---|-------|----------|--------|-------|
-| **#33** | Docker containerization | **HIGH** | **CLOSED (Phase 3)** | Multi-stage Dockerfile + `.dockerignore` + CI workflow. Builds minimap2/samtools from source. |
-| **#32** | Dry-run mode | **MEDIUM** | **CLOSED (Phase 3)** | `--dry-run` / `-n` flag. Plan-execute refactor: `build_plan()` + `print_plan()` + execute. |
-| **#29** | Progress bar for long operations | **MEDIUM** | **CLOSED (Phase 3)** | Rich progress bar wrapping pipeline steps. `--no-progress` flag + auto-disable on non-TTY. |
-| **#31** | Automated versioning with each commit | **LOW** | Open | Manual semver works. Automation (e.g., `python-semantic-release` in CI) is nice-to-have. |
-
----
-
-## 6. Feature Requests — Scientific / Analytical
+## 4. Feature Requests — Scientific / Analytical
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
@@ -115,7 +114,7 @@ Both code quality issues from Tier 3 have been resolved in Phase 3 (v0.31.0):
 
 ---
 
-## 7. Feature Requests — Reporting & Visualization
+## 5. Feature Requests — Reporting & Visualization
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
@@ -128,7 +127,15 @@ Both code quality issues from Tier 3 have been resolved in Phase 3 (v0.31.0):
 
 ---
 
-## 8. Feature Requests — UX & CLI
+## 6. Feature Requests — Infrastructure & DevOps
+
+| # | Title | Priority | Status | Notes |
+|---|-------|----------|--------|-------|
+| **#31** | Automated versioning with each commit | **LOW** | Open | Manual semver works. Automation (e.g., `python-semantic-release` in CI) is nice-to-have. |
+
+---
+
+## 7. Feature Requests — UX & CLI
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
@@ -139,26 +146,25 @@ Both code quality issues from Tier 3 have been resolved in Phase 3 (v0.31.0):
 
 ---
 
-## 9. Feature Requests — Testing & Data
+## 8. Feature Requests — Testing & Data
 
 | # | Title | Priority | Status | Notes |
 |---|-------|----------|--------|-------|
-| **#71** | Test dataset creation | **HIGH** | **CLOSED (Phase 3)** | Synthetic FASTA/FASTQ/GenBank test data (~50 KB) in `tests/data/synthetic/`. Integration tests in `test_integration.py`. 125 total tests (unit + integration). |
-| **#72** | Benchmarking dataset creation | **MEDIUM** | Open | Standardized contamination-level datasets for performance validation. |
+| **#72** | Benchmarking dataset creation | **MEDIUM** | Open (partially addressed) | v0.32.0 added `scripts/benchmark.py` (timing tool) but still needs standardized multi-level contamination datasets. |
 | **#24** | Synthetic spiked-in validation data | **MEDIUM** | Open | Ground-truth data at known contamination levels. Overlaps with #72. |
 
 ---
 
-## 10. Feature Requests — Caching & Performance
+## 9. Feature Requests — Caching & Performance
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
-| **#39** | Reuse indices based on md5sum | **MEDIUM** | Avoid redundant index creation for same input files. Pipeline already computes md5sums. | Medium |
+| **#39** | Reuse indices based on md5sum | **MEDIUM** | Avoid redundant index creation across runs. v0.32.0 added within-run dedup (`PipelinePlan.built_indexes`), but cross-run md5sum caching is still needed. | Medium |
 | **#43** | Reuse spliced alignment based on md5sum | **MEDIUM** | Extension of #39 to cache expensive spliced alignment step. Depends on #39. | Medium |
 
 ---
 
-## 11. Documentation
+## 10. Documentation
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
@@ -169,23 +175,27 @@ Both code quality issues from Tier 3 have been resolved in Phase 3 (v0.31.0):
 
 ## Priority Matrix Summary
 
-### Tier 1 — Closed (6 issues) ~~done~~
-~~`#4` `#15` `#28` `#69` `#76` `#77`~~ — All closed on 2026-02-13.
+### Closed (24 issues total)
 
-### Tier 2 — Closed (6 issues) ~~done~~
-~~`#86` `#63` `#81` `#79` `#87` `#88`~~ — All closed in PR #91 (v0.30.0) on 2026-02-13.
+| Tier | Issues | Milestone |
+|------|--------|-----------|
+| Tier 1 — Audit closures | `#4` `#15` `#28` `#69` `#76` `#77` | v0.29.0 |
+| Tier 2 — Bug fixes & refactoring | `#86` `#63` `#81` `#79` `#87` `#88` | v0.30.0 |
+| Tier 3 — Enhancements & infrastructure | `#89` `#85` `#33` `#32` `#29` `#71` | v0.31.0 |
+| Tier 4 — Performance optimization | (no issues closed, internal requirements) | v0.32.0 |
 
-### Tier 3 — Closed (6 issues) ~~done~~
-~~`#89` `#85` `#33` `#32` `#29` `#71`~~ — All implemented in Phase 3, v0.31.0 on branch `feat/phase3-v0.31.0`.
+### Next Up — Tier 5: Scientific & Reporting (v0.33.0+)
 
-### Tier 4 — Important Enhancements (next up)
-| Issue | Type | Effort |
-|-------|------|--------|
-| **#82** | Science: filter ambiguous reads | Medium |
-| **#58** | Report: integrate existing metrics | Low |
+| Issue | Type | Effort | Why Next |
+|-------|------|--------|----------|
+| **#82** | Science: filter ambiguous reads | Medium | Core scientific accuracy — highest impact |
+| **#64** | Science: resistance gene coverage | Medium | Strong contamination signal, no human homolog |
+| **#58** | Report: integrate existing metrics | Low | Already computed, just not displayed — quick win |
+| **#65** | Report: coverage in summary | Low-Medium | Standard QC metric, natural complement to #58 |
 
-### Tier 5 — Nice to Have (remaining 21 issues)
-Everything else — valid but lower priority.
+### Tier 6 — Nice to Have (remaining 25 issues)
+
+Everything else — valid but lower priority. See sections above for details.
 
 ---
 
@@ -193,29 +203,31 @@ Everything else — valid but lower priority.
 
 ### Phase 1: Bug Fixes & Housekeeping (v0.29.0) ~~done~~
 1. ~~Close 6 resolved issues~~ Done (2026-02-13)
-2. ~~Update #78, #31, #81 with status comments~~ Done (2026-02-13)
-3. ~~Fix #86 (race condition — `filelock` library)~~ Done (PR #91)
+2. ~~Update #78, #31 with status comments~~ Done (2026-02-13)
+3. ~~Fix #86 (race condition)~~ Done (PR #91)
 4. ~~Fix #63 (MD5 dedup)~~ Done (PR #91)
-5. ~~Fix #81 (template path — `importlib.resources`)~~ Done (PR #91)
+5. ~~Fix #81 (template path)~~ Done (PR #91)
 6. ~~Fix #79 ("wahr" locale bug)~~ Done (PR #91)
 
 ### Phase 2: Code Quality (v0.30.0) ~~done~~
 1. ~~Implement #87 (config singleton)~~ Done (PR #91)
 2. ~~Implement #88 (centralize CLI args)~~ Done (PR #91)
-3. Implement #89 (paired-end args) — deferred to Phase 3
-4. Implement #85 (memory optimization) — deferred to Phase 3
 
 ### Phase 3: Enhancements & Infrastructure (v0.31.0) ~~done~~
 1. ~~Implement #71 (synthetic test dataset)~~ Done
-2. ~~Implement #89 (paired-end args — legacy `-sf` removed entirely)~~ Done
-3. ~~Implement #85 (memory optimization — streaming name-sorted merge)~~ Done
-4. ~~Implement #32 (dry-run mode — plan-execute refactor)~~ Done
-5. ~~Implement #29 (progress bar — Rich)~~ Done
-6. ~~Implement #33 (Docker — multi-stage build + CI)~~ Done
-7. Bug fix: `.fastq.gz` extension handling in `align_reads.py` and `run_pipeline.py`
-8. Real data validation: contaminated ratio 5.955, clean ratio 0.047 — correct verdicts
+2. ~~Implement #89 (paired-end args)~~ Done
+3. ~~Implement #85 (memory optimization)~~ Done
+4. ~~Implement #32 (dry-run mode)~~ Done
+5. ~~Implement #29 (progress bar)~~ Done
+6. ~~Implement #33 (Docker)~~ Done
 
-### Phase 4: Scientific Enhancements (v0.32.0+)
+### Phases 4-7: Performance Optimization (v0.32.0) ~~done~~
+1. ~~Regression testing & benchmarking infrastructure~~ Done
+2. ~~Report optimization (opt-in PNG, directory plotly.js, lazy imports)~~ Done
+3. ~~Alignment optimization (auto threads, -m 2G, SLURM/cgroup detection)~~ Done
+4. ~~Comparison & cleanup (index dedup, batch resilience, matplotlib backend)~~ Done
+
+### Next: Scientific Enhancements (v0.33.0+)
 1. Implement #82 (filter ambiguous reads)
 2. Implement #64 (resistance gene coverage)
 3. Implement #58 (integrate metrics in summary)
@@ -228,6 +240,3 @@ Everything else — valid but lower priority.
 
 - [Bionitio: Best Practices for Bioinformatics CLI Software](https://academic.oup.com/gigascience/article/8/9/giz109/5572530)
 - [PHA4GE: Public Health Pipeline Best Practices](https://github.com/pha4ge/public-health-pipeline-best-practices/blob/main/docs/pipeline-best-practices.md)
-- [Python Race Conditions Best Practices 2025](https://medium.com/pythoneers/avoiding-race-conditions-in-python-in-2025-best-practices-for-async-and-threads-4e006579a622)
-- [File Locking in Python: fcntl, msvcrt, portalocker](https://runebook.dev/en/docs/python/library/os/os.plock)
-- [Bug Triage: How to Organize, Filter, and Prioritize](https://marker.io/blog/bug-triage)
