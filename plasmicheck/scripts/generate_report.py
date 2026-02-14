@@ -49,6 +49,65 @@ def downsample_data(df: pd.DataFrame, limit: int) -> tuple[pd.DataFrame, bool]:
     return df, downsampled
 
 
+_CATEGORY_ORDER: list[str] = ["Plasmid", "Human", "Tied", "Backbone_Only", "Ambiguous"]
+
+_PLOTLY_FONT = (
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+)
+
+_PLOTLY_LAYOUT: dict[str, Any] = {
+    "font": {"family": _PLOTLY_FONT, "size": 13, "color": "#2d3436"},
+    "paper_bgcolor": "white",
+    "plot_bgcolor": "white",
+    "margin": {"l": 60, "r": 30, "t": 10, "b": 50, "pad": 4},
+    "xaxis": {
+        "showgrid": False,
+        "showline": True,
+        "linewidth": 1,
+        "linecolor": "#e9ecef",
+        "zeroline": False,
+        "tickfont": {"size": 12, "color": "#636e72"},
+        "title_font": {"size": 13, "color": "#636e72"},
+    },
+    "yaxis": {
+        "showgrid": True,
+        "gridwidth": 0.5,
+        "gridcolor": "#f0f0f0",
+        "showline": True,
+        "linewidth": 1,
+        "linecolor": "#e9ecef",
+        "zeroline": False,
+        "tickfont": {"size": 12, "color": "#636e72"},
+        "title_font": {"size": 13, "color": "#636e72"},
+    },
+    "legend": {
+        "bgcolor": "rgba(255,255,255,0.9)",
+        "bordercolor": "#e9ecef",
+        "borderwidth": 1,
+        "font": {"size": 12},
+    },
+    "hoverlabel": {
+        "bgcolor": "white",
+        "bordercolor": "#dee2e6",
+        "font": {"size": 12, "family": _PLOTLY_FONT},
+    },
+}
+
+_PLOTLY_CONFIG: dict[str, Any] = {
+    "displayModeBar": "hover",
+    "displaylogo": False,
+    "modeBarButtonsToRemove": ["pan2d", "lasso2d", "select2d", "autoScale2d"],
+    "responsive": True,
+    "toImageButtonOptions": {
+        "format": "png",
+        "filename": "plasmicheck_chart",
+        "height": 800,
+        "width": 1200,
+        "scale": 2,
+    },
+}
+
+
 def generate_plots(
     reads_df: pd.DataFrame,
     output_folder: str,
@@ -58,66 +117,98 @@ def generate_plots(
     import plotly.express as px
 
     logging.info("Generating plots")
-    # Ensure default values for width and height
-    width = PLOT_SAMPLE_REPORT.get("figsize", {}).get("width", 1000)  # Convert inches to pixels
-    height = PLOT_SAMPLE_REPORT.get("figsize", {}).get("height", 400)  # Convert inches to pixels
-
-    # Validate that width and height are integers
+    width = PLOT_SAMPLE_REPORT.get("figsize", {}).get("width", 1000)
+    height = PLOT_SAMPLE_REPORT.get("figsize", {}).get("height", 400)
     if not isinstance(width, int):
-        logging.warning(f"Invalid width value: {width}. Defaulting to 1000.")
         width = 1000
     if not isinstance(height, int):
-        logging.warning(f"Invalid height value: {height}. Defaulting to 400.")
         height = 400
 
-    # Create directory for plots if not exist
     plots_dir = os.path.join(output_folder, "plots")
     os.makedirs(plots_dir, exist_ok=True)
 
-    # Box plot using Plotly
-    boxplot_df = reads_df.copy()
+    # Consistent category ordering across all plots
+    cat_order = {"AssignedTo": _CATEGORY_ORDER}
+
+    # ── Box plot ──────────────────────────────────────────
     fig_box = px.box(
-        boxplot_df,
+        reads_df,
         x="AssignedTo",
         y="PlasmidScore",
         points="all",
         color="AssignedTo",
         color_discrete_map=ASSIGNMENT_COLORS,
-        title=f"{PLOT_SAMPLE_REPORT['title_box_plot']}<br>(Total Reads: {len(reads_df)})",
+        category_orders=cat_order,
         labels={
             "PlasmidScore": PLOT_SAMPLE_REPORT["box_plot_y_label"],
-            "AssignedTo": PLOT_SAMPLE_REPORT["box_plot_x_label"],
+            "AssignedTo": "",
         },
         width=width,
         height=height,
+    )
+    fig_box.update_layout(**_PLOTLY_LAYOUT, showlegend=False, hovermode="closest")
+    fig_box.update_traces(
+        marker={"size": 3, "opacity": 0.5, "line_width": 0},
+        line={"width": 1.5},
     )
 
     boxplot_filename_interactive = os.path.join(
         plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"].replace(".png", ".html")
     )
-    fig_box.write_html(boxplot_filename_interactive, include_plotlyjs=False, full_html=False)
+    fig_box.write_html(
+        boxplot_filename_interactive,
+        include_plotlyjs=False,
+        full_html=False,
+        config=_PLOTLY_CONFIG,
+    )
 
-    # Scatter plot using Plotly
+    # ── Scatter plot ──────────────────────────────────────
     fig_scatter = px.scatter(
         reads_df,
         x="PlasmidScore",
         y="HumanScore",
         color="AssignedTo",
         color_discrete_map=ASSIGNMENT_COLORS,
-        title=f"{PLOT_SAMPLE_REPORT['title_scatter_plot']}<br>(Total Reads: {len(reads_df)})",
+        category_orders=cat_order,
         labels={
             "PlasmidScore": PLOT_SAMPLE_REPORT["scatter_plot_x_label"],
             "HumanScore": PLOT_SAMPLE_REPORT["scatter_plot_y_label"],
         },
         width=width,
         height=height,
-        render_mode="webgl",  # Use WebGL for better performance with large datasets
+        render_mode="webgl",
+    )
+    fig_scatter.update_layout(**_PLOTLY_LAYOUT, showlegend=True, hovermode="closest")
+    fig_scatter.update_traces(marker={"size": 4, "opacity": 0.5, "line_width": 0})
+
+    # Diagonal reference line (equal scores)
+    import plotly.graph_objects as go
+
+    score_max = max(
+        reads_df["PlasmidScore"].max(),
+        reads_df["HumanScore"].max(),
+        1,
+    )
+    fig_scatter.add_trace(
+        go.Scattergl(
+            x=[0, score_max],
+            y=[0, score_max],
+            mode="lines",
+            line={"color": "#dee2e6", "width": 1, "dash": "dash"},
+            showlegend=False,
+            hoverinfo="skip",
+        )
     )
 
     scatter_filename_interactive = os.path.join(
         plots_dir, PLOT_SAMPLE_REPORT["output_scatter_plot_filename"].replace(".png", ".html")
     )
-    fig_scatter.write_html(scatter_filename_interactive, include_plotlyjs=False, full_html=False)
+    fig_scatter.write_html(
+        scatter_filename_interactive,
+        include_plotlyjs=False,
+        full_html=False,
+        config=_PLOTLY_CONFIG,
+    )
 
     # Only generate PNGs when static_report=True
     boxplot_filename_png = None
@@ -200,6 +291,57 @@ def extract_verdict_from_summary(summary_df: pd.DataFrame) -> str:
         return "Verdict not found in summary file"
 
 
+def _derive_verdict_info(verdict: str) -> tuple[str, str]:
+    """Return (verdict_short, verdict_class) from the full verdict string."""
+    if "not contaminated" in verdict.lower():
+        return "Clean", "clean"
+    elif "unclear" in verdict.lower():
+        return "Unclear", "unclear"
+    else:
+        return "Contaminated", "contaminated"
+
+
+def _compute_gauge_position(
+    ratio: float,
+    unclear_lower: float,
+    unclear_upper: float,
+) -> float:
+    """Map ratio to 0-100 gauge position using piecewise linear scale.
+
+    Zones: [0, unclear_lower] -> 0-40%,  [unclear_lower, unclear_upper] -> 40-60%,
+    [unclear_upper, 10*unclear_upper] -> 60-95%, clamped at 97.
+    """
+    if ratio <= 0:
+        return 0.0
+    if ratio <= unclear_lower:
+        return (ratio / unclear_lower) * 40.0
+    if ratio <= unclear_upper:
+        return 40.0 + ((ratio - unclear_lower) / (unclear_upper - unclear_lower)) * 20.0
+    upper_max = 10.0 * unclear_upper
+    if ratio <= upper_max:
+        return 60.0 + ((ratio - unclear_upper) / (upper_max - unclear_upper)) * 35.0
+    return 97.0
+
+
+def _parse_mismatches(raw: str) -> tuple[int, int]:
+    """Parse mismatches_near_insert from its raw string representation.
+
+    Returns (with_mismatches, without_mismatches).
+    """
+    import ast
+
+    if raw in ("N/A", ""):
+        return 0, 0
+    try:
+        d = ast.literal_eval(raw) if isinstance(raw, str) else raw
+        return (
+            int(d.get("with_mismatches_or_clipping", 0)),
+            int(d.get("without_mismatches_or_clipping", 0)),
+        )
+    except (ValueError, SyntaxError, AttributeError):
+        return 0, 0
+
+
 def generate_report(
     summary_df: pd.DataFrame,
     output_folder: str,
@@ -235,6 +377,16 @@ def generate_report(
     coverage_outside_insert: str = "N/A",
     mismatches_near_insert: str = "N/A",
     backbone_warning: str = "",
+    verdict_short: str = "",
+    verdict_class: str = "",
+    gauge_position: float = 50.0,
+    gauge_clean_end: float = 40.0,
+    gauge_unclear_end: float = 60.0,
+    gauge_threshold_pos: float = 50.0,
+    mismatches_with: int = 0,
+    mismatches_without: int = 0,
+    sample_name: str = "",
+    plasmid_name: str = "",
 ) -> None:
     from jinja2 import Environment, FileSystemLoader
 
@@ -244,17 +396,10 @@ def generate_report(
 
     logo_base64 = encode_image_to_base64(str(get_resource_path(LOGO_PATH)))
 
-    verdict_color = (
-        "green"
-        if "Sample is not contaminated with plasmid DNA" in verdict
-        else "orange"
-        if "Sample contamination status is unclear" in verdict
-        else "red"
-    )
-
     # Prepare downsample message if data was downsampled
     downsample_message = (
-        "Data was downsampled to improve performance. Only a subset of reads is displayed."
+        f"Plots show a random subset of {DOWNSAMPLE_LIMIT:,} reads for rendering performance."
+        " The verdict and all statistics are computed from the complete dataset."
         if downsampled
         else ""
     )
@@ -268,14 +413,14 @@ def generate_report(
 
     # Render the interactive HTML report
     html_content_interactive = template.render(
-        summary_df=summary_df.to_html(classes="table table-striped"),
         box_plot=boxplot_html_content,
         scatter_plot=scatter_html_content,
         verdict=verdict,
+        verdict_short=verdict_short,
+        verdict_class=verdict_class,
         ratio=f"{ratio:.3f}",
         threshold=threshold,
         unclear_range=unclear,
-        verdict_color=verdict_color,
         version=VERSION,
         logo_base64=logo_base64,
         human_fasta=human_fasta,
@@ -300,9 +445,17 @@ def generate_report(
         tied_pct=tied_pct,
         backbone_only_pct=backbone_only_pct,
         ambiguous_pct=ambiguous_pct,
+        assignment_colors=ASSIGNMENT_COLORS,
         coverage_outside_insert=coverage_outside_insert,
-        mismatches_near_insert=mismatches_near_insert,
+        mismatches_with=mismatches_with,
+        mismatches_without=mismatches_without,
         backbone_warning=backbone_warning,
+        gauge_position=gauge_position,
+        gauge_clean_end=gauge_clean_end,
+        gauge_unclear_end=gauge_unclear_end,
+        gauge_threshold_pos=gauge_threshold_pos,
+        sample_name=sample_name,
+        plasmid_name=plasmid_name,
     )
 
     # Save interactive HTML report
@@ -318,14 +471,14 @@ def generate_report(
 
         # Render the non-interactive HTML report
         html_content_non_interactive = template.render(
-            summary_df=summary_df.to_html(classes="table table-striped"),
             box_plot=boxplot_png_base64,
             scatter_plot=scatter_png_base64,
             verdict=verdict,
+            verdict_short=verdict_short,
+            verdict_class=verdict_class,
             ratio=f"{ratio:.3f}",
             threshold=threshold,
             unclear_range=unclear,
-            verdict_color=verdict_color,
             version=VERSION,
             logo_base64=logo_base64,
             human_fasta=human_fasta,
@@ -350,9 +503,17 @@ def generate_report(
             tied_pct=tied_pct,
             backbone_only_pct=backbone_only_pct,
             ambiguous_pct=ambiguous_pct,
+            assignment_colors=ASSIGNMENT_COLORS,
             coverage_outside_insert=coverage_outside_insert,
-            mismatches_near_insert=mismatches_near_insert,
+            mismatches_with=mismatches_with,
+            mismatches_without=mismatches_without,
             backbone_warning=backbone_warning,
+            gauge_position=gauge_position,
+            gauge_clean_end=gauge_clean_end,
+            gauge_unclear_end=gauge_unclear_end,
+            gauge_threshold_pos=gauge_threshold_pos,
+            sample_name=sample_name,
+            plasmid_name=plasmid_name,
         )
 
         # Save non-interactive HTML report
@@ -421,6 +582,28 @@ def main(
 
     ratio = plasmid_count / human_count if human_count != 0 else float("inf")
 
+    # Derive new template variables
+    verdict_short, verdict_class = _derive_verdict_info(verdict)
+    unclear_lower = float(UNCLEAR_RANGE.get("lower_bound", 0.6))
+    unclear_upper = float(UNCLEAR_RANGE.get("upper_bound", 1.0))
+    gauge_position = _compute_gauge_position(ratio, unclear_lower, unclear_upper)
+    gauge_clean_end = _compute_gauge_position(unclear_lower, unclear_lower, unclear_upper)
+    gauge_unclear_end = _compute_gauge_position(unclear_upper, unclear_lower, unclear_upper)
+    gauge_threshold_pos = _compute_gauge_position(threshold, unclear_lower, unclear_upper)
+    mismatches_with, mismatches_without = _parse_mismatches(mismatches_near_insert)
+
+    # Derive sample and plasmid display names from file paths
+    sample_name = (
+        os.path.splitext(os.path.basename(sequencing_file))[0]
+        if sequencing_file not in ("None", "")
+        else ""
+    )
+    plasmid_name = (
+        os.path.splitext(os.path.basename(plasmid_gb))[0]
+        if plasmid_gb not in ("None", "")
+        else ""
+    )
+
     # Determine output_root for shared assets
     effective_root = output_root if output_root else output_folder
 
@@ -482,6 +665,16 @@ def main(
         coverage_outside_insert=coverage_outside_insert,
         mismatches_near_insert=mismatches_near_insert,
         backbone_warning=backbone_warning,
+        verdict_short=verdict_short,
+        verdict_class=verdict_class,
+        gauge_position=gauge_position,
+        gauge_clean_end=gauge_clean_end,
+        gauge_unclear_end=gauge_unclear_end,
+        gauge_threshold_pos=gauge_threshold_pos,
+        mismatches_with=mismatches_with,
+        mismatches_without=mismatches_without,
+        sample_name=sample_name,
+        plasmid_name=plasmid_name,
     )
 
 

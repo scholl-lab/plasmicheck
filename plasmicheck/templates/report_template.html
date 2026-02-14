@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>plasmicheck Report</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PlasmiCheck &mdash; {{ verdict_short }}</title>
 
     {% if plotly_mode is not defined %}{% set plotly_mode = 'embedded' %}{% endif %}
 
@@ -20,139 +20,663 @@
         {{ plotly_js_inline|safe }}
     {% endif %}
 
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
     <style>
-        body { margin: 20px; }
-        h1, h2, h3 { text-align: center; margin-top: 20px; }
-        .container { margin-top: 20px; }
-        .table { margin-top: 20px; width: 50%; margin-left: auto; margin-right: auto; }
-        .plot { margin: 20px auto; display: block; width: 1000px; max-width: 100%; } /* Adjust width */
-        .verdict { text-align: center; font-size: 1.5em; margin-top: 30px; }
-        .verdict span { font-weight: bold; }
-        .details { text-align: center; margin-top: 10px; font-size: 0.9em; }
-        .logo { text-align: center; margin-bottom: 30px; }
-        .downsample-note { text-align: center; font-size: 1em; color: red; margin-top: 20px; }
+        :root {
+            --pc-green: #198754;
+            --pc-green-bg: #d1e7dd;
+            --pc-red: #dc3545;
+            --pc-red-bg: #f8d7da;
+            --pc-orange: #fd7e14;
+            --pc-orange-bg: #fff3cd;
+            --pc-bg: #f5f6fa;
+            --pc-text: #2d3436;
+            --pc-text-muted: #636e72;
+            --pc-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --pc-shadow-lg: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background: var(--pc-bg);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: var(--pc-text);
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+
+        /* -- Header ---------------------------------------- */
+        .pc-header {
+            background: white;
+            border-bottom: 2px solid #e9ecef;
+            padding: 0.75rem 0;
+        }
+        .pc-header-inner {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .pc-logo { height: 48px; width: auto; }
+        .pc-header h1 {
+            font-size: 1.35rem;
+            font-weight: 600;
+            margin: 0;
+            letter-spacing: -0.01em;
+        }
+
+        /* -- Main container -------------------------------- */
+        .pc-main {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+
+        /* -- Sample identity bar --------------------------- */
+        .pc-identity {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 2rem;
+            margin-bottom: 1.25rem;
+            padding: 0.85rem 1.25rem;
+            background: white;
+            border-radius: 10px;
+            box-shadow: var(--pc-shadow);
+            font-size: 0.88rem;
+        }
+        .pc-identity-item { display: flex; gap: 0.4rem; align-items: baseline; }
+        .pc-identity-label { color: var(--pc-text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+        .pc-identity-value { font-weight: 500; }
+
+        /* -- Cards ----------------------------------------- */
+        .pc-card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: var(--pc-shadow);
+            padding: 1.5rem;
+            margin-bottom: 1.25rem;
+        }
+        .pc-card-header {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--pc-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        /* -- Verdict Banner -------------------------------- */
+        .pc-verdict {
+            border-radius: 12px;
+            padding: 1.75rem 2rem;
+            margin-bottom: 1.25rem;
+            text-align: center;
+            box-shadow: var(--pc-shadow-lg);
+        }
+        .pc-verdict-clean {
+            background: linear-gradient(135deg, #198754 0%, #20c997 100%);
+            color: white;
+        }
+        .pc-verdict-unclear {
+            background: linear-gradient(135deg, #fd7e14 0%, #ffc107 100%);
+            color: white;
+        }
+        .pc-verdict-contaminated {
+            background: linear-gradient(135deg, #dc3545 0%, #e85d6a 100%);
+            color: white;
+        }
+        .pc-verdict-icon { font-size: 2.25rem; margin-bottom: 0.25rem; }
+        .pc-verdict-label {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+        .pc-verdict-detail {
+            font-size: 0.95rem;
+            opacity: 0.9;
+        }
+
+        /* -- Stats row ------------------------------------- */
+        .pc-stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+        }
+        .pc-stat {
+            background: white;
+            border-radius: 10px;
+            box-shadow: var(--pc-shadow);
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .pc-stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .pc-stat-label {
+            font-size: 0.8rem;
+            color: var(--pc-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 0.25rem;
+        }
+        .pc-stat-sub {
+            font-size: 0.8rem;
+            color: var(--pc-text-muted);
+            margin-top: 0.15rem;
+        }
+
+        /* -- Gauge ----------------------------------------- */
+        .pc-gauge-wrap { padding: 0.5rem 0; }
+        .pc-gauge-outer { position: relative; margin-bottom: 2rem; }
+        .pc-gauge {
+            position: relative;
+            height: 18px;
+            border-radius: 9px;
+            overflow: visible;
+            background: linear-gradient(to right,
+                #198754 0%, #198754 {{ gauge_clean_end }}%,
+                #ffc107 {{ gauge_clean_end }}%, #ffc107 {{ gauge_unclear_end }}%,
+                #dc3545 {{ gauge_unclear_end }}%, #dc3545 100%
+            );
+        }
+        .pc-gauge-marker {
+            position: absolute;
+            top: -6px;
+            left: {{ gauge_position }}%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 30px;
+            background: var(--pc-text);
+            border-radius: 2px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
+        .pc-gauge-marker::after {
+            content: '{{ ratio }}';
+            position: absolute;
+            top: -22px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.7rem;
+            font-weight: 700;
+            white-space: nowrap;
+            background: var(--pc-text);
+            color: white;
+            padding: 1px 6px;
+            border-radius: 3px;
+        }
+        .pc-gauge-labels {
+            display: flex;
+            font-size: 0.7rem;
+            color: var(--pc-text-muted);
+            margin-top: 0.35rem;
+        }
+        .pc-gauge-label-left { flex: 0 0 {{ gauge_clean_end }}%; }
+        .pc-gauge-label-mid { flex: 0 0 {{ gauge_unclear_end - gauge_clean_end }}%; text-align: center; }
+        .pc-gauge-label-right { flex: 1; text-align: right; }
+
+        /* -- Downsample notice ----------------------------- */
+        .pc-notice {
+            background: #e8f4f8;
+            border: 1px solid #bee5eb;
+            border-radius: 8px;
+            padding: 0.6rem 1rem;
+            font-size: 0.85rem;
+            color: #0c5460;
+            margin-bottom: 1.25rem;
+            text-align: center;
+        }
+
+        /* -- Plot containers ------------------------------- */
+        .pc-plot-container {
+            width: 100%;
+            min-height: 300px;
+        }
+        .pc-plot-container .plotly-graph-div {
+            width: 100% !important;
+        }
+        .pc-plot-container .js-plotly-plot .plot-container,
+        .pc-plot-container .js-plotly-plot .main-svg {
+            width: 100% !important;
+        }
+        .pc-plot-title {
+            font-size: 0.82rem;
+            color: var(--pc-text-muted);
+            margin-bottom: 0.5rem;
+        }
+        .pc-plot-img {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+        }
+
+        /* -- Tables ---------------------------------------- */
+        .pc-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.9rem;
+        }
+        .pc-table thead th {
+            background: #f8f9fa;
+            font-weight: 600;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--pc-text-muted);
+            padding: 0.6rem 1rem;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .pc-table tbody td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+        }
+        .pc-table tbody tr:last-child td { border-bottom: none; }
+        .pc-table tbody tr:hover { background: #fafbfc; }
+        .pc-table .pc-row-excluded { color: #adb5bd; }
+        .pc-table .pc-row-total td {
+            font-weight: 700;
+            border-top: 2px solid #dee2e6;
+            border-bottom: none;
+        }
+        .pc-table .pc-num { text-align: right; font-variant-numeric: tabular-nums; }
+        .pc-table .pc-pct { text-align: right; color: var(--pc-text-muted); }
+        .pc-badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .pc-badge-yes { background: #d1e7dd; color: #0f5132; }
+        .pc-badge-no { background: #f0f0f0; color: #adb5bd; }
+        .pc-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+
+        /* -- Metrics grid ---------------------------------- */
+        .pc-metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+        .pc-metric {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        .pc-metric-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--pc-text-muted);
+            margin-bottom: 0.3rem;
+        }
+        .pc-metric-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* -- Run details (collapsible) --------------------- */
+        .pc-details-toggle {
+            background: white;
+            border-radius: 10px;
+            box-shadow: var(--pc-shadow);
+            margin-bottom: 1.25rem;
+            overflow: hidden;
+        }
+        .pc-details-toggle summary {
+            padding: 1rem 1.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--pc-text-muted);
+        }
+        .pc-details-toggle summary::-webkit-details-marker { display: none; }
+        .pc-details-toggle summary::before {
+            content: '\25B6';
+            font-size: 0.7rem;
+            transition: transform 0.2s;
+        }
+        .pc-details-toggle[open] summary::before {
+            transform: rotate(90deg);
+        }
+        .pc-details-content { padding: 0 1.5rem 1.25rem; }
+        .pc-detail-row {
+            display: flex;
+            padding: 0.35rem 0;
+            font-size: 0.82rem;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        .pc-detail-row:last-child { border-bottom: none; }
+        .pc-detail-label {
+            flex: 0 0 180px;
+            font-weight: 600;
+            color: var(--pc-text-muted);
+        }
+        .pc-detail-value {
+            flex: 1;
+            word-break: break-all;
+        }
+
+        /* -- Footer ---------------------------------------- */
+        .pc-footer {
+            text-align: center;
+            padding: 1rem 0 2rem;
+            font-size: 0.75rem;
+            color: #adb5bd;
+        }
+
+        /* -- Print ----------------------------------------- */
+        @media print {
+            body { background: white; }
+            .pc-verdict { box-shadow: none; border: 2px solid currentColor; }
+            .pc-card, .pc-stat, .pc-details-toggle { box-shadow: none; border: 1px solid #dee2e6; }
+            .pc-details-toggle { break-inside: avoid; }
+            .pc-plot-container { break-inside: avoid; page-break-inside: avoid; }
+        }
     </style>
 </head>
 <body>
-    <div class="logo">
-        <img src="{{ logo_base64 }}" alt="plasmicheck Logo">
+
+<!-- ---- Header -------------------------------------------- -->
+<header class="pc-header">
+    <div class="pc-header-inner">
+        <img src="{{ logo_base64 }}" alt="PlasmiCheck" class="pc-logo">
+        <h1>PlasmiCheck Report</h1>
     </div>
-    <h1>plasmicheck Report</h1>
+</header>
 
-    <div class="verdict" style="color: {{ verdict_color }}">
-        <p><span>Verdict:</span> {{ verdict }}</p>
-        <p><span>Plasmid to Human Ratio:</span> {{ ratio }}</p>
-        <p><span>Threshold for Contamination:</span> {{ threshold }}</p>
-        <p><span>Unclear Range:</span> {{ unclear_range.lower_bound }} - {{ unclear_range.upper_bound }}</p>
-    </div>  
+<main class="pc-main">
 
-    <!-- Downsample notification -->
-    {% if downsample_message %}
-        <div class="downsample-note">
-            {{ downsample_message|safe }}
+    <!-- ---- Sample Identity ------------------------------- -->
+    {% if sample_name or plasmid_name %}
+    <div class="pc-identity">
+        {% if sample_name %}
+        <div class="pc-identity-item">
+            <span class="pc-identity-label">Sample</span>
+            <span class="pc-identity-value">{{ sample_name }}</span>
         </div>
+        {% endif %}
+        {% if plasmid_name %}
+        <div class="pc-identity-item">
+            <span class="pc-identity-label">Plasmid</span>
+            <span class="pc-identity-value">{{ plasmid_name }}</span>
+        </div>
+        {% endif %}
+        <div class="pc-identity-item">
+            <span class="pc-identity-label">Total Reads</span>
+            <span class="pc-identity-value">{{ "{:,}".format(total_reads) }}</span>
+        </div>
+    </div>
     {% endif %}
 
-    <h2>Plots</h2>
-    <div class="plot">
-        {% if interactive %}
-            {{ box_plot|safe }}
-        {% else %}
-            <img src="{{ box_plot }}" alt="Box Plot">
-        {% endif %}
+    <!-- ---- Verdict Banner -------------------------------- -->
+    <div class="pc-verdict pc-verdict-{{ verdict_class }}">
+        <div class="pc-verdict-icon">
+            {% if verdict_class == 'clean' %}&#10003;
+            {% elif verdict_class == 'unclear' %}&#63;
+            {% else %}&#9888;
+            {% endif %}
+        </div>
+        <div class="pc-verdict-label">{{ verdict_short }}</div>
+        <div class="pc-verdict-detail">{{ verdict }}</div>
     </div>
 
-    <div class="plot">
-        {% if interactive %}
-            {{ scatter_plot|safe }}
-        {% else %}
-            <img src="{{ scatter_plot }}" alt="Scatter Plot">
-        {% endif %}
+    <!-- ---- Downsample notice ----------------------------- -->
+    {% if downsample_message %}
+    <div class="pc-notice">
+        {{ downsample_message }}
+    </div>
+    {% endif %}
+
+    <!-- ---- Key Stats ------------------------------------- -->
+    <div class="pc-stats-row">
+        <div class="pc-stat">
+            <div class="pc-stat-value" style="color: {{ assignment_colors.Plasmid }};">{{ "{:,}".format(plasmid_count | default(0)) }}</div>
+            <div class="pc-stat-label">Plasmid Reads</div>
+            <div class="pc-stat-sub">{{ plasmid_pct }}%</div>
+        </div>
+        <div class="pc-stat">
+            <div class="pc-stat-value" style="color: {{ assignment_colors.Human }};">{{ "{:,}".format(human_count | default(0)) }}</div>
+            <div class="pc-stat-label">Human Reads</div>
+            <div class="pc-stat-sub">{{ human_pct }}%</div>
+        </div>
+        <div class="pc-stat">
+            <div class="pc-stat-value" style="color: {{ assignment_colors.Tied }};">{{ "{:,}".format(tied_count | default(0)) }}</div>
+            <div class="pc-stat-label">Tied Reads</div>
+            <div class="pc-stat-sub">{{ tied_pct }}%</div>
+        </div>
+        <div class="pc-stat">
+            <div class="pc-stat-value">{{ ratio }}</div>
+            <div class="pc-stat-label">Plasmid / Human Ratio</div>
+            <div class="pc-stat-sub">Threshold: {{ threshold }}</div>
+        </div>
     </div>
 
-    <h2>Read Assignment Summary</h2>
-    <div class="container">
-        <table class="table table-bordered" style="width: 60%; margin: 20px auto;">
+    <!-- ---- Ratio Gauge ----------------------------------- -->
+    <div class="pc-card">
+        <div class="pc-card-header">Contamination Scale</div>
+        <div class="pc-gauge-wrap">
+            <div class="pc-gauge-outer">
+                <div class="pc-gauge">
+                    <div class="pc-gauge-marker"></div>
+                </div>
+                <div class="pc-gauge-labels">
+                    <span class="pc-gauge-label-left">Clean</span>
+                    <span class="pc-gauge-label-mid">Unclear ({{ unclear_range.lower_bound }}&ndash;{{ unclear_range.upper_bound }})</span>
+                    <span class="pc-gauge-label-right">Contaminated</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ---- Score Distribution (Box Plot) ----------------- -->
+    <div class="pc-card">
+        <div class="pc-card-header">Score Distribution</div>
+        <p class="pc-plot-title">Alignment score distribution per read category. Higher plasmid scores indicate stronger plasmid alignment.</p>
+        <div class="pc-plot-container">
+            {% if interactive %}
+                {{ box_plot|safe }}
+            {% else %}
+                <img src="{{ box_plot }}" alt="Score Distribution" class="pc-plot-img">
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ---- Score Comparison (Scatter Plot) ---------------- -->
+    <div class="pc-card">
+        <div class="pc-card-header">Score Comparison</div>
+        <p class="pc-plot-title">Plasmid vs. human alignment score per read. Points above the diagonal align better to the plasmid; below to the human genome.</p>
+        <div class="pc-plot-container">
+            {% if interactive %}
+                {{ scatter_plot|safe }}
+            {% else %}
+                <img src="{{ scatter_plot }}" alt="Score Comparison" class="pc-plot-img">
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ---- Read Assignment Table ------------------------- -->
+    <div class="pc-card">
+        <div class="pc-card-header">Read Assignment Details</div>
+        <table class="pc-table">
             <thead>
                 <tr>
                     <th>Category</th>
-                    <th>Count</th>
-                    <th>Proportion</th>
-                    <th>Included in Ratio</th>
+                    <th class="pc-num">Count</th>
+                    <th class="pc-pct">Proportion</th>
+                    <th>In Ratio</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>Plasmid</td>
-                    <td>{{ plasmid_count }}</td>
-                    <td>{{ plasmid_pct }}%</td>
-                    <td><span class="badge badge-success">Yes</span></td>
+                    <td><span class="pc-dot" style="background: {{ assignment_colors.Plasmid }};"></span>Plasmid</td>
+                    <td class="pc-num">{{ "{:,}".format(plasmid_count) }}</td>
+                    <td class="pc-pct">{{ plasmid_pct }}%</td>
+                    <td><span class="pc-badge pc-badge-yes">Yes</span></td>
                 </tr>
                 <tr>
-                    <td>Human</td>
-                    <td>{{ human_count }}</td>
-                    <td>{{ human_pct }}%</td>
-                    <td><span class="badge badge-success">Yes</span></td>
+                    <td><span class="pc-dot" style="background: {{ assignment_colors.Human }};"></span>Human</td>
+                    <td class="pc-num">{{ "{:,}".format(human_count) }}</td>
+                    <td class="pc-pct">{{ human_pct }}%</td>
+                    <td><span class="pc-badge pc-badge-yes">Yes</span></td>
                 </tr>
-                <tr class="text-muted">
-                    <td>Tied</td>
-                    <td>{{ tied_count }}</td>
-                    <td>{{ tied_pct }}%</td>
-                    <td><span class="badge badge-secondary">No</span></td>
+                <tr class="pc-row-excluded">
+                    <td><span class="pc-dot" style="background: {{ assignment_colors.Tied }};"></span>Tied</td>
+                    <td class="pc-num">{{ "{:,}".format(tied_count) }}</td>
+                    <td class="pc-pct">{{ tied_pct }}%</td>
+                    <td><span class="pc-badge pc-badge-no">No</span></td>
                 </tr>
-                <tr class="text-muted">
-                    <td>Backbone_Only</td>
-                    <td>{{ backbone_only_count }}</td>
-                    <td>{{ backbone_only_pct }}%</td>
-                    <td><span class="badge badge-secondary">No</span></td>
+                {% if backbone_only_count > 0 or ambiguous_count > 0 %}
+                <tr class="pc-row-excluded">
+                    <td><span class="pc-dot" style="background: {{ assignment_colors.Backbone_Only }};"></span>Backbone Only</td>
+                    <td class="pc-num">{{ "{:,}".format(backbone_only_count) }}</td>
+                    <td class="pc-pct">{{ backbone_only_pct }}%</td>
+                    <td><span class="pc-badge pc-badge-no">No</span></td>
                 </tr>
-                <tr class="text-muted">
-                    <td>Ambiguous</td>
-                    <td>{{ ambiguous_count }}</td>
-                    <td>{{ ambiguous_pct }}%</td>
-                    <td><span class="badge badge-secondary">No</span></td>
+                <tr class="pc-row-excluded">
+                    <td><span class="pc-dot" style="background: {{ assignment_colors.Ambiguous }};"></span>Ambiguous</td>
+                    <td class="pc-num">{{ "{:,}".format(ambiguous_count) }}</td>
+                    <td class="pc-pct">{{ ambiguous_pct }}%</td>
+                    <td><span class="pc-badge pc-badge-no">No</span></td>
+                </tr>
+                {% endif %}
+                <tr class="pc-row-total">
+                    <td>Total</td>
+                    <td class="pc-num">{{ "{:,}".format(total_reads) }}</td>
+                    <td></td>
+                    <td></td>
                 </tr>
             </tbody>
-            <tfoot>
-                <tr>
-                    <td><strong>Total</strong></td>
-                    <td><strong>{{ total_reads }}</strong></td>
-                    <td></td>
-                    <td></td>
-                </tr>
-            </tfoot>
         </table>
 
         {% if backbone_warning %}
-        <div class="alert alert-warning text-center" role="alert">
+        <div class="pc-notice" style="margin-top: 1rem; margin-bottom: 0;">
             {{ backbone_warning }}
         </div>
         {% endif %}
     </div>
 
-    <h2>Additional Metrics</h2>
-    <div class="container">
-        <table class="table table-bordered" style="width: 60%; margin: 20px auto;">
-            <tbody>
-                <tr>
-                    <td>Coverage Outside Insert Region</td>
-                    <td>{{ coverage_outside_insert }}</td>
-                </tr>
-                <tr>
-                    <td>Mismatches Near Insert Boundaries</td>
-                    <td>{{ mismatches_near_insert }}</td>
-                </tr>
-            </tbody>
-        </table>
+    <!-- ---- Insert Region Metrics ------------------------- -->
+    <div class="pc-card">
+        <div class="pc-card-header">Insert Region Analysis</div>
+        <div class="pc-metrics-grid">
+            <div class="pc-metric">
+                <div class="pc-metric-label">Coverage Outside Insert</div>
+                <div class="pc-metric-value">{{ coverage_outside_insert }}</div>
+            </div>
+            <div class="pc-metric">
+                <div class="pc-metric-label">Reads With Mismatches Near Insert</div>
+                <div class="pc-metric-value">{{ "{:,}".format(mismatches_with) }}</div>
+            </div>
+            <div class="pc-metric">
+                <div class="pc-metric-label">Reads Without Mismatches Near Insert</div>
+                <div class="pc-metric-value">{{ "{:,}".format(mismatches_without) }}</div>
+            </div>
+        </div>
     </div>
 
-    <div class="details">
-        <p><span>Script Version:</span> {{ version }}</p>
-        <p><span>Human Reference File:</span> {{ human_fasta }}</p>
-        <p><span>Plasmid GenBank File:</span> {{ plasmid_gb }}</p>
-        <p><span>Sequencing File:</span> {{ sequencing_file }}</p>
-        <p><span>Run Date:</span> {{ run_date }}</p>
-        <p><span>Command Line:</span> {{ command_line }}</p>
+    <!-- ---- Run Details (collapsible) --------------------- -->
+    <details class="pc-details-toggle">
+        <summary>Run Details</summary>
+        <div class="pc-details-content">
+            <div class="pc-detail-row">
+                <span class="pc-detail-label">PlasmiCheck Version</span>
+                <span class="pc-detail-value">{{ version }}</span>
+            </div>
+            {% if human_fasta and human_fasta != 'None' %}
+            <div class="pc-detail-row">
+                <span class="pc-detail-label">Human Reference</span>
+                <span class="pc-detail-value">{{ human_fasta }}</span>
+            </div>
+            {% endif %}
+            {% if plasmid_gb and plasmid_gb != 'None' %}
+            <div class="pc-detail-row">
+                <span class="pc-detail-label">Plasmid File</span>
+                <span class="pc-detail-value">{{ plasmid_gb }}</span>
+            </div>
+            {% endif %}
+            {% if sequencing_file and sequencing_file != 'None' %}
+            <div class="pc-detail-row">
+                <span class="pc-detail-label">Sequencing File</span>
+                <span class="pc-detail-value">{{ sequencing_file }}</span>
+            </div>
+            {% endif %}
+            <div class="pc-detail-row">
+                <span class="pc-detail-label">Run Date</span>
+                <span class="pc-detail-value">{{ run_date }}</span>
+            </div>
+            {% if command_line %}
+            <div class="pc-detail-row">
+                <span class="pc-detail-label">Command Line</span>
+                <span class="pc-detail-value">{{ command_line }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- ---- Footer ---------------------------------------- -->
+    <div class="pc-footer">
+        Generated by PlasmiCheck v{{ version }}
     </div>
+
+</main>
+
+<!-- ---- Responsive Plotly --------------------------------- -->
+{% if interactive %}
+<script>
+(function() {
+    function resizePlots() {
+        var plots = document.querySelectorAll('.pc-plot-container .js-plotly-plot');
+        plots.forEach(function(el) { Plotly.Plots.resize(el); });
+    }
+
+    window.addEventListener('load', function() {
+        var plots = document.querySelectorAll('.pc-plot-container .js-plotly-plot');
+        plots.forEach(function(el) {
+            Plotly.relayout(el, {
+                autosize: true,
+                width: null,
+                height: 400,
+                margin: {l: 60, r: 30, t: 10, b: 50}
+            });
+        });
+        setTimeout(resizePlots, 100);
+    });
+
+    var resizeTimeout;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(resizePlots, 150);
+    });
+})();
+</script>
+{% endif %}
+
 </body>
 </html>
