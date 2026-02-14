@@ -123,7 +123,9 @@ def generate_plots(
 
         kaleido.start_sync_server()
 
-        boxplot_filename_png = os.path.join(plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"])
+        boxplot_filename_png = os.path.join(
+            plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"]
+        )
         fig_box.write_image(boxplot_filename_png)
 
         scatter_filename_png = os.path.join(

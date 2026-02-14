@@ -439,7 +439,9 @@ def generate_report(
             plotly_js_inline=plotly_js_inline,
         )
 
-        html_report_non_interactive = os.path.join(output_folder, "summary_report_non_interactive.html")
+        html_report_non_interactive = os.path.join(
+            output_folder, "summary_report_non_interactive.html"
+        )
         with open(html_report_non_interactive, "w") as f:
             f.write(html_content_non_interactive)
 

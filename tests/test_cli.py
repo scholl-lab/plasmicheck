@@ -93,9 +93,9 @@ class TestCLI:
         )
         assert result.returncode == 0
         # pandas, plotly, jinja2, kaleido should NOT be loaded on import
-        assert (
-            result.stdout.strip() == "NONE"
-        ), f"Heavy modules loaded on import: {result.stdout.strip()}"
+        assert result.stdout.strip() == "NONE", (
+            f"Heavy modules loaded on import: {result.stdout.strip()}"
+        )
 
     @pytest.mark.unit
     def test_generate_summary_reports_lazy_imports(self) -> None:
@@ -119,6 +119,6 @@ class TestCLI:
         )
         assert result.returncode == 0
         # pandas, plotly, jinja2, kaleido, numpy, scipy, statsmodels should NOT be loaded on import
-        assert (
-            result.stdout.strip() == "NONE"
-        ), f"Heavy modules loaded on import: {result.stdout.strip()}"
+        assert result.stdout.strip() == "NONE", (
+            f"Heavy modules loaded on import: {result.stdout.strip()}"
+        )
