@@ -23,6 +23,12 @@ Last activity: 2026-02-14 — Completed 06-02-PLAN.md (CLI thread integration)
 - Report generation: 91.7% of time (5.1s/5.5s) (benchmark measurement)
 - Interactive HTML size: 9.6 MB (embedded plotly.js)
 
+**Measured (v0.32.0-dev, after Phase 5+6):**
+- Small dataset (200 reads): 0.58s (was 5.5s — 9.5x speedup)
+- Real dataset (3M reads): 58.4s alignment (was 115.2s — 1.97x speedup)
+- Report generation: 0.108s / 18.8% of total (was 91.7% — no longer the bottleneck)
+- Key gain: samtools sort -m 2G reduced human alignment from 65.1s to 13.5s (4.8x)
+
 **Target (v0.32.0):**
 - Small dataset: <2s (13x speedup)
 - Large batch (50 combinations): 103 min (was 223 min, 2.2x speedup)
@@ -61,6 +67,7 @@ Last activity: 2026-02-14 — Completed 06-02-PLAN.md (CLI thread integration)
 - --threads CLI flag with None default enables optional override pattern (06-02)
 - Thread detection at pipeline start with source logging for transparency (06-02)
 - Sequential alignment with full thread allocation per step (no concurrency) (06-02)
+- Benchmarked: 1.97x alignment speedup on 3M read BAM (115.2s → 58.4s), -m 2G sort memory is the biggest win (06-benchmark)
 
 ### Todos
 
@@ -102,12 +109,13 @@ None currently identified.
 - Regression test validates correctness: `python scripts/regression_test.py`
 - Benchmark measures per-step timing: `python scripts/benchmark.py`
 - Phase 5 complete: Report optimization (no Kaleido overhead by default)
-- Phase 6 complete: Alignment optimization (automatic CPU detection + optimal thread allocation)
+- Phase 6 complete + benchmarked: Alignment optimization (1.97x speedup on real 3M read data)
 - 149 unit tests passing, mypy strict, ruff clean
 - --threads CLI flag available on pipeline subcommand
 - Thread detection: SLURM → cgroup v2 → cgroup v1 → os.cpu_count → fallback(4)
 - Thread allocation: 80/20 minimap2/samtools split, 2-16 CPU bounds, 2G sort memory
-- All thread parameters logged with source for transparency
+- samtools sort -m 2G is the single biggest performance win (human align: 65s → 13.5s)
+- Small dataset total: 0.58s (was 5.5s baseline)
 
 ---
 *State initialized: 2026-02-14*

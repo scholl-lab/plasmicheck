@@ -124,6 +124,42 @@ The phase delivers infrastructure changes (thread detection, parameterization) t
 
 ---
 
+## Benchmark Results
+
+Performance benchmarked on real datasets (2026-02-14).
+
+### Synthetic Dataset (200 reads, paired FASTQ)
+
+| Step | Mean (s) | % of Total |
+|------|----------|------------|
+| convert | 0.035 | 6.1% |
+| index | 0.077 | 13.3% |
+| spliced | 0.126 | 21.8% |
+| align | 0.174 | 30.2% |
+| compare | 0.056 | 9.7% |
+| report | 0.108 | 18.8% |
+| **Total** | **0.577** | **100%** |
+
+**vs v0.31.0 baseline (5.5s):** 9.5x speedup (primarily from Phase 5 report optimization).
+
+### Real Dataset: APA19-N (3M reads, 130MB BAM)
+
+| Config | Plasmid Align | Human Align | Total Align | Speedup |
+|--------|--------------|-------------|-------------|---------|
+| Old (minimap2=8, samtools=4, no -m) | 50.1s | 65.1s | 115.2s | — |
+| New (minimap2=12, samtools=4, -m 2G) | 44.9s | 13.5s | 58.4s | **1.97x** |
+
+**Key finding:** The `-m 2G` samtools sort memory flag delivered the largest single improvement, reducing human alignment from 65.1s to 13.5s (4.8x) by reducing sort I/O overhead on the larger spliced reference.
+
+### Environment
+
+- System: Linux x86_64 (WSL2)
+- CPU: 16 cores detected via os.cpu_count()
+- Thread allocation: minimap2=12, samtools=4
+- minimap2 v2.28-r1209, samtools (system)
+
+---
+
 ## Conclusion
 
 **Phase 6 goal ACHIEVED.**
