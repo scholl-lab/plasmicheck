@@ -457,7 +457,7 @@ def main(
 ) -> None:
     # Initialize kaleido once before plotting if static_report is True
     if static_report:
-        import kaleido
+        import kaleido  # type: ignore[import-untyped]
 
         kaleido.start_sync_server()
 

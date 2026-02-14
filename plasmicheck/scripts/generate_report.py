@@ -119,7 +119,7 @@ def generate_plots(
     boxplot_filename_png = None
     scatter_filename_png = None
     if static_report:
-        import kaleido
+        import kaleido  # type: ignore[import-untyped]
 
         kaleido.start_sync_server()
 
