@@ -25,8 +25,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Comparison Optimization
 
-- [x] **COMP-01**: BAM name grouping uses `samtools collate` instead of `samtools sort -n` (30-50% faster)
-- [x] **COMP-02**: Supplementary alignment ordering handled explicitly after collate
+- [x] **COMP-01**: BAM name grouping benchmarked (collate tested, sort -n retained — collate 28-64x slower on post-alignment filtered BAMs)
+- [x] **COMP-02**: Supplementary alignment ordering validated (sort -n preserves correct ordering, no explicit re-sort needed)
 
 ### Architectural Cleanup
 
@@ -100,4 +100,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 7 completion*
+*Last updated: 2026-02-14 after collate revert (COMP-01/COMP-02 updated)*

@@ -101,19 +101,19 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [x] 07-01-PLAN.md -- samtools collate with supplementary re-sorting and fallback (COMP-01, COMP-02)
+- [x] 07-01-PLAN.md -- BAM name grouping benchmarked (collate tested and reverted to sort -n) (COMP-01, COMP-02)
 - [x] 07-02-PLAN.md -- Index deduplication, batch resilience, and per-combination timing (ARCH-01, ARCH-02)
 - [x] 07-03-PLAN.md -- Matplotlib static plot backend and CLI wiring (ARCH-03)
 
 **Requirements:**
-- COMP-01: BAM name grouping uses samtools collate instead of sort -n
-- COMP-02: Supplementary alignment ordering handled explicitly after collate
+- COMP-01: BAM name grouping benchmarked (collate 28-64x slower, sort -n retained)
+- COMP-02: Supplementary alignment ordering validated (sort -n preserves correct ordering)
 - ARCH-01: Human reference indexing hoisted out of combination loop
 - ARCH-02: PipelinePlan tracks which indexes are already built
 - ARCH-03: User can generate static plots via matplotlib backend without Kaleido
 
 **Success Criteria:**
-1. BAM comparison completes 30-50% faster than v0.31.0 (samtools collate vs sort -n)
+1. BAM name grouping approach validated by benchmark (collate tested, found 28-64x slower on filtered BAMs, sort -n retained)
 2. Supplementary alignments processed correctly (regression tests pass for chimeric reads)
 3. Batch processing (10+ plasmid-sample combinations) skips redundant human index operations
 4. User can run `--plot-backend matplotlib --static-report` without Kaleido installed (outputs visually consistent with Plotly)
@@ -142,4 +142,4 @@ No orphaned requirements. 1 requirement dropped (TEST-03).
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 7 completion*
+*Last updated: 2026-02-14 after collate revert (COMP-01/COMP-02 updated)*

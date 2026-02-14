@@ -45,7 +45,7 @@ Last activity: 2026-02-14 — Phase 7 verified, all 4 phases complete
 - Keep Kaleido v1.2.0 (not downgrade to 0.2.1) but make PNG export opt-in
 - Use directory mode plotly.js with offline fallback for air-gapped environments
 - ThreadPoolExecutor for parallel alignment (not ProcessPoolExecutor)
-- samtools collate for name grouping (30-50% faster than sort -n)
+- samtools sort -n for name grouping (collate benchmarked but 28-64x slower on filtered BAMs)
 - Use atomic write pattern (tempfile + os.replace) for baseline caching
 - Store baselines as JSON for human readability and easy diff inspection
 - Compare verdicts exactly, ratios with ±0.001 tolerance for regression tests
@@ -68,10 +68,8 @@ Last activity: 2026-02-14 — Phase 7 verified, all 4 phases complete
 - Thread detection at pipeline start with source logging for transparency (06-02)
 - Sequential alignment with full thread allocation per step (no concurrency) (06-02)
 - Benchmarked: 1.97x alignment speedup on 3M read BAM (115.2s → 58.4s), -m 2G sort memory is the biggest win (06-benchmark)
-- samtools collate standard mode (NOT -f fast mode) to preserve all alignment records (07-01)
-- Explicit supplementary re-sorting after collate: primary → supplementary → secondary (07-01)
-- BAM name grouping: try collate first, fallback to sort -n with logged warning (07-01)
-- Temp file pattern: create with tempfile.NamedTemporaryFile, cleanup in finally block (07-01)
+- samtools collate benchmarked and reverted: 28-64x slower than sort -n on post-alignment filtered BAMs (<100K reads) due to hash-bucket fixed overhead (~2s) (07-01)
+- BAM name grouping uses sort -n directly (collate code removed as dead code) (07-01)
 - Hoist human index creation to upfront phase (before combination loop) to eliminate filelock overhead (07-02)
 - Track built indexes in PipelinePlan.built_indexes set for defensive skip checks (07-02)
 - No deduplication for plasmid indexes (per-combination, cheap to rebuild) (07-02)
@@ -98,13 +96,12 @@ Last activity: 2026-02-14 — Phase 7 verified, all 4 phases complete
 - [x] ALGN-02: CPU auto-detection with cgroup/SLURM awareness (06-01) — Complete
 - [x] ALGN-03: --threads CLI flag (06-02) — Complete
 - [x] ALGN-04: samtools sort -m 2G memory flag (06-01, 06-02) — Complete
-- [x] COMP-01: samtools collate for BAM name grouping (07-01) — Complete
-- [x] COMP-02: Supplementary alignment re-sorting (07-01) — Complete
+- [x] COMP-01: BAM name grouping benchmarked, sort -n retained (07-01) — Complete
+- [x] COMP-02: Supplementary ordering validated with sort -n (07-01) — Complete
 - [x] ARCH-01: Hoist human index to upfront phase (07-02) — Complete
 - [x] ARCH-02: PipelinePlan.built_indexes tracking (07-02) — Complete
 - [x] ARCH-03: matplotlib backend for static PNG generation (07-03) — Complete
 - [ ] TEST-03: Air-gapped testing (deferred)
-- [ ] Verify samtools version >=1.9 (collate requirement)
 
 ### Blockers
 
@@ -119,22 +116,22 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 7 (Comparison & Cleanup) verified complete — 17/17 must-haves, all 5 requirements verified, 172 tests passing. All 4 phases (4-7) complete.
+**What just happened:** Phase 7 post-benchmark: collate reverted to sort -n (28-64x slower on filtered BAMs), dead code removed, all tests passing. All 4 phases (4-7) complete.
 
 **Next step:** Audit milestone and complete v0.32.0
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
 - All 4 phases complete: Foundation (4), Report (5), Alignment (6), Comparison (7)
-- 172 unit tests passing, mypy strict, ruff clean
+- 170 unit tests passing, mypy strict, ruff clean
 - Regression test: `python scripts/regression_test.py`
 - Benchmark: `python scripts/benchmark.py`
 - Phase 5: Report optimization (no Kaleido overhead by default, 9.5x speedup)
 - Phase 6: Alignment optimization (1.97x speedup, -m 2G sort memory)
-- Phase 7: samtools collate (30-50% faster), index dedup, batch resilience, matplotlib backend
+- Phase 7: index dedup, batch resilience, matplotlib backend (collate reverted)
 - New CLI flags: --static-report, --plotly-mode, --threads, --plot-backend
-- Small dataset total: 0.58s (was 5.5s baseline)
+- Small dataset total: 0.704s (was 5.5s baseline, 8.2x speedup)
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 7 verification*
+*Last updated: 2026-02-14 after collate revert and dead code cleanup*
