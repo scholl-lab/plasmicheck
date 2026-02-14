@@ -10,10 +10,10 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 **Phase:** 7 - Comparison Cleanup (In Progress)
-**Status:** Plan 07-01 complete (samtools collate)
-**Progress:** [██████░░░░] 13/18 requirements (72%)
+**Status:** Plan 07-02 complete (index dedup & batch resilience)
+**Progress:** [███████░░░] 14/18 requirements (78%)
 
-Last activity: 2026-02-14 — Completed 07-01-PLAN.md (samtools collate for BAM name grouping)
+Last activity: 2026-02-14 — Completed 07-02-PLAN.md (index deduplication and batch resilience)
 
 ## Performance Metrics
 
@@ -72,6 +72,12 @@ Last activity: 2026-02-14 — Completed 07-01-PLAN.md (samtools collate for BAM 
 - Explicit supplementary re-sorting after collate: primary → supplementary → secondary (07-01)
 - BAM name grouping: try collate first, fallback to sort -n with logged warning (07-01)
 - Temp file pattern: create with tempfile.NamedTemporaryFile, cleanup in finally block (07-01)
+- Hoist human index creation to upfront phase (before combination loop) to eliminate filelock overhead (07-02)
+- Track built indexes in PipelinePlan.built_indexes set for defensive skip checks (07-02)
+- No deduplication for plasmid indexes (per-combination, cheap to rebuild) (07-02)
+- Batch resilience: Continue processing remaining combinations after one fails (07-02)
+- Raise RuntimeError only if ALL combinations fail (07-02)
+- Log per-combination timing at INFO level (format: 'label: NN.Ns') (07-02)
 
 ### Todos
 
@@ -89,6 +95,8 @@ Last activity: 2026-02-14 — Completed 07-01-PLAN.md (samtools collate for BAM 
 - [x] ALGN-04: samtools sort -m 2G memory flag (06-01, 06-02) — Complete
 - [x] COMP-01: samtools collate for BAM name grouping (07-01) — Complete
 - [x] COMP-02: Supplementary alignment re-sorting (07-01) — Complete
+- [x] ARCH-01: Hoist human index to upfront phase (07-02) — Complete
+- [x] ARCH-02: PipelinePlan.built_indexes tracking (07-02) — Complete
 - [ ] TEST-03: Air-gapped testing (deferred)
 - [ ] Verify samtools version >=1.9 (collate requirement)
 - [ ] Decide on matplotlib style config for visual consistency with Plotly
@@ -106,9 +114,9 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 7 Plan 01 complete — samtools collate replaces sort -n for 30-50% faster BAM name grouping, 6 new tests, all passing
+**What just happened:** Phase 7 Plan 02 complete — Human reference indexing hoisted to upfront phase, batch-resilient pipeline with continue-on-failure, 8 new tests, 163 total passing
 
-**Next step:** Continue Phase 7 — index deduplication, matplotlib backend
+**Next step:** Continue Phase 7 — matplotlib backend configuration (07-03)
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
@@ -117,7 +125,8 @@ None currently identified.
 - Phase 5 complete: Report optimization (no Kaleido overhead by default)
 - Phase 6 complete + benchmarked: Alignment optimization (1.97x speedup on real 3M read data)
 - Phase 7 Plan 01 complete: BAM comparison uses samtools collate (30-50% faster than sort -n)
-- 155 unit tests passing, mypy strict, ruff clean
+- Phase 7 Plan 02 complete: Human index upfront phase, batch resilience with timing logs
+- 163 unit tests passing, mypy strict, ruff clean
 - --threads CLI flag available on pipeline subcommand
 - Thread detection: SLURM → cgroup v2 → cgroup v1 → os.cpu_count → fallback(4)
 - Thread allocation: 80/20 minimap2/samtools split, 2-16 CPU bounds, 2G sort memory
@@ -127,4 +136,4 @@ None currently identified.
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after 07-01 completion*
+*Last updated: 2026-02-14 after 07-02 completion*
