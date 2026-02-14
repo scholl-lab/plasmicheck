@@ -25,14 +25,14 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Comparison Optimization
 
-- [ ] **COMP-01**: BAM name grouping uses `samtools collate` instead of `samtools sort -n` (30-50% faster)
-- [ ] **COMP-02**: Supplementary alignment ordering handled explicitly after collate
+- [x] **COMP-01**: BAM name grouping uses `samtools collate` instead of `samtools sort -n` (30-50% faster)
+- [x] **COMP-02**: Supplementary alignment ordering handled explicitly after collate
 
 ### Architectural Cleanup
 
-- [ ] **ARCH-01**: Human reference indexing hoisted out of combination loop in pipeline
-- [ ] **ARCH-02**: PipelinePlan tracks which indexes are already built, skipping redundant lock checks
-- [ ] **ARCH-03**: User can generate static plots via matplotlib backend (`--plot-backend matplotlib`) without Kaleido dependency
+- [x] **ARCH-01**: Human reference indexing hoisted out of combination loop in pipeline
+- [x] **ARCH-02**: PipelinePlan tracks which indexes are already built, skipping redundant lock checks
+- [x] **ARCH-03**: User can generate static plots via matplotlib backend (`--plot-backend matplotlib`) without Kaleido dependency
 
 ### Testing & Validation
 
@@ -87,11 +87,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ALGN-02 | Phase 6 | Complete |
 | ALGN-03 | Phase 6 | Complete |
 | ALGN-04 | Phase 6 | Complete |
-| COMP-01 | Phase 7 | Pending |
-| COMP-02 | Phase 7 | Pending |
-| ARCH-01 | Phase 7 | Pending |
-| ARCH-02 | Phase 7 | Pending |
-| ARCH-03 | Phase 7 | Pending |
+| COMP-01 | Phase 7 | Complete |
+| COMP-02 | Phase 7 | Complete |
+| ARCH-01 | Phase 7 | Complete |
+| ARCH-02 | Phase 7 | Complete |
+| ARCH-03 | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 18 total
@@ -100,4 +100,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 6 completion*
+*Last updated: 2026-02-14 after Phase 7 completion*

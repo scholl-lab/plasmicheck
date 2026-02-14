@@ -9,11 +9,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 7 - Comparison Cleanup (In Progress)
-**Status:** Plan 07-03 complete (matplotlib backend)
-**Progress:** [████████░░] 15/18 requirements (83%)
+**Phase:** 7 - Comparison & Cleanup ✓ Complete
+**Status:** Phase 7 verified and complete (17/17 must-haves)
+**Progress:** [██████████] 17/18 requirements (94%) — 1 dropped (TEST-03)
 
-Last activity: 2026-02-14 — Completed 07-03-PLAN.md (matplotlib plotting backend)
+Last activity: 2026-02-14 — Phase 7 verified, all 4 phases complete
 
 ## Performance Metrics
 
@@ -119,27 +119,22 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Phase 7 Plan 03 complete — matplotlib plotting backend as Kaleido alternative, --plot-backend CLI flag, 9 new tests, 172 total passing
+**What just happened:** Phase 7 (Comparison & Cleanup) verified complete — 17/17 must-haves, all 5 requirements verified, 172 tests passing. All 4 phases (4-7) complete.
 
-**Next step:** Continue Phase 7 or proceed to benchmarking/verification
+**Next step:** Audit milestone and complete v0.32.0
 
 **Key context for next session:**
 - Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
-- Regression test validates correctness: `python scripts/regression_test.py`
-- Benchmark measures per-step timing: `python scripts/benchmark.py`
-- Phase 5 complete: Report optimization (no Kaleido overhead by default)
-- Phase 6 complete + benchmarked: Alignment optimization (1.97x speedup on real 3M read data)
-- Phase 7 Plan 01 complete: BAM comparison uses samtools collate (30-50% faster than sort -n)
-- Phase 7 Plan 02 complete: Human index upfront phase, batch resilience with timing logs
-- Phase 7 Plan 03 complete: matplotlib backend for static PNGs (Kaleido alternative)
+- All 4 phases complete: Foundation (4), Report (5), Alignment (6), Comparison (7)
 - 172 unit tests passing, mypy strict, ruff clean
-- --threads CLI flag available on pipeline subcommand
-- Thread detection: SLURM → cgroup v2 → cgroup v1 → os.cpu_count → fallback(4)
-- Thread allocation: 80/20 minimap2/samtools split, 2-16 CPU bounds, 2G sort memory
-- samtools sort -m 2G is the single biggest performance win (human align: 65s → 13.5s)
-- samtools collate is new second-biggest win (30-50% reduction in BAM name-sorting time)
+- Regression test: `python scripts/regression_test.py`
+- Benchmark: `python scripts/benchmark.py`
+- Phase 5: Report optimization (no Kaleido overhead by default, 9.5x speedup)
+- Phase 6: Alignment optimization (1.97x speedup, -m 2G sort memory)
+- Phase 7: samtools collate (30-50% faster), index dedup, batch resilience, matplotlib backend
+- New CLI flags: --static-report, --plotly-mode, --threads, --plot-backend
 - Small dataset total: 0.58s (was 5.5s baseline)
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after 07-03 completion*
+*Last updated: 2026-02-14 after Phase 7 verification*

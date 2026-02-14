@@ -101,9 +101,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- samtools collate with supplementary re-sorting and fallback (COMP-01, COMP-02)
-- [ ] 07-02-PLAN.md -- Index deduplication, batch resilience, and per-combination timing (ARCH-01, ARCH-02)
-- [ ] 07-03-PLAN.md -- Matplotlib static plot backend and CLI wiring (ARCH-03)
+- [x] 07-01-PLAN.md -- samtools collate with supplementary re-sorting and fallback (COMP-01, COMP-02)
+- [x] 07-02-PLAN.md -- Index deduplication, batch resilience, and per-combination timing (ARCH-01, ARCH-02)
+- [x] 07-03-PLAN.md -- Matplotlib static plot backend and CLI wiring (ARCH-03)
 
 **Requirements:**
 - COMP-01: BAM name grouping uses samtools collate instead of sort -n
@@ -126,9 +126,9 @@ Plans:
 | 4 - Foundation | TEST-01, TEST-02 | Complete | 100% |
 | 5 - Report Optimization | REPT-01 through REPT-06 | Complete | 100% |
 | 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Complete | 100% |
-| 7 - Comparison & Cleanup | COMP-01, COMP-02, ARCH-01, ARCH-02, ARCH-03 | Pending | 0% |
+| 7 - Comparison & Cleanup | COMP-01, COMP-02, ARCH-01, ARCH-02, ARCH-03 | Complete | 100% |
 
-**Overall:** 12/18 requirements completed (67%)
+**Overall:** 17/18 requirements completed (94%) — 1 dropped (TEST-03)
 
 ## Coverage
 
@@ -142,4 +142,4 @@ No orphaned requirements. 1 requirement dropped (TEST-03).
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 7 planning*
+*Last updated: 2026-02-14 after Phase 7 completion*
