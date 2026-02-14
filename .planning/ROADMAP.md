@@ -98,6 +98,13 @@ Plans:
 
 **Dependencies:** Phase 4 (regression tests must pass)
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 07-01-PLAN.md -- samtools collate with supplementary re-sorting and fallback (COMP-01, COMP-02)
+- [ ] 07-02-PLAN.md -- Index deduplication, batch resilience, and per-combination timing (ARCH-01, ARCH-02)
+- [ ] 07-03-PLAN.md -- Matplotlib static plot backend and CLI wiring (ARCH-03)
+
 **Requirements:**
 - COMP-01: BAM name grouping uses samtools collate instead of sort -n
 - COMP-02: Supplementary alignment ordering handled explicitly after collate
@@ -135,4 +142,4 @@ No orphaned requirements. 1 requirement dropped (TEST-03).
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 6 completion*
+*Last updated: 2026-02-14 after Phase 7 planning*
