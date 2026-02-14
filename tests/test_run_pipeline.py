@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
 from plasmicheck.scripts.run_pipeline import (
+    CombinationResult,
     PipelinePlan,
     PipelineStep,
     SequencingInput,
@@ -15,6 +17,7 @@ from plasmicheck.scripts.run_pipeline import (
     print_plan,
     read_file_list,
     resolve_sequencing_inputs,
+    run_pipeline,
 )
 
 
@@ -201,3 +204,303 @@ class TestPrintPlan:
         assert "PlasmiCheck Pipeline Dry-Run" in captured.out
         assert "Execution Plan" in captured.out
         assert "Summary:" in captured.out
+
+
+class TestPipelinePlanBuiltIndexes:
+    @pytest.mark.unit
+    def test_pipeline_plan_has_built_indexes_field(self) -> None:
+        """Verify PipelinePlan has built_indexes field that starts as empty set."""
+        plan = PipelinePlan(
+            human_fasta="ref.fasta",
+            plasmid_files=["p.gb"],
+            sequencing_inputs=[SequencingInput("r.fastq")],
+            output_folder="out",
+            overwrite=False,
+        )
+        assert isinstance(plan.built_indexes, set)
+        assert len(plan.built_indexes) == 0
+
+
+class TestCombinationResultDataclass:
+    @pytest.mark.unit
+    def test_combination_result_success(self) -> None:
+        """Verify CombinationResult dataclass for successful combination."""
+        result = CombinationResult(
+            combo_label="plasmid.gb x sample.bam", success=True, duration=42.5, error=None
+        )
+        assert result.combo_label == "plasmid.gb x sample.bam"
+        assert result.success is True
+        assert result.duration == 42.5
+        assert result.error is None
+
+    @pytest.mark.unit
+    def test_combination_result_failure(self) -> None:
+        """Verify CombinationResult dataclass for failed combination."""
+        error = ValueError("Test error")
+        result = CombinationResult(
+            combo_label="plasmid.gb x sample.bam", success=False, duration=10.2, error=error
+        )
+        assert result.combo_label == "plasmid.gb x sample.bam"
+        assert result.success is False
+        assert result.duration == 10.2
+        assert result.error is error
+
+
+class TestIndexDeduplication:
+    @pytest.mark.unit
+    def test_index_dedup_human_index_built_once(self, tmp_path: Path) -> None:
+        """Verify human index is built once upfront, not per combination."""
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid1 = tmp_path / "p1.gb"
+        plasmid1.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        plasmid2 = tmp_path / "p2.gb"
+        plasmid2.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq_file = tmp_path / "sample.bam"
+        seq_file.write_text("")  # Empty BAM placeholder
+
+        plasmid_list = tmp_path / "plasmids.txt"
+        plasmid_list.write_text(f"{plasmid1}\n{plasmid2}\n")
+
+        output = tmp_path / "output"
+
+        # Mock all pipeline steps
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes") as mock_create_idx,
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+        ):
+            mock_create_idx.return_value = None
+
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid_list),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_file),
+                overwrite=False,
+            )
+
+            # Human index should be created exactly once (upfront phase)
+            human_index_calls = [
+                call for call in mock_create_idx.call_args_list if str(human_fasta) in str(call)
+            ]
+            assert (
+                len(human_index_calls) == 1
+            ), f"Expected 1 human index call, got {len(human_index_calls)}"
+
+    @pytest.mark.unit
+    def test_index_dedup_plasmid_indexes_still_per_combination(self, tmp_path: Path) -> None:
+        """Verify plasmid indexes are still created per-combination (no dedup)."""
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid1 = tmp_path / "p1.gb"
+        plasmid1.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        plasmid2 = tmp_path / "p2.gb"
+        plasmid2.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq_file = tmp_path / "sample.bam"
+        seq_file.write_text("")
+
+        plasmid_list = tmp_path / "plasmids.txt"
+        plasmid_list.write_text(f"{plasmid1}\n{plasmid2}\n")
+
+        output = tmp_path / "output"
+
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes") as mock_create_idx,
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+        ):
+            mock_create_idx.return_value = None
+
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid_list),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_file),
+                overwrite=False,
+            )
+
+            # Plasmid indexes: 2 plasmid FASTAs + 2 spliced FASTAs = 4 total
+            # (p1.fasta, p2.fasta, spliced_reference.fasta x2)
+            # Plus human index (1) = 5 total
+            assert mock_create_idx.call_count >= 4, (
+                f"Expected at least 4 plasmid index calls, got {mock_create_idx.call_count}"
+            )
+
+
+class TestBatchResilience:
+    @pytest.mark.unit
+    def test_batch_resilience_continues_on_failure(self, tmp_path: Path) -> None:
+        """Verify pipeline continues processing after one combination fails."""
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid1 = tmp_path / "p1.gb"
+        plasmid1.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        plasmid2 = tmp_path / "p2.gb"
+        plasmid2.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq_file = tmp_path / "sample.bam"
+        seq_file.write_text("")
+
+        plasmid_list = tmp_path / "plasmids.txt"
+        plasmid_list.write_text(f"{plasmid1}\n{plasmid2}\n")
+
+        output = tmp_path / "output"
+
+        # Make compare_alignments fail on first call, succeed on second
+        call_count = 0
+
+        def compare_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ValueError("First combination failed")
+            return None
+
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch(
+                "plasmicheck.scripts.run_pipeline.compare_alignments",
+                side_effect=compare_side_effect,
+            ),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report") as mock_report,
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+        ):
+            # Should NOT raise despite first combination failing
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid_list),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_file),
+                overwrite=False,
+            )
+
+            # Second combination should have succeeded and generated report
+            assert mock_report.call_count == 1, "Second combination should have generated report"
+
+    @pytest.mark.unit
+    def test_batch_resilience_all_fail_raises(self, tmp_path: Path) -> None:
+        """Verify pipeline raises RuntimeError if ALL combinations fail."""
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid1 = tmp_path / "p1.gb"
+        plasmid1.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        plasmid2 = tmp_path / "p2.gb"
+        plasmid2.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq_file = tmp_path / "sample.bam"
+        seq_file.write_text("")
+
+        plasmid_list = tmp_path / "plasmids.txt"
+        plasmid_list.write_text(f"{plasmid1}\n{plasmid2}\n")
+
+        output = tmp_path / "output"
+
+        # Make compare_alignments fail on ALL calls
+        def compare_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
+            raise ValueError("All combinations failed")
+
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch(
+                "plasmicheck.scripts.run_pipeline.compare_alignments",
+                side_effect=compare_side_effect,
+            ),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+            pytest.raises(RuntimeError, match="All 2 combinations failed"),
+        ):
+            # Should raise RuntimeError when all combinations fail
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid_list),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_file),
+                overwrite=False,
+            )
+
+    @pytest.mark.unit
+    def test_per_combination_timing_logged(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """Verify per-combination timing is logged at INFO level."""
+        import logging
+
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid = tmp_path / "p.gb"
+        plasmid.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq_file = tmp_path / "sample.bam"
+        seq_file.write_text("")
+
+        output = tmp_path / "output"
+
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+            caplog.at_level(logging.INFO),
+        ):
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_file),
+                overwrite=False,
+            )
+
+            # Check for timing log message (format: "p.gb x sample.bam: NN.Ns")
+            timing_logs = [
+                record.message
+                for record in caplog.records
+                if "p.gb x sample.bam:" in record.message and "s" in record.message
+            ]
+            assert len(timing_logs) >= 1, "Expected at least one timing log message"
