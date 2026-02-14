@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 **Phase:** 4 - Foundation
-**Plan:** 02 of 03
+**Plan:** 01 of 03
 **Status:** In progress
-**Progress:** [██░░░░░░░░] 2/18 requirements (11%)
+**Progress:** [█░░░░░░░░░] 1/18 requirements (6%)
 
-Last activity: 2026-02-14 — Completed plan 04-02 (benchmark script)
+Last activity: 2026-02-14 — Completed plan 04-01 (regression testing infrastructure)
 
 ## Performance Metrics
 
@@ -41,15 +41,15 @@ Last activity: 2026-02-14 — Completed plan 04-02 (benchmark script)
 - Use directory mode plotly.js with offline fallback for air-gapped environments
 - ThreadPoolExecutor for parallel alignment (not ProcessPoolExecutor)
 - samtools collate for name grouping (30-50% faster than sort -n)
-- **NEW (04-02):** Use time.perf_counter() for benchmark timing (higher resolution than timeit)
-- **NEW (04-02):** Exclude warm-up iteration from benchmark statistics to avoid index generation skew
-- **NEW (04-02):** Support step filtering via --steps flag for targeted benchmarking
+- **NEW (04-01):** Use atomic write pattern (tempfile + os.replace) for baseline caching to prevent corruption on crash
+- **NEW (04-01):** Store baselines as JSON for human readability and easy diff inspection
+- **NEW (04-01):** Compare verdicts exactly, ratios with ±0.001 tolerance for regression tests
 
 ### Todos
 
-- [x] TEST-01: Regression tests (04-01)
-- [x] TEST-02: Benchmark script (04-02)
-- [ ] TEST-03: Air-gapped testing (deferred to Phase 5)
+- [x] TEST-01: Regression tests (04-01) - Complete
+- [ ] TEST-02: Benchmark script (04-02)
+- [ ] TEST-03: Air-gapped testing
 - [ ] Verify samtools version >=1.9 (collate requirement)
 - [ ] Decide on matplotlib style config for visual consistency with Plotly
 
@@ -66,20 +66,20 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Completed plan 04-02 (benchmark script)
+**What just happened:** Completed plan 04-01 (regression testing infrastructure)
 
-**Last session:** 2026-02-14 07:04:26
-**Stopped at:** Completed 04-02-PLAN.md
+**Last session:** 2026-02-14 07:06:06
+**Stopped at:** Completed 04-01-SUMMARY.md
 **Resume file:** None
 
-**Next step:** Execute plan 04-03 (final Phase 4 plan)
+**Next step:** Execute plan 04-02 (benchmark script)
 
 **Key context for next session:**
-- Benchmark confirms report generation is bottleneck: 93.2% of time (5.1s/6.5s)
-- Phase 4 almost complete: 2/3 plans done (TEST-01, TEST-02 done; one more to go)
-- TEST-03 (air-gapped testing) deferred to Phase 5 per user decision
-- Baseline measurements now accurate: 6.5s total on synthetic dataset (was 13.2s estimate)
+- Regression test script complete and validated end-to-end
+- Baseline captures v0.31.0 contamination ratios, verdicts, and read assignments
+- All Phase 5-7 optimizations must pass: `python scripts/regression_test.py`
+- Script uses atomic write pattern (tempfile + os.replace) to prevent baseline corruption
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after plan 04-02 completion*
+*Last updated: 2026-02-14 after plan 04-01 completion*
