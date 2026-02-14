@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 **Phase:** 4 - Foundation
-**Plan:** Not yet created
-**Status:** Roadmap defined, awaiting Phase 4 planning
-**Progress:** [░░░░░░░░░░] 0/18 requirements (0%)
+**Plan:** 02 of 03
+**Status:** In progress
+**Progress:** [██░░░░░░░░] 2/18 requirements (11%)
 
-Last activity: 2026-02-14 — Roadmap created for v0.32.0
+Last activity: 2026-02-14 — Completed plan 04-02 (benchmark script)
 
 ## Performance Metrics
 
 **Baseline (v0.31.0):**
-- Small dataset (200 reads): 13.2s
+- Small dataset (200 reads): 6.5s (new benchmark measurement)
 - Large dataset (1M reads): ~4.5 min per combination
-- Report generation: 83.6% of time (11.1s/13.2s)
+- Report generation: 93.2% of time (5.1s/6.5s) (new benchmark measurement)
 - Interactive HTML size: 9.6 MB (embedded plotly.js)
 
 **Target (v0.32.0):**
@@ -36,15 +36,20 @@ Last activity: 2026-02-14 — Roadmap created for v0.32.0
 - Performance analysis completed (PERFORMANCE_ANALYSIS.md) — profiled all pipeline steps
 - Kaleido v1.2.0 is the root cause of report generation bottleneck (11s for 2 PNGs)
 - Streaming BAM comparison (v0.31.0) already reduced memory from O(n) to O(1)
-- **NEW:** Four-phase roadmap prioritizes impact-per-effort: Foundation → Report → Alignment → Comparison
-- **NEW:** Keep Kaleido v1.2.0 (not downgrade to 0.2.1) but make PNG export opt-in
-- **NEW:** Use directory mode plotly.js with offline fallback for air-gapped environments
-- **NEW:** ThreadPoolExecutor for parallel alignment (not ProcessPoolExecutor)
-- **NEW:** samtools collate for name grouping (30-50% faster than sort -n)
+- Four-phase roadmap prioritizes impact-per-effort: Foundation → Report → Alignment → Comparison
+- Keep Kaleido v1.2.0 (not downgrade to 0.2.1) but make PNG export opt-in
+- Use directory mode plotly.js with offline fallback for air-gapped environments
+- ThreadPoolExecutor for parallel alignment (not ProcessPoolExecutor)
+- samtools collate for name grouping (30-50% faster than sort -n)
+- **NEW (04-02):** Use time.perf_counter() for benchmark timing (higher resolution than timeit)
+- **NEW (04-02):** Exclude warm-up iteration from benchmark statistics to avoid index generation skew
+- **NEW (04-02):** Support step filtering via --steps flag for targeted benchmarking
 
 ### Todos
 
-- [ ] Plan Phase 4 (Foundation) — regression tests, benchmarks, air-gapped testing
+- [x] TEST-01: Regression tests (04-01)
+- [x] TEST-02: Benchmark script (04-02)
+- [ ] TEST-03: Air-gapped testing (deferred to Phase 5)
 - [ ] Verify samtools version >=1.9 (collate requirement)
 - [ ] Decide on matplotlib style config for visual consistency with Plotly
 
@@ -61,15 +66,20 @@ None currently identified.
 
 **What we're building:** Performance optimization milestone (v0.32.0)
 
-**What just happened:** Roadmap created with 4 phases (4-7) mapping all 18 requirements
+**What just happened:** Completed plan 04-02 (benchmark script)
 
-**Next step:** Plan Phase 4 (Foundation) — establish regression testing infrastructure
+**Last session:** 2026-02-14 07:04:26
+**Stopped at:** Completed 04-02-PLAN.md
+**Resume file:** None
+
+**Next step:** Execute plan 04-03 (final Phase 4 plan)
 
 **Key context for next session:**
-- Phase numbering starts at 4 (continues from v0.31.0 Phase 3)
-- Research identified critical pitfalls: CDN breaks air-gapped, collate != sort -n for supplementary alignments, parallel alignment file handle exhaustion
-- All optimizations must pass regression tests (contamination ratios/verdicts unchanged)
+- Benchmark confirms report generation is bottleneck: 93.2% of time (5.1s/6.5s)
+- Phase 4 almost complete: 2/3 plans done (TEST-01, TEST-02 done; one more to go)
+- TEST-03 (air-gapped testing) deferred to Phase 5 per user decision
+- Baseline measurements now accurate: 6.5s total on synthetic dataset (was 13.2s estimate)
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after roadmap creation*
+*Last updated: 2026-02-14 after plan 04-02 completion*
