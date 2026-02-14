@@ -20,6 +20,8 @@ MISMATCH_PENALTY: int = _cfg["scoring"]["mismatch_penalty"]
 DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
 UNCLEAR_RANGE: dict[str, float] = _cfg["unclear_range"]
 SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
+FILTER_BACKBONE_ONLY: bool = _cfg.get("filter_backbone_only", True)
+SCORE_MARGIN: int = _cfg.get("score_margin", 0)
 
 
 def calculate_alignment_score(read: Any) -> int:
@@ -60,6 +62,25 @@ def parse_insert_region(cdna_positions_file: str) -> tuple[int, int]:
     cdna_start = int(lines[0].split(": ")[1])
     cdna_end = int(lines[1].split(": ")[1])
     return (cdna_start, cdna_end)
+
+
+def read_overlaps_insert(read: Any, insert_region: tuple[int, int]) -> bool:
+    """Check if read alignment overlaps the insert region.
+
+    Uses pysam half-open interval convention:
+    - read.reference_start: 0-based, inclusive
+    - read.reference_end: 0-based, exclusive
+
+    insert_region uses inclusive boundaries on both ends (from cDNA_positions.txt).
+    """
+    if read.is_unmapped:
+        return False
+    read_start = read.reference_start
+    read_end = read.reference_end
+    if read_start is None or read_end is None:
+        return False
+    # No overlap: read ends before insert starts, or read starts after insert ends
+    return not (read_end <= insert_region[0] or read_start > insert_region[1])
 
 
 def calculate_coverage_outside_insert(plasmid_bam: str, insert_region: tuple[int, int]) -> float:
@@ -193,21 +214,59 @@ def _write_assignment(
     )
 
 
-def _assign(plasmid_score: int, human_score: int) -> str:
+def _assign(
+    plasmid_score: int,
+    human_score: int,
+    *,
+    plasmid_read: Any | None = None,
+    insert_region: tuple[int, int] | None = None,
+    score_margin: int = 0,
+) -> str:
+    """Assign read to category with optional backbone and margin filtering.
+
+    Order of checks:
+    1. Score margin (if enabled and scores differ) -> Ambiguous
+    2. Exact tie -> Tied
+    3. Plasmid wins + insert_region available -> check overlap -> Plasmid or Backbone_Only
+    4. Plasmid wins + no insert_region -> Plasmid (fallback)
+    5. Human wins -> Human
+    """
+    # Score margin check first (if enabled)
+    if score_margin > 0:
+        score_diff = abs(plasmid_score - human_score)
+        if 0 < score_diff < score_margin:
+            return "Ambiguous"
+
+    # Exact tie
+    if plasmid_score == human_score:
+        return "Tied"
+
+    # Plasmid wins
     if plasmid_score > human_score:
+        if insert_region is not None and plasmid_read is not None:
+            if read_overlaps_insert(plasmid_read, insert_region):
+                return "Plasmid"
+            else:
+                return "Backbone_Only"
         return "Plasmid"
-    elif human_score > plasmid_score:
-        return "Human"
-    return "Tied"
+
+    # Human wins
+    return "Human"
 
 
 def _streaming_compare(
     plasmid_ns_bam: str,
     human_ns_bam: str,
     outfile: IO[str],
+    *,
+    insert_region: tuple[int, int] | None = None,
+    score_margin: int = 0,
 ) -> dict[str, int]:
     """Two-pointer merge over name-sorted BAMs.  Returns assigned counts."""
-    assigned_counts: dict[str, int] = {"Plasmid": 0, "Human": 0, "Tied": 0}
+    assigned_counts: dict[str, int] = {
+        "Plasmid": 0, "Human": 0, "Tied": 0,
+        "Backbone_Only": 0, "Ambiguous": 0,
+    }
 
     plasmid_iter = _iter_reads_by_name(plasmid_ns_bam)
     human_iter = _iter_reads_by_name(human_ns_bam)
@@ -227,7 +286,7 @@ def _streaming_compare(
             h_read = _best_read(h_item[1])
             ps = calculate_alignment_score(p_read)
             hs = calculate_alignment_score(h_read)
-            assigned = _assign(ps, hs)
+            assigned = _assign(ps, hs, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin)
             assigned_counts[assigned] += 1
             _write_assignment(outfile, p_name, assigned, ps, hs, p_read, h_read)
             p_item = next(plasmid_iter, None)
@@ -239,7 +298,7 @@ def _streaming_compare(
             assert p_name is not None
             p_read = _best_read(p_item[1])
             ps = calculate_alignment_score(p_read)
-            assigned = _assign(ps, 0)
+            assigned = _assign(ps, 0, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin)
             assigned_counts[assigned] += 1
             _write_assignment(outfile, p_name, assigned, ps, 0, p_read, None)
             p_item = next(plasmid_iter, None)
@@ -249,7 +308,7 @@ def _streaming_compare(
             assert h_item is not None
             h_read = _best_read(h_item[1])
             hs = calculate_alignment_score(h_read)
-            assigned = _assign(0, hs)
+            assigned = _assign(0, hs, score_margin=score_margin)
             assigned_counts[assigned] += 1
             _write_assignment(outfile, h_name, assigned, 0, hs, None, h_read)
             h_item = next(human_iter, None)
@@ -263,21 +322,30 @@ def compare_alignments(
     logging.info("Starting comparison of alignments")
     logging.debug(f"Processing BAM files: {plasmid_bam} (plasmid), {human_bam} (human)")
 
-    # Extract the INSERT_REGION from cDNA_positions.txt
+    # Parse insert region with graceful fallback
     cdna_positions_file = os.path.join(os.path.dirname(output_basename), "cDNA_positions.txt")
-    if not os.path.exists(cdna_positions_file):
-        raise FileNotFoundError(
-            f"Expected cDNA_positions.txt at {cdna_positions_file} but the file was not found."
+    insert_region: tuple[int, int] | None = None
+    try:
+        insert_region = parse_insert_region(cdna_positions_file)
+        logging.debug(f"INSERT_REGION extracted from {cdna_positions_file}: {insert_region}")
+    except (FileNotFoundError, ValueError, IndexError) as e:
+        logging.warning(
+            f"Backbone filtering unavailable: {e}. "
+            "Falling back to pre-v0.33.0 behavior (no insert-region filtering)."
         )
 
-    insert_region = parse_insert_region(cdna_positions_file)
-    logging.debug(f"INSERT_REGION extracted from {cdna_positions_file}: {insert_region}")
-
-    coverage_outside_insert = calculate_coverage_outside_insert(plasmid_bam, insert_region)
-    logging.debug(f"Coverage outside INSERT_REGION: {coverage_outside_insert}")
-
-    mismatches_near_insert = count_mismatches_near_insert_end(plasmid_bam, insert_region)
-    logging.debug(f"Mismatches near INSERT_REGION: {mismatches_near_insert}")
+    coverage_outside_insert = 0.0
+    mismatches_near_insert: dict[str, int] = {
+        "with_mismatches_or_clipping": 0,
+        "without_mismatches_or_clipping": 0,
+    }
+    if insert_region is not None:
+        coverage_outside_insert = calculate_coverage_outside_insert(plasmid_bam, insert_region)
+        logging.debug(f"Coverage outside INSERT_REGION: {coverage_outside_insert}")
+        mismatches_near_insert = count_mismatches_near_insert_end(plasmid_bam, insert_region)
+        logging.debug(f"Mismatches near INSERT_REGION: {mismatches_near_insert}")
+    else:
+        logging.warning("Skipping coverage/mismatch metrics (insert region unavailable).")
 
     # Group BAMs by read name into temporary files for streaming merge
     plasmid_ns = plasmid_bam.replace(".bam", ".namesorted.bam")
@@ -292,7 +360,11 @@ def compare_alignments(
         outfile.write(
             "ReadID\tAssignedTo\tPlasmidScore\tHumanScore\tPlasmidCIGAR\tHumanCIGAR\tPlasmidMapQ\tHumanMapQ\n"
         )
-        assigned_counts = _streaming_compare(plasmid_ns, human_ns, outfile)
+        assigned_counts = _streaming_compare(
+            plasmid_ns, human_ns, outfile,
+            insert_region=insert_region,
+            score_margin=SCORE_MARGIN,
+        )
 
     # Clean up temporary name-sorted BAMs
     for ns_bam in (plasmid_ns, human_ns):
@@ -303,7 +375,13 @@ def compare_alignments(
 
     plasmid_count = assigned_counts["Plasmid"]
     human_count = assigned_counts["Human"]
-    ratio = plasmid_count / human_count if human_count != 0 else float("inf")
+    if FILTER_BACKBONE_ONLY:
+        # Exclude Backbone_Only and Ambiguous from ratio (new v0.33.0 behavior)
+        ratio = plasmid_count / human_count if human_count != 0 else float("inf")
+    else:
+        # Include all plasmid-favoring categories (pre-v0.33.0 behavior)
+        effective_plasmid = plasmid_count + assigned_counts["Backbone_Only"] + assigned_counts["Ambiguous"]
+        ratio = effective_plasmid / human_count if human_count != 0 else float("inf")
 
     if ratio > threshold:
         verdict = "Sample is contaminated with plasmid DNA"

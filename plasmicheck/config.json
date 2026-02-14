@@ -1,6 +1,8 @@
 {
   "required_tools": ["minimap2", "samtools"],
   "required_python_packages": ["Bio", "pysam", "jinja2", "matplotlib"],
+  "filter_backbone_only": true,
+  "score_margin": 0,
   "default_threshold": 0.8,
   "unclear_range": {
     "lower_bound": 0.6,
@@ -63,7 +65,9 @@
     "colors": {
       "human": "blue",
       "tied": "orange",
-      "plasmid": "red"
+      "plasmid": "red",
+      "backbone_only": "lightgray",
+      "ambiguous": "darkgray"
     },
     "title_box_plot": "Box Plot of Plasmid Scores by Assignment",
     "title_scatter_plot": "Scatter Plot of Plasmid vs. Human Scores by Assignment",

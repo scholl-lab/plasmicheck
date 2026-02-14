@@ -21,6 +21,8 @@ ASSIGNMENT_COLORS: dict[str, str] = {
     "Plasmid": "#636EFA",
     "Human": "#EF553B",
     "Tied": "#00CC96",
+    "Backbone_Only": "#D3D3D3",  # lightgray
+    "Ambiguous": "#A9A9A9",      # darkgray
 }
 
 # Heatmap colors matching Plotly config
