@@ -69,22 +69,28 @@ Plans:
 
 ### Phase 6: Alignment Optimization
 
-**Goal:** Parallelize alignment execution and optimize threading for 1.5-2x speedup on real-world datasets.
+**Goal:** Optimize alignment threading with auto-detection across Docker/SLURM/bare-metal environments and configurable sort memory for 1.5-2x speedup on real-world datasets.
 
 **Dependencies:** Phase 4 (regression tests must pass)
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md -- Thread detection module, align_reads parameterization, config update
+- [ ] 06-02-PLAN.md -- CLI --threads flag, pipeline wiring, integration tests
+
 **Requirements:**
-- ALGN-01: Plasmid and human alignments run concurrently via ThreadPoolExecutor
+- ALGN-01: Plasmid and human alignments run sequentially with full thread allocation (user override of original concurrent design)
 - ALGN-02: Pipeline auto-detects CPU count with cgroup/SLURM awareness
 - ALGN-03: User can override thread count with `--threads` CLI flag
 - ALGN-04: All samtools sort commands use `-m 2G` memory flag
 
 **Success Criteria:**
-1. Pipeline runs plasmid and human alignments concurrently (observable via `ps aux` showing 2 minimap2 processes during alignment phase)
+1. Pipeline runs alignments sequentially with full thread allocation to each (user decision over concurrent execution)
 2. Auto-detection respects Docker CPU limits (e.g., `--cpus=4` results in 4 threads, not host's 16)
 3. User can override auto-detected threads with `--threads 8` flag
-4. Large dataset (1M reads) alignment completes 1.5-2x faster than v0.31.0 sequential execution
-5. Regression tests pass with identical BAM outputs (same QNAME order, same alignment scores)
+4. Thread count and detection source always logged at pipeline start
+5. Regression tests pass with identical contamination verdicts and ratios
 
 ### Phase 7: Comparison & Cleanup
 
@@ -112,7 +118,7 @@ Plans:
 |-------|--------------|--------|------------|
 | 4 - Foundation | TEST-01, TEST-02 | Complete | 100% |
 | 5 - Report Optimization | REPT-01 through REPT-06 | Planned | 0% |
-| 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Pending | 0% |
+| 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Planned | 0% |
 | 7 - Comparison & Cleanup | COMP-01, COMP-02, ARCH-01, ARCH-02, ARCH-03 | Pending | 0% |
 
 **Overall:** 2/18 requirements completed (11%)
@@ -129,4 +135,4 @@ No orphaned requirements. 1 requirement dropped (TEST-03).
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 5 planning*
+*Last updated: 2026-02-14 after Phase 6 planning*
