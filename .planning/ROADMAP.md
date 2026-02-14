@@ -46,10 +46,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- CLI flags and pipeline wiring (--static-report, --plotly-mode)
-- [ ] 05-02-PLAN.md -- Single-sample report optimization (generate_report.py + template)
-- [ ] 05-03-PLAN.md -- Summary report optimization (generate_summary_reports.py + template)
-- [ ] 05-04-PLAN.md -- Test fixes, CI validation, and regression verification
+- [x] 05-01-PLAN.md -- CLI flags and pipeline wiring (--static-report, --plotly-mode)
+- [x] 05-02-PLAN.md -- Single-sample report optimization (generate_report.py + template)
+- [x] 05-03-PLAN.md -- Summary report optimization (generate_summary_reports.py + template)
+- [x] 05-04-PLAN.md -- Test fixes, CI validation, and regression verification
 
 **Requirements:**
 - REPT-01: User can run pipeline without generating static PNG reports
@@ -117,11 +117,11 @@ Plans:
 | Phase | Requirements | Status | Completion |
 |-------|--------------|--------|------------|
 | 4 - Foundation | TEST-01, TEST-02 | Complete | 100% |
-| 5 - Report Optimization | REPT-01 through REPT-06 | Planned | 0% |
+| 5 - Report Optimization | REPT-01 through REPT-06 | Complete | 100% |
 | 6 - Alignment Optimization | ALGN-01 through ALGN-04 | Planned | 0% |
 | 7 - Comparison & Cleanup | COMP-01, COMP-02, ARCH-01, ARCH-02, ARCH-03 | Pending | 0% |
 
-**Overall:** 2/18 requirements completed (11%)
+**Overall:** 8/18 requirements completed (44%)
 
 ## Coverage
 
@@ -135,4 +135,4 @@ No orphaned requirements. 1 requirement dropped (TEST-03).
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 6 planning*
+*Last updated: 2026-02-14 after Phase 5 completion*

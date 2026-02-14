@@ -9,12 +9,12 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Report Optimization
 
-- [ ] **REPT-01**: User can run pipeline without generating static PNG reports (default behavior — no `--static-report` flag)
-- [ ] **REPT-02**: User can opt into static PNG report generation with `--static-report` CLI flag
-- [ ] **REPT-03**: Interactive HTML reports use shared `plotly.min.js` file (directory mode) instead of embedding 4.6 MB per plot
-- [ ] **REPT-04**: User can choose plotly.js inclusion mode via config (`cdn`, `directory`, `embedded`)
-- [ ] **REPT-05**: Kaleido uses `start_sync_server()` initialization for faster PNG export when static reports are requested
-- [ ] **REPT-06**: Report-related imports (pandas, plotly, jinja2) are lazy-loaded inside functions, not at module level
+- [x] **REPT-01**: User can run pipeline without generating static PNG reports (default behavior — no `--static-report` flag)
+- [x] **REPT-02**: User can opt into static PNG report generation with `--static-report` CLI flag
+- [x] **REPT-03**: Interactive HTML reports use shared `plotly.min.js` file (directory mode) instead of embedding 4.6 MB per plot
+- [x] **REPT-04**: User can choose plotly.js inclusion mode via CLI flag (`cdn`, `directory`, `embedded`)
+- [x] **REPT-05**: Kaleido uses `start_sync_server()` initialization for faster PNG export when static reports are requested
+- [x] **REPT-06**: Report-related imports (pandas, plotly, jinja2) are lazy-loaded inside functions, not at module level
 
 ### Alignment Optimization
 
@@ -76,13 +76,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | TEST-01 | Phase 4 | Complete |
 | TEST-02 | Phase 4 | Complete |
-| TEST-03 | Phase 5 | Pending |
-| REPT-01 | Phase 5 | Pending |
-| REPT-02 | Phase 5 | Pending |
-| REPT-03 | Phase 5 | Pending |
-| REPT-04 | Phase 5 | Pending |
-| REPT-05 | Phase 5 | Pending |
-| REPT-06 | Phase 5 | Pending |
+| TEST-03 | Phase 5 | Dropped |
+| REPT-01 | Phase 5 | Complete |
+| REPT-02 | Phase 5 | Complete |
+| REPT-03 | Phase 5 | Complete |
+| REPT-04 | Phase 5 | Complete |
+| REPT-05 | Phase 5 | Complete |
+| REPT-06 | Phase 5 | Complete |
 | ALGN-01 | Phase 6 | Pending |
 | ALGN-02 | Phase 6 | Pending |
 | ALGN-03 | Phase 6 | Pending |
@@ -100,4 +100,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 4 completion*
+*Last updated: 2026-02-14 after Phase 5 completion*
