@@ -117,9 +117,7 @@ def test_mammalian_resistance_patterns_match_hygror() -> None:
 @pytest.mark.unit
 def test_mammalian_resistance_patterns_match_hygromycin() -> None:
     """Test that Hygromycin matches mammalian resistance patterns."""
-    assert _matches_resistance_gene(
-        "Hygromycin", MAMMALIAN_RESISTANCE_PATTERNS, EXCLUDE_PATTERNS
-    )
+    assert _matches_resistance_gene("Hygromycin", MAMMALIAN_RESISTANCE_PATTERNS, EXCLUDE_PATTERNS)
 
 
 @pytest.mark.unit
@@ -131,17 +129,13 @@ def test_mammalian_resistance_patterns_match_neor() -> None:
 @pytest.mark.unit
 def test_mammalian_resistance_patterns_match_blasticidinr() -> None:
     """Test that BlasticidinR matches mammalian resistance patterns."""
-    assert _matches_resistance_gene(
-        "BlasticidinR", MAMMALIAN_RESISTANCE_PATTERNS, EXCLUDE_PATTERNS
-    )
+    assert _matches_resistance_gene("BlasticidinR", MAMMALIAN_RESISTANCE_PATTERNS, EXCLUDE_PATTERNS)
 
 
 @pytest.mark.unit
 def test_mammalian_resistance_patterns_match_zeocinr() -> None:
     """Test that ZeocinR matches mammalian resistance patterns."""
-    assert _matches_resistance_gene(
-        "ZeocinR", MAMMALIAN_RESISTANCE_PATTERNS, EXCLUDE_PATTERNS
-    )
+    assert _matches_resistance_gene("ZeocinR", MAMMALIAN_RESISTANCE_PATTERNS, EXCLUDE_PATTERNS)
 
 
 @pytest.mark.unit
@@ -250,7 +244,9 @@ def test_word_boundaries_supergfp_no_match() -> None:
 @pytest.mark.unit
 def test_detect_single_gene_ampr(tmp_path: Path) -> None:
     """Test detection of single AmpR gene."""
-    gb_file = create_test_genbank(tmp_path, [{"type": "CDS", "label": "AmpR", "start": 100, "end": 900}])
+    gb_file = create_test_genbank(
+        tmp_path, [{"type": "CDS", "label": "AmpR", "start": 100, "end": 900}]
+    )
 
     genes = detect_resistance_genes(gb_file)
 
@@ -284,7 +280,9 @@ def test_detect_multiple_genes(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_detect_no_cds_features(tmp_path: Path) -> None:
     """Test that GenBank with no CDS features returns empty list."""
-    gb_file = create_test_genbank(tmp_path, [{"type": "promoter", "label": "Amp prom", "start": 50, "end": 100}])
+    gb_file = create_test_genbank(
+        tmp_path, [{"type": "promoter", "label": "Amp prom", "start": 50, "end": 100}]
+    )
 
     genes = detect_resistance_genes(gb_file)
 
@@ -294,7 +292,9 @@ def test_detect_no_cds_features(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_detect_no_matching_patterns(tmp_path: Path) -> None:
     """Test that GenBank with CDS but no matching patterns returns empty list."""
-    gb_file = create_test_genbank(tmp_path, [{"type": "CDS", "label": "SomeGene", "start": 100, "end": 500}])
+    gb_file = create_test_genbank(
+        tmp_path, [{"type": "CDS", "label": "SomeGene", "start": 100, "end": 500}]
+    )
 
     genes = detect_resistance_genes(gb_file)
 
@@ -364,7 +364,9 @@ def test_detect_genes_exclude_insert_overlap(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_detect_genes_no_insert_region(tmp_path: Path) -> None:
     """Test that genes with no insert region have region='unknown'."""
-    gb_file = create_test_genbank(tmp_path, [{"type": "CDS", "label": "AmpR", "start": 100, "end": 500}])
+    gb_file = create_test_genbank(
+        tmp_path, [{"type": "CDS", "label": "AmpR", "start": 100, "end": 500}]
+    )
 
     genes = detect_resistance_genes(gb_file, insert_region=None)
 
@@ -517,7 +519,9 @@ def test_identify_gene_name_checks_product_qualifier(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_identify_gene_name_checks_gene_qualifier(tmp_path: Path) -> None:
     """Test that /gene qualifier is checked if /label and /product are missing."""
-    gb_file = create_test_genbank(tmp_path, [{"type": "CDS", "gene": "KanR", "start": 100, "end": 500}])
+    gb_file = create_test_genbank(
+        tmp_path, [{"type": "CDS", "gene": "KanR", "start": 100, "end": 500}]
+    )
 
     genes = detect_resistance_genes(gb_file)
 
