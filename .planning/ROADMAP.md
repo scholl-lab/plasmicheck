@@ -68,8 +68,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Format detection module, SnapGene support, CLI --format flag, sanitized record IDs
-- [ ] 12-02-PLAN.md — Pipeline integration, quality control update, comprehensive tests
+- [x] 12-01-PLAN.md — Format detection module, SnapGene support, CLI --format flag, sanitized record IDs
+- [x] 12-02-PLAN.md — Pipeline integration, quality control update, comprehensive tests
 
 #### Phase 13: Output Restructuring
 **Goal:** Pipeline outputs are organized in logical subfolders with predictable paths
@@ -142,14 +142,14 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 | 9. Coverage Metrics | v0.33.0 | 2/2 | Complete | 2026-02-14 |
 | 10. Resistance Gene Detection | v0.33.0 | 2/2 | Complete | 2026-02-15 |
 | 11. Summary Report Integration | v0.33.0 | 2/2 | Complete | 2026-02-15 |
-| 12. Format Hardening | v0.34.0 | 0/2 | Not started | - |
+| 12. Format Hardening | v0.34.0 | 2/2 | Complete | 2026-02-15 |
 | 13. Output Restructuring | v0.34.0 | 0/2 | Not started | - |
 | 14. Cache Infrastructure | v0.34.0 | 0/3 | Not started | - |
 | 15. Splice Junction Metadata | v0.34.0 | 0/1 | Not started | - |
 | 16. Summary Visualization | v0.34.0 | 0/2 | Not started | - |
 
-**v0.34.0 Progress:** 0/10 plans complete
+**v0.34.0 Progress:** 2/10 plans complete
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 for v0.34.0 milestone*
+*Last updated: 2026-02-15 after Phase 12 completion*

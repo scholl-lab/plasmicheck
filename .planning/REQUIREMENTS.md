@@ -9,10 +9,10 @@ Requirements for v0.34.0: Robustness & Infrastructure. Each maps to roadmap phas
 
 ### Format Hardening (#75)
 
-- [ ] **FMT-01**: Auto-detect file format via magic bytes to distinguish xDNA vs SnapGene `.dna`
-- [ ] **FMT-02**: Support SnapGene `.dna` files via BioPython `snapgene` parser
-- [ ] **FMT-03**: Override xDNA record ID with sanitized filename instead of truncated comment field
-- [ ] **FMT-04**: Improved error messages for unsupported xDNA versions with conversion suggestions
+- [x] **FMT-01**: Auto-detect file format via magic bytes to distinguish xDNA vs SnapGene `.dna`
+- [x] **FMT-02**: Support SnapGene `.dna` files via BioPython `snapgene` parser
+- [x] **FMT-03**: Override xDNA record ID with sanitized filename instead of truncated comment field
+- [x] **FMT-04**: Improved error messages for unsupported xDNA versions with conversion suggestions
 
 ### Summary Visualization (#51)
 
@@ -81,10 +81,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FMT-01 | Phase 12 | Pending |
-| FMT-02 | Phase 12 | Pending |
-| FMT-03 | Phase 12 | Pending |
-| FMT-04 | Phase 12 | Pending |
+| FMT-01 | Phase 12 | Complete |
+| FMT-02 | Phase 12 | Complete |
+| FMT-03 | Phase 12 | Complete |
+| FMT-04 | Phase 12 | Complete |
 | OUT-01 | Phase 13 | Pending |
 | OUT-02 | Phase 13 | Pending |
 | OUT-03 | Phase 13 | Pending |
