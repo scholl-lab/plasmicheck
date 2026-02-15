@@ -398,9 +398,9 @@ def create_metric_heatmap_data(summary_df: pd.DataFrame, metric_category: str) -
     filtered["Value"] = pd.to_numeric(filtered["Value"], errors="coerce")
 
     # Pivot to Sample x Plasmid grid
-    metric_data = filtered.pivot(
-        index="Sample", columns="Plasmid", values="Value"
-    ).round(ROUND_DECIMALS)
+    metric_data = filtered.pivot(index="Sample", columns="Plasmid", values="Value").round(
+        ROUND_DECIMALS
+    )
 
     return metric_data
 
@@ -523,9 +523,7 @@ def plot_coverage_outside_insert_boxplot(
     logging.info("Generating CoverageOutsideINSERT boxplot.")
 
     # Pivot to Sample x Plasmid, then melt for boxplot
-    coverage_pivot = coverage_df.pivot(
-        index="Sample", columns="Plasmid", values="Value"
-    )
+    coverage_pivot = coverage_df.pivot(index="Sample", columns="Plasmid", values="Value")
     boxplot_data = coverage_pivot.melt(
         var_name="Plasmid", value_name="Value", ignore_index=False
     ).reset_index()
@@ -584,16 +582,12 @@ def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     available_rows = summary_df[summary_df["Category"] == "ResistanceGenesAvailable"]
     if available_rows.empty or (available_rows["Value"] == "false").all():
         # No genes available - return empty DataFrame with correct structure
-        return pd.DataFrame(
-            columns=["Sample", "Plasmid", "Gene Name", "Mean Depth", "Breadth (%)"]
-        )
+        return pd.DataFrame(columns=["Sample", "Plasmid", "Gene Name", "Mean Depth", "Breadth (%)"])
 
     # Find all ResistanceGenes rows
     gene_rows = summary_df[summary_df["Category"] == "ResistanceGenes"]
     if gene_rows.empty:
-        return pd.DataFrame(
-            columns=["Sample", "Plasmid", "Gene Name", "Breadth (%)"]
-        )
+        return pd.DataFrame(columns=["Sample", "Plasmid", "Gene Name", "Breadth (%)"])
 
     # Build flat table
     table_rows: list[dict[str, Any]] = []
@@ -631,13 +625,15 @@ def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
             mean_depth = float(depth_row.iloc[0]["Value"]) if not depth_row.empty else 0.0
             breadth = float(breadth_row.iloc[0]["Value"]) if not breadth_row.empty else 0.0
 
-            table_rows.append({
-                "Sample": sample,
-                "Plasmid": plasmid,
-                "Gene Name": gene_name,
-                "Mean Depth": mean_depth,
-                "Breadth (%)": breadth,
-            })
+            table_rows.append(
+                {
+                    "Sample": sample,
+                    "Plasmid": plasmid,
+                    "Gene Name": gene_name,
+                    "Mean Depth": mean_depth,
+                    "Breadth (%)": breadth,
+                }
+            )
 
     return pd.DataFrame(table_rows)
 
@@ -736,9 +732,13 @@ def generate_report(
     breadth_heatmap_png_base64 = ""
     if static_report:
         if coverage_outside_heatmap_png:
-            coverage_outside_heatmap_png_base64 = encode_image_to_base64(coverage_outside_heatmap_png)
+            coverage_outside_heatmap_png_base64 = encode_image_to_base64(
+                coverage_outside_heatmap_png
+            )
         if coverage_outside_boxplot_png:
-            coverage_outside_boxplot_png_base64 = encode_image_to_base64(coverage_outside_boxplot_png)
+            coverage_outside_boxplot_png_base64 = encode_image_to_base64(
+                coverage_outside_boxplot_png
+            )
         if mismatches_heatmap_png:
             mismatches_heatmap_png_base64 = encode_image_to_base64(mismatches_heatmap_png)
         if depth_heatmap_png:

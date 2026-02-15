@@ -388,7 +388,9 @@ class TestSaveTablesExtended:
         ratio_df = pd.DataFrame(
             {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Ratio"], "Value": [1.5]}
         )
-        p_values_df = pd.DataFrame({"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]})
+        p_values_df = pd.DataFrame(
+            {"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]}
+        )
         extended_df = pd.DataFrame(
             {
                 "Sample": ["s1"],
@@ -426,7 +428,9 @@ class TestSaveTablesExtended:
         ratio_df = pd.DataFrame(
             {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Ratio"], "Value": [1.5]}
         )
-        p_values_df = pd.DataFrame({"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]})
+        p_values_df = pd.DataFrame(
+            {"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]}
+        )
         resistance_df = pd.DataFrame(
             {
                 "Sample": ["s1"],
@@ -465,7 +469,9 @@ class TestSaveTablesExtended:
         ratio_df = pd.DataFrame(
             {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Ratio"], "Value": [1.5]}
         )
-        p_values_df = pd.DataFrame({"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]})
+        p_values_df = pd.DataFrame(
+            {"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]}
+        )
         extended_df = pd.DataFrame(
             {
                 "Sample": ["s1"],
@@ -521,12 +527,12 @@ class TestSaveTablesExtended:
         ratio_df = pd.DataFrame(
             {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Ratio"], "Value": [1.5]}
         )
-        p_values_df = pd.DataFrame({"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]})
+        p_values_df = pd.DataFrame(
+            {"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]}
+        )
 
         # Call without new optional args (like pre-v0.33.0 code)
-        save_tables_as_tsv_and_excel(
-            combined_df, verdict_df, ratio_df, p_values_df, str(tmp_path)
-        )
+        save_tables_as_tsv_and_excel(combined_df, verdict_df, ratio_df, p_values_df, str(tmp_path))
 
         data_dir = tmp_path / "data"
         assert (data_dir / "combined_table.tsv").exists()

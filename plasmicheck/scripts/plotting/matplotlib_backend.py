@@ -311,7 +311,9 @@ def generate_metric_heatmap_matplotlib(
     from matplotlib.colors import LinearSegmentedColormap
 
     if metric_data.empty:
-        logger.warning(f"Empty DataFrame provided to generate_metric_heatmap_matplotlib for {metric_name}")
+        logger.warning(
+            f"Empty DataFrame provided to generate_metric_heatmap_matplotlib for {metric_name}"
+        )
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.text(
             0.5,
