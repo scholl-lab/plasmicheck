@@ -7,6 +7,10 @@ from pathlib import Path
 import pytest
 
 from plasmicheck.output_paths import OutputPaths
+from plasmicheck.scripts.generate_summary_reports import (
+    _extract_sample_plasmid,
+    read_compare_outputs,
+)
 
 
 @pytest.mark.unit
@@ -291,3 +295,115 @@ def test_all_paths_return_path_objects() -> None:
 
     # Base-level files
     assert isinstance(paths.md5sum_file, Path)
+
+
+@pytest.mark.unit
+def test_extract_sample_plasmid_integration_with_output_paths(tmp_path: Path) -> None:
+    """Test that OutputPaths directory structure is compatible with _extract_sample_plasmid."""
+    # Create OutputPaths
+    paths = OutputPaths(
+        output_root=tmp_path,
+        sample_name="sampleA",
+        plasmid_name="plasmidX",
+    )
+
+    # Create directories
+    paths.ensure_directories()
+
+    # Write dummy comparison files
+    paths.comparison_summary.write_text("Category\tMetric\tCount\nVerdict\tContaminated\t1\n")
+    paths.comparison_reads.write_text("ReadName\tAssignedTo\nread1\tPlasmid\n")
+
+    # Extract sample/plasmid from the paths
+    sample_from_summary, plasmid_from_summary = _extract_sample_plasmid(
+        str(paths.comparison_summary)
+    )
+    sample_from_reads, plasmid_from_reads = _extract_sample_plasmid(str(paths.comparison_reads))
+
+    # Should match the original values
+    assert sample_from_summary == "sampleA"
+    assert plasmid_from_summary == "plasmidX"
+    assert sample_from_reads == "sampleA"
+    assert plasmid_from_reads == "plasmidX"
+
+
+@pytest.mark.unit
+def test_output_paths_with_read_compare_outputs(tmp_path: Path) -> None:
+    """Integration test: OutputPaths creates structure, read_compare_outputs reads it."""
+    # Create two sample/plasmid combinations using OutputPaths
+    paths1 = OutputPaths(
+        output_root=tmp_path,
+        sample_name="sampleA",
+        plasmid_name="plasmidX",
+    )
+    paths2 = OutputPaths(
+        output_root=tmp_path,
+        sample_name="sampleB",
+        plasmid_name="plasmidY",
+    )
+
+    # Create directories
+    paths1.ensure_directories()
+    paths2.ensure_directories()
+
+    # Write realistic TSV files for sample1/plasmid1
+    paths1.comparison_reads.write_text(
+        "ReadName\tAssignedTo\tPlasmidScore\tHumanScore\n"
+        "read1\tPlasmid\t50\t30\n"
+        "read2\tPlasmid\t60\t40\n"
+    )
+    # Note: read_compare_outputs renames "Count" to "Value"
+    paths1.comparison_summary.write_text(
+        "Category\tMetric\tCount\n"
+        "Verdict\tVerdict\tContaminated\n"
+        "Ratio\tRatio\t1.5\n"
+        "Plasmid\tPlasmid\t2\n"
+        "Human\tHuman\t0\n"
+    )
+
+    # Write realistic TSV files for sample2/plasmid2
+    paths2.comparison_reads.write_text(
+        "ReadName\tAssignedTo\tPlasmidScore\tHumanScore\n"
+        "read3\tHuman\t20\t50\n"
+        "read4\tHuman\t25\t55\n"
+    )
+    paths2.comparison_summary.write_text(
+        "Category\tMetric\tCount\n"
+        "Verdict\tVerdict\tNotContaminated\n"
+        "Ratio\tRatio\t0.4\n"
+        "Plasmid\tPlasmid\t0\n"
+        "Human\tHuman\t2\n"
+    )
+
+    # Read outputs with read_compare_outputs
+    reads_df, summary_df = read_compare_outputs(str(tmp_path))
+
+    # Verify reads DataFrame
+    assert len(reads_df) == 4  # 2 reads from sample1 + 2 from sample2
+    assert set(reads_df["Sample"]) == {"sampleA", "sampleB"}
+    assert set(reads_df["Plasmid"]) == {"plasmidX", "plasmidY"}
+
+    # Check sample1 reads
+    sample1_reads = reads_df[reads_df["Sample"] == "sampleA"]
+    assert len(sample1_reads) == 2
+    assert (sample1_reads["Plasmid"] == "plasmidX").all()
+    assert set(sample1_reads["ReadName"]) == {"read1", "read2"}
+
+    # Check sample2 reads
+    sample2_reads = reads_df[reads_df["Sample"] == "sampleB"]
+    assert len(sample2_reads) == 2
+    assert (sample2_reads["Plasmid"] == "plasmidY").all()
+    assert set(sample2_reads["ReadName"]) == {"read3", "read4"}
+
+    # Verify summary DataFrame
+    assert len(summary_df) == 8  # 4 rows from sample1 + 4 from sample2
+    assert set(summary_df["Sample"]) == {"sampleA", "sampleB"}
+    assert set(summary_df["Plasmid"]) == {"plasmidX", "plasmidY"}
+
+    # Check verdict for each sample
+    verdict_df = summary_df[summary_df["Category"] == "Verdict"]
+    assert len(verdict_df) == 2
+    sample1_verdict = verdict_df[verdict_df["Sample"] == "sampleA"]["Value"].iloc[0]
+    sample2_verdict = verdict_df[verdict_df["Sample"] == "sampleB"]["Value"].iloc[0]
+    assert sample1_verdict == "Contaminated"
+    assert sample2_verdict == "NotContaminated"

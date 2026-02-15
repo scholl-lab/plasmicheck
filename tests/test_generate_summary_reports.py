@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from plasmicheck.scripts.generate_summary_reports import (
+    _extract_sample_plasmid,
     _sanitize_for_excel,
     apply_sorting,
     calculate_variations,
@@ -16,6 +17,7 @@ from plasmicheck.scripts.generate_summary_reports import (
     find_tsv_files,
     plot_coverage_outside_insert_boxplot,
     plot_metric_heatmap,
+    read_compare_outputs,
     save_tables_as_tsv_and_excel,
 )
 
@@ -369,6 +371,133 @@ class TestPlotCoverageOutsideInsertBoxplot:
         )
         assert html_file == ""
         assert png_file is None
+
+
+class TestExtractSamplePlasmid:
+    @pytest.mark.unit
+    def test_flat_layout(self) -> None:
+        """Test extraction from flat directory structure (old)."""
+        file_path = "/output/sampleA/plasmidX/comparison_result.summary.tsv"
+        sample, plasmid = _extract_sample_plasmid(file_path)
+        assert sample == "sampleA"
+        assert plasmid == "plasmidX"
+
+    @pytest.mark.unit
+    def test_subfolder_layout(self) -> None:
+        """Test extraction from data/ subfolder structure (new)."""
+        file_path = "/output/sampleA/plasmidX/data/comparison_result.summary.tsv"
+        sample, plasmid = _extract_sample_plasmid(file_path)
+        assert sample == "sampleA"
+        assert plasmid == "plasmidX"
+
+    @pytest.mark.unit
+    def test_reads_assignment_flat(self) -> None:
+        """Test extraction from flat layout with reads_assignment file."""
+        file_path = "/output/sample1/plasmid1/comparison_result.reads_assignment.tsv"
+        sample, plasmid = _extract_sample_plasmid(file_path)
+        assert sample == "sample1"
+        assert plasmid == "plasmid1"
+
+    @pytest.mark.unit
+    def test_reads_assignment_subfolder(self) -> None:
+        """Test extraction from subfolder layout with reads_assignment file."""
+        file_path = "/output/sample1/plasmid1/data/comparison_result.reads_assignment.tsv"
+        sample, plasmid = _extract_sample_plasmid(file_path)
+        assert sample == "sample1"
+        assert plasmid == "plasmid1"
+
+
+class TestReadCompareOutputsBothLayouts:
+    @pytest.mark.unit
+    def test_flat_layout_read(self, tmp_path: Path) -> None:
+        """Test read_compare_outputs with flat directory structure."""
+        # Create flat structure: output/sample/plasmid/file.tsv
+        sample_dir = tmp_path / "sampleA" / "plasmidX"
+        sample_dir.mkdir(parents=True)
+
+        # Write minimal reads_assignment TSV
+        reads_file = sample_dir / "comparison_result.reads_assignment.tsv"
+        reads_file.write_text("ReadName\tAssignedTo\nread1\tPlasmid\n")
+
+        # Write minimal summary TSV
+        summary_file = sample_dir / "comparison_result.summary.tsv"
+        summary_file.write_text("Category\tMetric\tCount\nVerdict\tContaminated\t1\n")
+
+        # Read outputs
+        reads_df, summary_df = read_compare_outputs(str(tmp_path))
+
+        # Verify Sample and Plasmid columns are correct
+        assert len(reads_df) == 1
+        assert reads_df.iloc[0]["Sample"] == "sampleA"
+        assert reads_df.iloc[0]["Plasmid"] == "plasmidX"
+        assert reads_df.iloc[0]["ReadName"] == "read1"
+
+        assert len(summary_df) == 1
+        assert summary_df.iloc[0]["Sample"] == "sampleA"
+        assert summary_df.iloc[0]["Plasmid"] == "plasmidX"
+
+    @pytest.mark.unit
+    def test_subfolder_layout_read(self, tmp_path: Path) -> None:
+        """Test read_compare_outputs with data/ subfolder structure."""
+        # Create subfolder structure: output/sample/plasmid/data/file.tsv
+        data_dir = tmp_path / "sampleB" / "plasmidY" / "data"
+        data_dir.mkdir(parents=True)
+
+        # Write minimal reads_assignment TSV
+        reads_file = data_dir / "comparison_result.reads_assignment.tsv"
+        reads_file.write_text("ReadName\tAssignedTo\nread2\tHuman\n")
+
+        # Write minimal summary TSV
+        summary_file = data_dir / "comparison_result.summary.tsv"
+        summary_file.write_text("Category\tMetric\tCount\nVerdict\tNotContaminated\t1\n")
+
+        # Read outputs
+        reads_df, summary_df = read_compare_outputs(str(tmp_path))
+
+        # Verify Sample and Plasmid columns are correct
+        assert len(reads_df) == 1
+        assert reads_df.iloc[0]["Sample"] == "sampleB"
+        assert reads_df.iloc[0]["Plasmid"] == "plasmidY"
+        assert reads_df.iloc[0]["ReadName"] == "read2"
+
+        assert len(summary_df) == 1
+        assert summary_df.iloc[0]["Sample"] == "sampleB"
+        assert summary_df.iloc[0]["Plasmid"] == "plasmidY"
+
+    @pytest.mark.unit
+    def test_mixed_layout(self, tmp_path: Path) -> None:
+        """Test read_compare_outputs with mixed flat and subfolder layouts."""
+        # Create flat layout for sample1
+        flat_dir = tmp_path / "sample1" / "plasmid1"
+        flat_dir.mkdir(parents=True)
+        (flat_dir / "comparison_result.reads_assignment.tsv").write_text(
+            "ReadName\tAssignedTo\nread1\tPlasmid\n"
+        )
+        (flat_dir / "comparison_result.summary.tsv").write_text(
+            "Category\tMetric\tCount\nVerdict\tContaminated\t1\n"
+        )
+
+        # Create subfolder layout for sample2
+        subfolder_dir = tmp_path / "sample2" / "plasmid2" / "data"
+        subfolder_dir.mkdir(parents=True)
+        (subfolder_dir / "comparison_result.reads_assignment.tsv").write_text(
+            "ReadName\tAssignedTo\nread2\tHuman\n"
+        )
+        (subfolder_dir / "comparison_result.summary.tsv").write_text(
+            "Category\tMetric\tCount\nVerdict\tNotContaminated\t1\n"
+        )
+
+        # Read outputs
+        reads_df, summary_df = read_compare_outputs(str(tmp_path))
+
+        # Should have both samples
+        assert len(reads_df) == 2
+        assert set(reads_df["Sample"]) == {"sample1", "sample2"}
+        assert set(reads_df["Plasmid"]) == {"plasmid1", "plasmid2"}
+
+        assert len(summary_df) == 2
+        assert set(summary_df["Sample"]) == {"sample1", "sample2"}
+        assert set(summary_df["Plasmid"]) == {"plasmid1", "plasmid2"}
 
 
 class TestSaveTablesExtended:
