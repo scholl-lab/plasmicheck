@@ -389,6 +389,7 @@ def generate_report(
     plasmid_name: str = "",
     coverage_metrics: dict[str, str] | None = None,
     coverage_fallback: bool = False,
+    reports_dir: str | None = None,
 ) -> None:
     from jinja2 import Environment, FileSystemLoader
 
@@ -463,7 +464,9 @@ def generate_report(
     )
 
     # Save interactive HTML report
-    html_report_interactive = os.path.join(output_folder, "report_interactive.html")
+    # Use reports_dir if provided, otherwise output_folder (backward compatibility)
+    report_output_dir = reports_dir if reports_dir is not None else output_folder
+    html_report_interactive = os.path.join(report_output_dir, "report_interactive.html")
     with open(html_report_interactive, "w") as f:
         f.write(html_content_interactive)
 
@@ -523,7 +526,7 @@ def generate_report(
         )
 
         # Save non-interactive HTML report
-        html_report_non_interactive = os.path.join(output_folder, "report_non_interactive.html")
+        html_report_non_interactive = os.path.join(report_output_dir, "report_non_interactive.html")
         with open(html_report_non_interactive, "w") as f:
             f.write(html_content_non_interactive)
 
@@ -542,6 +545,7 @@ def main(
     plotly_mode: str = "directory",
     plot_backend: str = "plotly",
     output_root: str | None = None,
+    reports_dir: str | None = None,
 ) -> None:
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
 
@@ -706,6 +710,7 @@ def main(
         plasmid_name=plasmid_name,
         coverage_metrics=coverage_metrics,
         coverage_fallback=coverage_fallback,
+        reports_dir=reports_dir,
     )
 
 

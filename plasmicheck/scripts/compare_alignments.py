@@ -337,12 +337,15 @@ def compare_alignments(
     output_basename: str,
     threshold: float = DEFAULT_THRESHOLD,
     genbank_file: str | None = None,
+    cdna_positions_file: str | None = None,
 ) -> None:
     logging.info("Starting comparison of alignments")
     logging.debug(f"Processing BAM files: {plasmid_bam} (plasmid), {human_bam} (human)")
 
     # Parse insert region with graceful fallback
-    cdna_positions_file = os.path.join(os.path.dirname(output_basename), "cDNA_positions.txt")
+    if cdna_positions_file is None:
+        # Backward compatibility: derive from output_basename directory
+        cdna_positions_file = os.path.join(os.path.dirname(output_basename), "cDNA_positions.txt")
     insert_region: tuple[int, int] | None = None
     try:
         insert_region = parse_insert_region(cdna_positions_file)

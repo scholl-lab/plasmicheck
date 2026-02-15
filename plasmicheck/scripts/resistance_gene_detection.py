@@ -297,8 +297,9 @@ def locate_genbank_file(output_dir: str, plasmid_file: str | None = None) -> str
     """Locate the GenBank file for gene detection.
 
     Checks (in order):
-    1. .gb file in output_dir (from xDNA conversion with preserve_genbank=True)
-    2. Original plasmid_file if it's .gb/.gbk
+    1. .gb file in output_dir/references/ (new subfolder structure)
+    2. .gb file in output_dir (flat structure, backward compatibility)
+    3. Original plasmid_file if it's .gb/.gbk
 
     Args:
         output_dir: Directory to search for .gb files
@@ -307,10 +308,17 @@ def locate_genbank_file(output_dir: str, plasmid_file: str | None = None) -> str
     Returns:
         Path to GenBank file, or None if not found
     """
-    # Check for .gb file in output_dir
+    # Check for .gb file in output_dir and references/ subdirectory
     if os.path.exists(output_dir):
         gb_files = glob.glob(os.path.join(output_dir, "*.gb"))
         gbk_files = glob.glob(os.path.join(output_dir, "*.gbk"))
+
+        # Also check references/ subdirectory (new structure)
+        refs_dir = os.path.join(output_dir, "references")
+        if os.path.isdir(refs_dir):
+            gb_files += glob.glob(os.path.join(refs_dir, "*.gb"))
+            gbk_files += glob.glob(os.path.join(refs_dir, "*.gbk"))
+
         all_gb_files = gb_files + gbk_files
 
         if all_gb_files:
