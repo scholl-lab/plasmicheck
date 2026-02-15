@@ -90,6 +90,11 @@ Plans:
 
 **Issue:** #58 + visualization for #65 and #64
 **Dependencies:** Phase 8, Phase 9, Phase 10 (all data sources must exist)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 11-01-PLAN.md -- New metric plot/table generation functions (Plotly + matplotlib)
+- [ ] 11-02-PLAN.md -- Template restructuring, wiring, exports, and tests
 
 **Requirements:**
 - REPT-04: CoverageOutsideINSERT in summary reports (heatmap + boxplot)
@@ -111,10 +116,10 @@ Plans:
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 8 | Insert-Region-Aware Filtering | FILT-01..05 (5) | Complete ✓ |
-| 9 | Coverage Metrics | COV-01..05 (5) | Complete ✓ |
-| 10 | Resistance Gene Detection | RGENE-01..04 (4) | Complete ✓ |
-| 11 | Summary Report Integration | REPT-04..10 (7) | Not Started |
+| 8 | Insert-Region-Aware Filtering | FILT-01..05 (5) | Complete |
+| 9 | Coverage Metrics | COV-01..05 (5) | Complete |
+| 10 | Resistance Gene Detection | RGENE-01..04 (4) | Complete |
+| 11 | Summary Report Integration | REPT-04..10 (7) | Planned |
 
 **Total:** 21 requirements across 4 phases. 14/21 complete.
 
@@ -136,13 +141,13 @@ Plans:
 | RGENE-02 | Phase 10 | Yes |
 | RGENE-03 | Phase 10 | Yes |
 | RGENE-04 | Phase 10 | Yes |
-| REPT-04 | Phase 11 | Yes |
-| REPT-05 | Phase 11 | Yes |
-| REPT-06 | Phase 11 | Yes |
-| REPT-07 | Phase 11 | Yes |
-| REPT-08 | Phase 11 | Yes |
-| REPT-09 | Phase 11 | Yes |
-| REPT-10 | Phase 11 | Yes |
+| REPT-04 | Phase 11 | No |
+| REPT-05 | Phase 11 | No |
+| REPT-06 | Phase 11 | No |
+| REPT-07 | Phase 11 | No |
+| REPT-08 | Phase 11 | No |
+| REPT-09 | Phase 11 | No |
+| REPT-10 | Phase 11 | No |
 
 **Orphaned requirements:** None
 **Duplicate mappings:** None
@@ -150,4 +155,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 10 execution*
+*Last updated: 2026-02-15 after Phase 11 planning*
