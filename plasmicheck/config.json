@@ -28,7 +28,7 @@
     "samtools_options": []
   },
   "conversion": {
-    "input_formats": ["genbank", "xdna"],
+    "input_formats": ["genbank", "xdna", "snapgene"],
     "output_formats": ["fasta", "genbank"]
   },
   "plot_summary": {
@@ -112,7 +112,8 @@
     "fastq": [".fastq", ".fq", ".fastq.gz", ".fq.gz"],
     "fasta": [".fasta", ".fa", ".fna", ".fsa", ".ffn"],
     "genbank": [".gb", ".gbk", ".genbank"],
-    "xdna": ".xdna"
+    "xdna": ".xdna",
+    "snapgene": ".dna"
   },
   "retry_settings": {
     "retries": 3,
