@@ -42,6 +42,7 @@ def test_pipeline_threads_override(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_compare_alignments = MagicMock()
     mock_generate_report = MagicMock()
     mock_write_md5sum = MagicMock()
+    mock_detect_format = MagicMock(return_value="genbank")
 
     # Patch all the imports
     with (
@@ -72,6 +73,7 @@ def test_pipeline_threads_override(monkeypatch: pytest.MonkeyPatch) -> None:
         patch("plasmicheck.scripts.run_pipeline.write_md5sum", mock_write_md5sum),
         patch("plasmicheck.scripts.run_pipeline.os.makedirs"),
         patch("plasmicheck.scripts.run_pipeline.os.path.exists", return_value=False),
+        patch("plasmicheck.scripts.format_detection.detect_format", mock_detect_format),
     ):
         from plasmicheck.scripts.run_pipeline import run_pipeline
 
@@ -113,6 +115,7 @@ def test_pipeline_threads_autodetect(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_compare_alignments = MagicMock()
     mock_generate_report = MagicMock()
     mock_write_md5sum = MagicMock()
+    mock_detect_format = MagicMock(return_value="genbank")
 
     with (
         patch("plasmicheck.scripts.run_pipeline.detect_cpu_count", mock_detect),
@@ -143,6 +146,7 @@ def test_pipeline_threads_autodetect(monkeypatch: pytest.MonkeyPatch) -> None:
         patch("plasmicheck.scripts.run_pipeline.write_md5sum", mock_write_md5sum),
         patch("plasmicheck.scripts.run_pipeline.os.makedirs"),
         patch("plasmicheck.scripts.run_pipeline.os.path.exists", return_value=False),
+        patch("plasmicheck.scripts.format_detection.detect_format", mock_detect_format),
     ):
         from plasmicheck.scripts.run_pipeline import run_pipeline
 
@@ -183,6 +187,7 @@ def test_pipeline_thread_logging(caplog: LogCaptureFixture) -> None:
     mock_compare_alignments = MagicMock()
     mock_generate_report = MagicMock()
     mock_write_md5sum = MagicMock()
+    mock_detect_format = MagicMock(return_value="genbank")
 
     with (
         patch("plasmicheck.scripts.run_pipeline.align_reads", mock_align_reads),
@@ -212,6 +217,7 @@ def test_pipeline_thread_logging(caplog: LogCaptureFixture) -> None:
         patch("plasmicheck.scripts.run_pipeline.write_md5sum", mock_write_md5sum),
         patch("plasmicheck.scripts.run_pipeline.os.makedirs"),
         patch("plasmicheck.scripts.run_pipeline.os.path.exists", return_value=False),
+        patch("plasmicheck.scripts.format_detection.detect_format", mock_detect_format),
         caplog.at_level(logging.INFO),
     ):
         from plasmicheck.scripts.run_pipeline import run_pipeline
@@ -250,6 +256,7 @@ def test_pipeline_thread_logging_autodetect(caplog: LogCaptureFixture) -> None:
     mock_compare_alignments = MagicMock()
     mock_generate_report = MagicMock()
     mock_write_md5sum = MagicMock()
+    mock_detect_format = MagicMock(return_value="genbank")
 
     with (
         patch("plasmicheck.scripts.run_pipeline.detect_cpu_count", mock_detect),
@@ -280,6 +287,7 @@ def test_pipeline_thread_logging_autodetect(caplog: LogCaptureFixture) -> None:
         patch("plasmicheck.scripts.run_pipeline.write_md5sum", mock_write_md5sum),
         patch("plasmicheck.scripts.run_pipeline.os.makedirs"),
         patch("plasmicheck.scripts.run_pipeline.os.path.exists", return_value=False),
+        patch("plasmicheck.scripts.format_detection.detect_format", mock_detect_format),
         caplog.at_level(logging.INFO),
     ):
         from plasmicheck.scripts.run_pipeline import run_pipeline
