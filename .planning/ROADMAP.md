@@ -66,6 +66,11 @@ Plans:
 
 **Issue:** #64
 **Dependencies:** Phase 9 (coverage infrastructure in place)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md -- GenBank preservation, resistance gene detection module, curated patterns, unit tests
+- [ ] 10-02-PLAN.md -- Pipeline integration, per-gene coverage, summary.tsv output, integration tests
 
 **Requirements:**
 - RGENE-01: Resistance genes extracted from GenBank annotations via pattern matching
@@ -145,4 +150,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 9 execution*
+*Last updated: 2026-02-15 after Phase 10 planning*
