@@ -504,7 +504,7 @@ class TestSaveTablesExtended:
         assert excel_path.exists()
 
         # Read Excel and check sheets exist
-        import openpyxl
+        openpyxl = pytest.importorskip("openpyxl")
 
         wb = openpyxl.load_workbook(excel_path)
         sheet_names = wb.sheetnames
