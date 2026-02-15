@@ -3,6 +3,7 @@
   "required_python_packages": ["Bio", "pysam", "jinja2", "matplotlib"],
   "filter_backbone_only": true,
   "score_margin": 0,
+  "breadth_thresholds": [5],
   "default_threshold": 0.8,
   "unclear_range": {
     "lower_bound": 0.6,

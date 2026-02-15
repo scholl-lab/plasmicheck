@@ -11,6 +11,7 @@ import pysam
 
 from plasmicheck.config import get_config
 
+from .coverage_metrics import compute_region_coverage_metrics
 from .utils import add_logging_args, configure_logging_from_args
 
 _cfg = get_config()
@@ -22,6 +23,7 @@ UNCLEAR_RANGE: dict[str, float] = _cfg["unclear_range"]
 SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
 FILTER_BACKBONE_ONLY: bool = _cfg.get("filter_backbone_only", True)
 SCORE_MARGIN: int = _cfg.get("score_margin", 0)
+BREADTH_THRESHOLDS: list[int] = _cfg.get("breadth_thresholds", [5])
 
 
 def calculate_alignment_score(read: Any) -> int:
@@ -354,6 +356,16 @@ def compare_alignments(
     else:
         logging.warning("Skipping coverage/mismatch metrics (insert region unavailable).")
 
+    # Compute per-region coverage metrics
+    coverage_metrics, coverage_fallback = compute_region_coverage_metrics(
+        plasmid_bam, insert_region, BREADTH_THRESHOLDS
+    )
+    if coverage_fallback:
+        logging.warning(
+            "Coverage metrics computed for whole plasmid (insert region not defined). "
+            "Backbone metrics are 0.0."
+        )
+
     # Group BAMs by read name into temporary files for streaming merge
     plasmid_ns = plasmid_bam.replace(".bam", ".namesorted.bam")
     human_ns = human_bam.replace(".bam", ".namesorted.bam")
@@ -411,6 +423,35 @@ def compare_alignments(
         summary_file.write(f"Ratio\t{ratio}\n")
         summary_file.write(f"CoverageOutsideINSERT\t{coverage_outside_insert:.4f}\n")
         summary_file.write(f"MismatchesNearINSERT\t{mismatches_near_insert}\n")
+
+        # Coverage metrics (new in Phase 9)
+        insert_metrics = coverage_metrics["insert"]
+        backbone_metrics = coverage_metrics["backbone"]
+
+        # Insert metrics
+        summary_file.write(f"MeanDepthInsert\t{insert_metrics['mean_depth']:.2f}\n")
+        summary_file.write(f"MedianDepthInsert\t{insert_metrics['median_depth']:.2f}\n")
+        summary_file.write(f"BreadthInsert\t{insert_metrics['breadth_1x']:.2f}\n")
+        for threshold in BREADTH_THRESHOLDS:
+            if threshold != 1:
+                summary_file.write(
+                    f"BreadthInsert_{threshold}x\t{insert_metrics[f'breadth_{threshold}x']:.2f}\n"
+                )
+        summary_file.write(f"CoverageCV_Insert\t{insert_metrics['cv']:.2f}\n")
+
+        # Backbone metrics
+        summary_file.write(f"MeanDepthBackbone\t{backbone_metrics['mean_depth']:.2f}\n")
+        summary_file.write(f"MedianDepthBackbone\t{backbone_metrics['median_depth']:.2f}\n")
+        summary_file.write(f"BreadthBackbone\t{backbone_metrics['breadth_1x']:.2f}\n")
+        for threshold in BREADTH_THRESHOLDS:
+            if threshold != 1:
+                summary_file.write(
+                    f"BreadthBackbone_{threshold}x\t{backbone_metrics[f'breadth_{threshold}x']:.2f}\n"
+                )
+        summary_file.write(f"CoverageCV_Backbone\t{backbone_metrics['cv']:.2f}\n")
+
+        # Fallback indicator
+        summary_file.write(f"CoverageFallback\t{coverage_fallback}\n")
 
 
 if __name__ == "__main__":
