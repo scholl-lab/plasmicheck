@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 
 ## Current Position
 
-**Phase:** 12 of 16 (Format Hardening)
-**Plan:** 2 of 2 complete
-**Status:** Phase 12 complete
-**Progress:** ██░░░░░░░░ 20% (2/10 plans in v0.34.0)
+**Phase:** 13 of 16 (Output Restructuring)
+**Plan:** 1 of 2 complete
+**Status:** Phase 13 in progress
+**Progress:** ███░░░░░░░ 30% (3/10 plans in v0.34.0)
 
-Last activity: 2026-02-15 — Completed 12-02-PLAN.md
+Last activity: 2026-02-15 — Completed 13-01-PLAN.md
 
 ## Milestones
 
@@ -30,7 +30,7 @@ Last activity: 2026-02-15 — Completed 12-02-PLAN.md
 | Phase | Name | Requirements | Plans | Status |
 |-------|------|--------------|-------|--------|
 | 12 | Format Hardening | FMT-01..04 (4) | 2/2 | Complete |
-| 13 | Output Restructuring | OUT-01..04 (4) | 0/2 | Not started |
+| 13 | Output Restructuring | OUT-01..04 (4) | 1/2 | In progress |
 | 14 | Cache Infrastructure | CACHE-01..06 (6) | 0/3 | Not started |
 | 15 | Splice Junction Metadata | SJ-01..02 (2) | 0/1 | Not started |
 | 16 | Summary Visualization | VIS-01..04 (4) | 0/2 | Not started |
@@ -40,6 +40,13 @@ Last activity: 2026-02-15 — Completed 12-02-PLAN.md
 ## Accumulated Context
 
 ### Key Outcomes
+
+**From v0.34.0 (Phase 13 - In Progress):**
+- OutputPaths frozen dataclass centralizes all output path construction
+- 5-subfolder output layout: alignments/, references/, data/, reports/, plots/
+- Type-safe path management with pathlib.Path properties
+- Backward-compatible optional parameters for downstream modules
+- 347 unit tests passing (up from 321 at Phase 12)
 
 **From v0.34.0 (Phase 12 - Complete):**
 - Magic byte format detection for SnapGene and xDNA binary formats
@@ -76,6 +83,11 @@ Last activity: 2026-02-15 — Completed 12-02-PLAN.md
 | FMT-D04 | 12-01 | --file_type flag required | Add --format flag, auto-detect when omitted | Better UX, backward compatible |
 | FMT-D05 | 12-02 | Pipeline format detection | Use detect_format() via inline import in loop | Follows lazy import pattern |
 | FMT-D06 | 12-02 | Pipeline test mocking | Mock detect_format at module level | Avoids file I/O in unit tests |
+| OUT-PATH-01 | 13-01 | Path construction approach | Frozen dataclass with pathlib.Path properties | Type safety, immutability, single source of truth |
+| OUT-PATH-02 | 13-01 | comparison_prefix type | Returns str instead of Path | API compatibility with compare_alignments prefix usage |
+| OUT-PATH-03 | 13-01 | Backward compatibility | Optional parameters for downstream modules | Zero breaking changes, gradual migration |
+| OUT-PATH-04 | 13-01 | GenBank file location | references/ subdirectory | Reference data, matches FASTA/index location |
+| OUT-PATH-05 | 13-01 | md5sum.txt location | Base level | Checksums files across all subdirectories |
 
 ### Open Blockers
 
@@ -84,9 +96,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped at:** Completed 12-02-PLAN.md (Phase 12 complete)
+**Stopped at:** Completed 13-01-PLAN.md (Phase 13 in progress)
 **Resume file:** None
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after completing 12-02-PLAN.md*
+*Last updated: 2026-02-15 after completing 13-01-PLAN.md*
