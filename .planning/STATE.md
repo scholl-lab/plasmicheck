@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 ## Current Position
 
 **Phase:** 13 of 16 (Output Restructuring)
-**Plan:** 1 of 2 complete
-**Status:** Phase 13 in progress
-**Progress:** ███░░░░░░░ 30% (3/10 plans in v0.34.0)
+**Plan:** 2 of 2 complete
+**Status:** Phase 13 complete
+**Progress:** ████░░░░░░ 40% (4/10 plans in v0.34.0)
 
-Last activity: 2026-02-15 — Completed 13-01-PLAN.md
+Last activity: 2026-02-15 — Completed 13-02-PLAN.md
 
 ## Milestones
 
@@ -30,7 +30,7 @@ Last activity: 2026-02-15 — Completed 13-01-PLAN.md
 | Phase | Name | Requirements | Plans | Status |
 |-------|------|--------------|-------|--------|
 | 12 | Format Hardening | FMT-01..04 (4) | 2/2 | Complete |
-| 13 | Output Restructuring | OUT-01..04 (4) | 1/2 | In progress |
+| 13 | Output Restructuring | OUT-01..04 (4) | 2/2 | Complete |
 | 14 | Cache Infrastructure | CACHE-01..06 (6) | 0/3 | Not started |
 | 15 | Splice Junction Metadata | SJ-01..02 (2) | 0/1 | Not started |
 | 16 | Summary Visualization | VIS-01..04 (4) | 0/2 | Not started |
@@ -41,12 +41,15 @@ Last activity: 2026-02-15 — Completed 13-01-PLAN.md
 
 ### Key Outcomes
 
-**From v0.34.0 (Phase 13 - In Progress):**
+**From v0.34.0 (Phase 13 - Complete):**
 - OutputPaths frozen dataclass centralizes all output path construction
 - 5-subfolder output layout: alignments/, references/, data/, reports/, plots/
 - Type-safe path management with pathlib.Path properties
 - Backward-compatible optional parameters for downstream modules
-- 347 unit tests passing (up from 321 at Phase 12)
+- Depth-agnostic summary report reader supporting both flat and data/ subfolder layouts
+- Backward compatibility for existing flat-structure outputs
+- Forward compatibility for new 5-subfolder structure
+- 353 unit tests passing (up from 321 at Phase 12)
 
 **From v0.34.0 (Phase 12 - Complete):**
 - Magic byte format detection for SnapGene and xDNA binary formats
@@ -88,6 +91,8 @@ Last activity: 2026-02-15 — Completed 13-01-PLAN.md
 | OUT-PATH-03 | 13-01 | Backward compatibility | Optional parameters for downstream modules | Zero breaking changes, gradual migration |
 | OUT-PATH-04 | 13-01 | GenBank file location | references/ subdirectory | Reference data, matches FASTA/index location |
 | OUT-PATH-05 | 13-01 | md5sum.txt location | Base level | Checksums files across all subdirectories |
+| SUM-COMPAT-01 | 13-02 | Directory depth detection | Check parent name for 'data' | Simple, reliable, robust to arbitrary nesting |
+| SUM-COMPAT-02 | 13-02 | Sample/plasmid extraction | Add _extract_sample_plasmid helper | Centralized logic, eliminates DRY violation, testable |
 
 ### Open Blockers
 
@@ -96,9 +101,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped at:** Completed 13-01-PLAN.md (Phase 13 in progress)
+**Stopped at:** Completed 13-02-PLAN.md (Phase 13 complete)
 **Resume file:** None
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after completing 13-01-PLAN.md*
+*Last updated: 2026-02-15 after completing 13-02-PLAN.md*
