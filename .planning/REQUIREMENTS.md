@@ -25,10 +25,10 @@ Requirements for v0.33.0: Scientific & Reporting Enhancements. Each maps to road
 
 ### Resistance Genes (#64)
 
-- [ ] **RGENE-01**: Resistance genes extracted from GenBank annotations via configurable pattern matching
-- [ ] **RGENE-02**: Per-gene coverage metrics (mean depth + breadth) computed using pysam
-- [ ] **RGENE-03**: Resistance gene metrics written to summary.tsv per gene
-- [ ] **RGENE-04**: Detection works with existing plasmid GenBank files in repository (>=90% recall)
+- [x] **RGENE-01**: Resistance genes extracted from GenBank annotations via configurable pattern matching
+- [x] **RGENE-02**: Per-gene coverage metrics (mean depth + breadth) computed using pysam
+- [x] **RGENE-03**: Resistance gene metrics written to summary.tsv per gene
+- [x] **RGENE-04**: Detection works with existing plasmid GenBank files in repository (>=90% recall)
 
 ### Report Integration (#58 + visualization)
 
@@ -82,10 +82,10 @@ Explicitly excluded. Documented to prevent scope creep.
 | COV-03 | Phase 9 | Complete |
 | COV-04 | Phase 9 | Complete |
 | COV-05 | Phase 9 | Complete |
-| RGENE-01 | Phase 10 | Pending |
-| RGENE-02 | Phase 10 | Pending |
-| RGENE-03 | Phase 10 | Pending |
-| RGENE-04 | Phase 10 | Pending |
+| RGENE-01 | Phase 10 | Complete |
+| RGENE-02 | Phase 10 | Complete |
+| RGENE-03 | Phase 10 | Complete |
+| RGENE-04 | Phase 10 | Complete |
 | REPT-04 | Phase 11 | Pending |
 | REPT-05 | Phase 11 | Pending |
 | REPT-06 | Phase 11 | Pending |
@@ -101,4 +101,4 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 9 completion (COV-01..05 complete)*
+*Last updated: 2026-02-15 after Phase 10 completion (RGENE-01..04 complete)*

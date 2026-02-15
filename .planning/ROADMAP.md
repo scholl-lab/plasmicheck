@@ -69,8 +69,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 10-01-PLAN.md -- GenBank preservation, resistance gene detection module, curated patterns, unit tests
-- [ ] 10-02-PLAN.md -- Pipeline integration, per-gene coverage, summary.tsv output, integration tests
+- [x] 10-01-PLAN.md -- GenBank preservation, resistance gene detection module, curated patterns, unit tests
+- [x] 10-02-PLAN.md -- Pipeline integration, per-gene coverage, summary.tsv output, integration tests
 
 **Requirements:**
 - RGENE-01: Resistance genes extracted from GenBank annotations via pattern matching
@@ -113,10 +113,10 @@ Plans:
 |-------|------|--------------|--------|
 | 8 | Insert-Region-Aware Filtering | FILT-01..05 (5) | Complete ✓ |
 | 9 | Coverage Metrics | COV-01..05 (5) | Complete ✓ |
-| 10 | Resistance Gene Detection | RGENE-01..04 (4) | Not Started |
+| 10 | Resistance Gene Detection | RGENE-01..04 (4) | Complete ✓ |
 | 11 | Summary Report Integration | REPT-04..10 (7) | Not Started |
 
-**Total:** 21 requirements across 4 phases. 10/21 complete.
+**Total:** 21 requirements across 4 phases. 14/21 complete.
 
 ## Coverage Map
 
@@ -150,4 +150,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 10 planning*
+*Last updated: 2026-02-15 after Phase 10 execution*
