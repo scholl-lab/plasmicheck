@@ -104,8 +104,8 @@ def compute_coverage_stats(
             breadth = float(np.sum(depth_array >= threshold)) / len(depth_array)
             stats[f"breadth_{threshold}x"] = breadth
 
-    # Coefficient of variation (check for zero mean)
-    if mean_val == 0:
+    # Coefficient of variation (check for zero mean and single element)
+    if mean_val == 0 or len(depth_array) == 1:
         stats["cv"] = 0.0
     else:
         stats["cv"] = float(np.std(depth_array, ddof=1)) / mean_val
