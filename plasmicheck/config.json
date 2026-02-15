@@ -1,6 +1,7 @@
 {
   "required_tools": ["minimap2", "samtools"],
   "required_python_packages": ["Bio", "pysam", "jinja2", "matplotlib"],
+  "resistance_gene_patterns": [],
   "filter_backbone_only": true,
   "score_margin": 0,
   "breadth_thresholds": [5],

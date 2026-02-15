@@ -46,8 +46,15 @@ def convert_plasmidfile_to_fasta(
     shift_bases: int = DEFAULT_SHIFT_BASES,
     generate_shifted: bool = False,
     overwrite: bool = False,
+    preserve_genbank: bool = False,
 ) -> None:
-    """Convert a plasmid file to a FASTA file, optionally generating a shifted reference."""
+    """Convert a plasmid file to a FASTA file, optionally generating a shifted reference.
+
+    Args:
+        preserve_genbank: If True, preserve the GenBank file in the output directory.
+            For xDNA files, retains the intermediate .gb file.
+            For GenBank files, creates a sanitized copy in the output directory.
+    """
     logging.info(f"Starting conversion of {input_file} to {output_file} as {file_type} file")
 
     # Create a sanitized copy of the input file
@@ -61,11 +68,20 @@ def convert_plasmidfile_to_fasta(
     try:
         if file_type == "genbank":
             SeqIO.convert(sanitized_input_file, "genbank", output_file, "fasta")  # type: ignore[no-untyped-call]
+            # Preserve GenBank file if requested
+            if preserve_genbank:
+                gb_output_file: str = os.path.splitext(output_file)[0] + ".gb"
+                shutil.copyfile(sanitized_input_file, gb_output_file)
+                logging.info(f"Preserved GenBank file: {gb_output_file}")
         elif file_type == "xdna":
             temp_gb_file: str = os.path.splitext(output_file)[0] + ".gb"
             convert_xdna_to_gb(sanitized_input_file, temp_gb_file)
             SeqIO.convert(temp_gb_file, "genbank", output_file, "fasta")  # type: ignore[no-untyped-call]
-            os.remove(temp_gb_file)
+            # Only remove temp file if not preserving GenBank
+            if not preserve_genbank:
+                os.remove(temp_gb_file)
+            else:
+                logging.info(f"Preserved GenBank file: {temp_gb_file}")
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
         logging.info(f"Conversion to FASTA completed successfully for {output_file}")
@@ -132,6 +148,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "-w", "--overwrite", action="store_true", help="Overwrite existing output file"
     )
+    parser.add_argument(
+        "-pg",
+        "--preserve_genbank",
+        action="store_true",
+        help="Preserve GenBank file in output directory for gene detection",
+    )
     add_logging_args(parser)
     args = parser.parse_args()
 
@@ -144,4 +166,5 @@ if __name__ == "__main__":
         args.shift_bases,
         args.generate_shifted,
         args.overwrite,
+        args.preserve_genbank,
     )
