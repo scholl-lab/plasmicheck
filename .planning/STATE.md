@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 ## Current Position
 
 **Phase:** 12 of 16 (Format Hardening)
-**Plan:** Ready to plan
-**Status:** Roadmap defined, awaiting Phase 12 planning
-**Progress:** ░░░░░░░░░░ 0% (0/10 plans in v0.34.0)
+**Plan:** 01 of 2 (Format Detection & SnapGene Support)
+**Status:** Phase 12 in progress
+**Progress:** █░░░░░░░░░ 10% (1/10 plans in v0.34.0)
 
-Last activity: 2026-02-15 — v0.34.0 roadmap created
+Last activity: 2026-02-15 — Completed 12-01-PLAN.md
 
 ## Milestones
 
@@ -29,7 +29,7 @@ Last activity: 2026-02-15 — v0.34.0 roadmap created
 
 | Phase | Name | Requirements | Plans | Status |
 |-------|------|--------------|-------|--------|
-| 12 | Format Hardening | FMT-01..04 (4) | 0/2 | Not started |
+| 12 | Format Hardening | FMT-01..04 (4) | 1/2 | In progress |
 | 13 | Output Restructuring | OUT-01..04 (4) | 0/2 | Not started |
 | 14 | Cache Infrastructure | CACHE-01..06 (6) | 0/3 | Not started |
 | 15 | Splice Junction Metadata | SJ-01..02 (2) | 0/1 | Not started |
@@ -41,6 +41,13 @@ Last activity: 2026-02-15 — v0.34.0 roadmap created
 
 ### Key Outcomes
 
+**From v0.34.0 (Phase 12):**
+- Magic byte format detection for SnapGene and xDNA binary formats
+- SnapGene .dna file support via BioPython native parser
+- Auto-detection for all plasmid formats (GenBank, xDNA, SnapGene, FASTA)
+- Record IDs now use sanitized filenames (fixes xDNA broken ID issue)
+- Actionable error messages for conversion failures
+
 **From v0.33.0:**
 - 5-category read classification eliminates false positives from backbone contamination
 - Per-region coverage metrics (mean/median depth, breadth, CV) via pysam
@@ -51,10 +58,19 @@ Last activity: 2026-02-15 — v0.34.0 roadmap created
 
 ### Known Issues
 
-- #75: Some xDNA files don't work (targeted for Phase 12 in v0.34.0)
+- #75: Some xDNA files don't work — **partially addressed in 12-01** (actionable errors, record ID fix)
 - #78: Snakemake jobs randomly fail (may be fixed by race condition fix in v0.30.0)
 - #80: Output directory structure could be more organized (targeted for Phase 13)
 - #39, #43: No caching for indexes and spliced alignments (targeted for Phase 14)
+
+### Key Decisions
+
+| ID | Phase | Context | Decision | Rationale |
+|----|-------|---------|----------|-----------|
+| FMT-D01 | 12-01 | xDNA record IDs unreliable | Override all record.id with sanitize_filename(stem) | Ensures consistent, valid IDs |
+| FMT-D02 | 12-01 | BioPython errors cryptic | Wrap parse calls with actionable messages | Users know what to do on failure |
+| FMT-D03 | 12-01 | sanitize_filename duplicated | Remove local copy, import from utils | Single source of truth |
+| FMT-D04 | 12-01 | --file_type flag required | Add --format flag, auto-detect when omitted | Better UX, backward compatible |
 
 ### Open Blockers
 
@@ -63,9 +79,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped at:** v0.34.0 roadmap creation complete
+**Stopped at:** Completed 12-01-PLAN.md
 **Resume file:** None
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after v0.34.0 roadmap creation*
+*Last updated: 2026-02-15 after completing 12-01-PLAN.md*
