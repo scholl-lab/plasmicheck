@@ -113,6 +113,59 @@ def sample_summary_df() -> pd.DataFrame:
 
 
 @pytest.fixture
+def sample_summary_df_with_coverage() -> pd.DataFrame:
+    """DataFrame matching summary.tsv schema with Phase 9 coverage metrics."""
+    return pd.DataFrame(
+        {
+            "Category": [
+                "Plasmid",
+                "Human",
+                "Tied",
+                "Backbone_Only",
+                "Ambiguous",
+                "Verdict",
+                "Ratio",
+                "CoverageOutsideINSERT",
+                "MismatchesNearINSERT",
+                "MeanDepthInsert",
+                "MedianDepthInsert",
+                "BreadthInsert",
+                "BreadthInsert_5x",
+                "CoverageCV_Insert",
+                "MeanDepthBackbone",
+                "MedianDepthBackbone",
+                "BreadthBackbone",
+                "BreadthBackbone_5x",
+                "CoverageCV_Backbone",
+                "CoverageFallback",
+            ],
+            "Count": [
+                100,
+                50,
+                10,
+                15,
+                5,
+                "Sample is contaminated with plasmid DNA",
+                2.0,
+                0.1234,
+                "{'with_mismatches_or_clipping': 5, 'without_mismatches_or_clipping': 10}",
+                45.25,
+                42.00,
+                0.95,
+                0.85,
+                0.22,
+                12.50,
+                10.00,
+                0.65,
+                0.50,
+                0.35,
+                "False",
+            ],
+        }
+    )
+
+
+@pytest.fixture
 def mock_pysam_read() -> Any:
     """Factory fixture for creating mock pysam aligned reads."""
 
