@@ -589,3 +589,78 @@ def test_detect_genes_sorted_by_start(tmp_path: Path) -> None:
     assert genes[0].name == "AmpR"  # Start: 100
     assert genes[1].name == "KanR"  # Start: 1000
     assert genes[2].name == "GFP"  # Start: 2000
+
+
+@pytest.mark.unit
+def test_recall_against_existing_genbank_files() -> None:
+    """Validate recall against all GenBank files in reference/plasmid/."""
+    from pathlib import Path
+
+    gb_files = list(Path("reference/plasmid/").glob("*.gb")) + list(
+        Path("reference/plasmid/").glob("*.gbk")
+    )
+
+    if not gb_files:
+        pytest.skip("No GenBank files found in reference/plasmid/")
+
+    total_detected = 0
+    detection_details = []
+
+    for gb_file in gb_files:
+        genes = detect_resistance_genes(str(gb_file))
+        total_detected += len(genes)
+        if genes:
+            detection_details.append(
+                f"{gb_file.name}: {len(genes)} genes ({[g.name for g in genes]})"
+            )
+
+    # At minimum, we expect AmpR from pWPI-KCNJ5-WT.gb (from Plan 01 validation)
+    assert total_detected >= 1, (
+        f"Should detect at least 1 resistance gene across all GenBank files. "
+        f"Found {total_detected}. Details: {detection_details}"
+    )
+
+
+@pytest.mark.unit
+def test_pwpi_kcnj5_wt_detects_ampr() -> None:
+    """Targeted test for pWPI-KCNJ5-WT.gb expecting AmpR detection."""
+    from pathlib import Path
+
+    gb_file = Path("reference/plasmid/pWPI-KCNJ5-WT.gb")
+    if not gb_file.exists():
+        pytest.skip("pWPI-KCNJ5-WT.gb not found in reference/plasmid/")
+
+    genes = detect_resistance_genes(str(gb_file))
+
+    # Should detect at least one resistance gene (AmpR or beta-lactamase)
+    assert len(genes) >= 1, f"Expected resistance gene in {gb_file.name}, found none"
+
+    # Check that at least one gene name matches ampicillin/AmpR/bla patterns
+    gene_names = [g.name.lower() for g in genes]
+    assert any("amp" in name or "bla" in name for name in gene_names), (
+        f"Expected AmpR-related gene, found: {[g.name for g in genes]}"
+    )
+
+
+@pytest.mark.unit
+def test_pcmv6_ac_ires_gfp_puro_detects_markers() -> None:
+    """Targeted test for pCMV6-AC-IRES-GFP-Puro file."""
+    from pathlib import Path
+
+    # Target the specific file
+    gb_file = Path("reference/plasmid/pCMV6-AC-IRES-GFP-Puro_CACNA1H.gb")
+
+    if not gb_file.exists():
+        # Try alternative naming
+        alt_files = list(Path("reference/plasmid/").glob("pCMV6*GFP*Puro*.gb"))
+        if not alt_files:
+            pytest.skip("pCMV6-AC-IRES-GFP-Puro GenBank file not found in reference/plasmid/")
+        gb_file = alt_files[0]
+
+    genes = detect_resistance_genes(str(gb_file))
+
+    # This file should have at least bacterial resistance genes in backbone (AmpR, LacZ)
+    # GFP and Puro might be in the insert region and excluded by design
+    assert len(genes) >= 1, (
+        f"Expected backbone markers in {gb_file.name}, found: {[g.name for g in genes]}"
+    )

@@ -665,7 +665,10 @@ def run_pipeline(
                             genbank_file_path = candidate_gb
 
                     compare_alignments(
-                        plasmid_bam, spliced_human_bam, comparison_output, genbank_file=genbank_file_path
+                        plasmid_bam,
+                        spliced_human_bam,
+                        comparison_output,
+                        genbank_file=genbank_file_path,
                     )
                     prog.advance()
 

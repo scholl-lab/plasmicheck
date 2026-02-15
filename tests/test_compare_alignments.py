@@ -496,3 +496,271 @@ class TestBackwardCompatibility:
             # New categories initialized but zero
             assert counts["Backbone_Only"] == 0
             assert counts["Ambiguous"] == 0
+
+
+class TestResistanceGeneIntegration:
+    """Test resistance gene detection integration in compare_alignments."""
+
+    @pytest.mark.unit
+    def test_summary_tsv_includes_resistance_genes(self, tmp_path: Path) -> None:
+        """Verify summary.tsv includes ResGene_ rows when GenBank file is provided."""
+        from unittest.mock import MagicMock
+
+        from plasmicheck.scripts.compare_alignments import compare_alignments
+        from plasmicheck.scripts.resistance_gene_detection import DetectedGene
+
+        # Mock BAM files
+        plasmid_bam = tmp_path / "plasmid.bam"
+        human_bam = tmp_path / "human.bam"
+        output_base = tmp_path / "output"
+        cdna_file = tmp_path / "cDNA_positions.txt"
+
+        # Create cDNA positions file
+        cdna_file.write_text(
+            "cDNA start position in plasmid: 100\ncDNA end position in plasmid: 500\n"
+        )
+
+        # Mock GenBank file
+        genbank_file = str(tmp_path / "plasmid.gb")
+
+        # Create mock detected genes
+        mock_genes = [
+            DetectedGene(
+                name="AmpR",
+                sanitized_name="AmpR",
+                start=1000,
+                end=1800,
+                region="backbone",
+                qualifier_source="product",
+            )
+        ]
+
+        # Mock coverage stats
+        mock_stats = {
+            "mean_depth": 42.5,
+            "median_depth": 40.0,
+            "breadth_1x": 0.95,
+            "cv": 0.15,
+        }
+
+        with (
+            patch(
+                "plasmicheck.scripts.compare_alignments.detect_resistance_genes",
+                return_value=mock_genes,
+            ),
+            patch("plasmicheck.scripts.compare_alignments.get_depth_array", return_value=[]),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_coverage_stats",
+                return_value=mock_stats,
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics"
+            ) as mock_cov,
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch("plasmicheck.scripts.compare_alignments._streaming_compare") as mock_stream,
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("pysam.AlignmentFile") as mock_bam,
+        ):
+            # Setup coverage metrics mock
+            mock_cov.return_value = (
+                {
+                    "insert": {
+                        "mean_depth": 10.0,
+                        "median_depth": 9.0,
+                        "breadth_1x": 0.8,
+                        "breadth_5x": 0.7,
+                        "cv": 0.2,
+                    },
+                    "backbone": {
+                        "mean_depth": 5.0,
+                        "median_depth": 4.0,
+                        "breadth_1x": 0.6,
+                        "breadth_5x": 0.5,
+                        "cv": 0.3,
+                    },
+                },
+                False,
+            )
+
+            # Setup streaming compare mock
+            mock_stream.return_value = {
+                "Plasmid": 100,
+                "Human": 10,
+                "Tied": 5,
+                "Backbone_Only": 2,
+                "Ambiguous": 1,
+            }
+
+            # Setup BAM mock
+            mock_bam_instance = MagicMock()
+            mock_bam_instance.get_reference_name.return_value = "plasmid"
+            mock_bam_instance.lengths = [10000]  # Mock plasmid length
+            mock_bam_instance.get_tid.return_value = 0
+            mock_bam.return_value.__enter__.return_value = mock_bam_instance
+
+            # Run compare_alignments
+            compare_alignments(
+                str(plasmid_bam),
+                str(human_bam),
+                str(output_base),
+                genbank_file=genbank_file,
+            )
+
+            # Read summary.tsv
+            summary_file = output_base.parent / (output_base.name + ".summary.tsv")
+            assert summary_file.exists()
+            content = summary_file.read_text()
+
+            # Verify resistance gene rows
+            assert "ResistanceGenesAvailable\ttrue" in content
+            assert "ResistanceGenes\tAmpR" in content
+            assert "ResGene_AmpR_MeanDepth\t42.50" in content
+            assert "ResGene_AmpR_Breadth\t0.95" in content
+            assert "ResGene_AmpR_Start\t1000" in content
+            assert "ResGene_AmpR_End\t1800" in content
+            assert "ResGene_AmpR_Region\tbackbone" in content
+
+    @pytest.mark.unit
+    def test_summary_tsv_no_genbank(self, tmp_path: Path) -> None:
+        """Verify summary.tsv shows ResistanceGenesAvailable: false when no GenBank."""
+        from unittest.mock import MagicMock
+
+        from plasmicheck.scripts.compare_alignments import compare_alignments
+
+        plasmid_bam = tmp_path / "plasmid.bam"
+        human_bam = tmp_path / "human.bam"
+        output_base = tmp_path / "output"
+        cdna_file = tmp_path / "cDNA_positions.txt"
+
+        cdna_file.write_text(
+            "cDNA start position in plasmid: 100\ncDNA end position in plasmid: 500\n"
+        )
+
+        with (
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics"
+            ) as mock_cov,
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch("plasmicheck.scripts.compare_alignments._streaming_compare") as mock_stream,
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("pysam.AlignmentFile") as mock_bam,
+        ):
+            mock_cov.return_value = (
+                {
+                    "insert": {
+                        "mean_depth": 10.0,
+                        "median_depth": 9.0,
+                        "breadth_1x": 0.8,
+                        "breadth_5x": 0.7,
+                        "cv": 0.2,
+                    },
+                    "backbone": {
+                        "mean_depth": 5.0,
+                        "median_depth": 4.0,
+                        "breadth_1x": 0.6,
+                        "breadth_5x": 0.5,
+                        "cv": 0.3,
+                    },
+                },
+                False,
+            )
+            mock_stream.return_value = {
+                "Plasmid": 100,
+                "Human": 10,
+                "Tied": 5,
+                "Backbone_Only": 2,
+                "Ambiguous": 1,
+            }
+
+            mock_bam_instance = MagicMock()
+            mock_bam_instance.lengths = [10000]
+            mock_bam_instance.get_tid.return_value = 0
+            mock_bam.return_value.__enter__.return_value = mock_bam_instance
+
+            compare_alignments(
+                str(plasmid_bam), str(human_bam), str(output_base), genbank_file=None
+            )
+
+            summary_file = output_base.parent / (output_base.name + ".summary.tsv")
+            assert summary_file.exists()
+            content = summary_file.read_text()
+
+            assert "ResistanceGenesAvailable\tfalse" in content
+            assert "ResGene_" not in content
+
+    @pytest.mark.unit
+    def test_summary_tsv_genbank_no_genes(self, tmp_path: Path) -> None:
+        """Verify ResistanceGenes: None when GenBank provided but no genes detected."""
+        from unittest.mock import MagicMock
+
+        from plasmicheck.scripts.compare_alignments import compare_alignments
+
+        plasmid_bam = tmp_path / "plasmid.bam"
+        human_bam = tmp_path / "human.bam"
+        output_base = tmp_path / "output"
+        cdna_file = tmp_path / "cDNA_positions.txt"
+        genbank_file = str(tmp_path / "plasmid.gb")
+
+        cdna_file.write_text(
+            "cDNA start position in plasmid: 100\ncDNA end position in plasmid: 500\n"
+        )
+
+        with (
+            patch(
+                "plasmicheck.scripts.compare_alignments.detect_resistance_genes", return_value=[]
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics"
+            ) as mock_cov,
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch("plasmicheck.scripts.compare_alignments._streaming_compare") as mock_stream,
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("pysam.AlignmentFile") as mock_bam,
+        ):
+            mock_cov.return_value = (
+                {
+                    "insert": {
+                        "mean_depth": 10.0,
+                        "median_depth": 9.0,
+                        "breadth_1x": 0.8,
+                        "breadth_5x": 0.7,
+                        "cv": 0.2,
+                    },
+                    "backbone": {
+                        "mean_depth": 5.0,
+                        "median_depth": 4.0,
+                        "breadth_1x": 0.6,
+                        "breadth_5x": 0.5,
+                        "cv": 0.3,
+                    },
+                },
+                False,
+            )
+            mock_stream.return_value = {
+                "Plasmid": 100,
+                "Human": 10,
+                "Tied": 5,
+                "Backbone_Only": 2,
+                "Ambiguous": 1,
+            }
+
+            mock_bam_instance = MagicMock()
+            mock_bam_instance.lengths = [10000]
+            mock_bam_instance.get_tid.return_value = 0
+            mock_bam.return_value.__enter__.return_value = mock_bam_instance
+
+            compare_alignments(
+                str(plasmid_bam),
+                str(human_bam),
+                str(output_base),
+                genbank_file=genbank_file,
+            )
+
+            summary_file = output_base.parent / (output_base.name + ".summary.tsv")
+            assert summary_file.exists()
+            content = summary_file.read_text()
+
+            assert "ResistanceGenesAvailable\ttrue" in content
+            assert "ResistanceGenes\tNone" in content
+            assert "ResGene_" not in content
