@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 10 of 11 (Resistance Gene Detection) — IN PROGRESS
-**Plan:** 1 of 2 complete (10-01 ✓)
-**Status:** Gene detection module ready, integration pending
-**Progress:** ████░░░░░░ 38% (2.5/4 phases complete)
+**Phase:** 10 of 11 (Resistance Gene Detection) — COMPLETE ✓
+**Plan:** 2 of 2 complete (10-01 ✓, 10-02 ✓)
+**Status:** Phase complete, ready for Phase 11
+**Progress:** █████░░░░░ 45% (3/4 phases complete)
 
-Last activity: 2026-02-15 -- Completed 10-01-PLAN.md (Resistance gene detection module with 90% recall, 274 tests passing)
+Last activity: 2026-02-15 -- Completed 10-02-PLAN.md (Gene detection integration with per-gene coverage, 280 tests passing)
 
 ## Milestones
 
@@ -30,7 +30,7 @@ Last activity: 2026-02-15 -- Completed 10-01-PLAN.md (Resistance gene detection 
 |-------|------|--------------|--------|
 | 8 | Insert-Region-Aware Filtering | FILT-01..05 | Complete ✓ |
 | 9 | Coverage Metrics | COV-01..05 | Complete ✓ |
-| 10 | Resistance Gene Detection | RGENE-01..04 | Plan 01 Complete ✓ |
+| 10 | Resistance Gene Detection | RGENE-01..04 | Complete ✓ |
 | 11 | Summary Report Integration | REPT-04..10 | Not Started |
 
 ## Accumulated Context
@@ -66,15 +66,19 @@ Last activity: 2026-02-15 -- Completed 10-01-PLAN.md (Resistance gene detection 
 - Fallback warning shown when insert region not defined
 - Backward compatible template rendering (missing metrics show 0.00)
 
-**From Phase 10 (Resistance Gene Detection - 10-01):**
+**From Phase 10 (Resistance Gene Detection - 10-01, 10-02):**
 - resistance_gene_detection.py module with curated pattern matching for 14 bacterial, 7 mammalian, and 9 reporter gene patterns
 - GenBank CDS feature parsing via Biopython SeqIO with CompoundLocation handling (origin-crossing features)
 - Affinity tag exclusion (His-tag, FLAG, Myc, V5, HA) prevents false positives
 - Conservative insert region overlap exclusion ensures backbone-only gene detection
 - preserve_genbank parameter in convert_plasmidfile_to_fasta retains .gb files for gene detection
 - resistance_gene_patterns extension point in config.json for custom patterns
-- 274 tests passing (219 existing + 55 new resistance gene detection tests)
+- Per-gene coverage metrics in summary.tsv: ResGene_{name}_MeanDepth, Breadth, Start, End, Region
+- ResistanceGenesAvailable flag distinguishes "no GenBank" from "GenBank but no genes"
+- GenBank file preservation enabled by default in pipeline (preserve_genbank=True)
+- 280 tests passing (274 from 10-01 + 6 new integration and recall validation tests)
 - 90% recall validated against real plasmid GenBank files (pWPI-KCNJ5-WT.gb, pCMV6 files)
+- Graceful fallback: gene detection failures don't crash pipeline
 
 ### Key Context for v0.33.0
 
@@ -107,6 +111,11 @@ Last activity: 2026-02-15 -- Completed 10-01-PLAN.md (Resistance gene detection 
 | 10-01 | Conservative overlap exclusion for insert region | Any gene overlap (full or partial) with insert is excluded for backbone-only detection |
 | 10-01 | Default preserve_genbank=False | Backward compatibility - no changes to existing convert_plasmidfile_to_fasta callers |
 | 10-01 | GenBank file location priority (output_dir then plasmid_file) | Always finds most relevant .gb file (from conversion or original) |
+| 10-02 | genbank_file parameter optional (None default) | Backward compatibility - existing compare_alignments callers work unchanged |
+| 10-02 | Graceful exception handling for gene detection | Failures log warning, continue without gene data - pipeline never crashes |
+| 10-02 | Per-gene coverage computed before streaming compare | Requires BAM file access - done early in flow |
+| 10-02 | GenBank preservation enabled in pipeline | preserve_genbank=True in run_pipeline - gene detection needs annotations |
+| 10-02 | ResistanceGenesAvailable flag | false = no GenBank file, true = GenBank present (may/may not find genes) |
 
 ### Known Issues
 
@@ -120,27 +129,31 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped at:** Completed 10-01-PLAN.md
+**Stopped at:** Completed Phase 10 (Resistance Gene Detection)
 **Resume file:** None
 
 **What just happened:**
-- Executed Phase 10 Plan 01 (Resistance Gene Detection) — 2 tasks, 13 minutes
-- Task 1: Created resistance_gene_detection.py module with curated pattern matching for bacterial, mammalian, and reporter genes; modified convert_plasmidfile_to_fasta to preserve GenBank files
-- Task 2: Comprehensive unit tests (55 new tests) covering pattern matching, GenBank parsing, insert region exclusion, and real file validation
-- All success criteria met: Gene detection module with 90% recall, GenBank preservation, config extension point
-- 274 tests passing (219 existing + 55 new) with all CI checks passing
-- 3 commits: feat, test, style
+- Executed Phase 10 Plan 02 (Gene Detection Integration) — 2 tasks, 10 minutes
+- Task 1: Integrated gene detection into compare_alignments.py with per-gene coverage; modified run_pipeline.py to preserve GenBank files and forward path
+- Task 2: Added 6 integration and recall validation tests (3 for summary.tsv output, 3 for real GenBank file coverage)
+- All success criteria met: Per-gene coverage in summary.tsv, GenBank preservation, graceful fallback, backward compatibility
+- 280 tests passing (274 from 10-01 + 6 new) with all CI checks passing
+- 2 commits: feat, test
 
-**Next step:** Execute Phase 10 Plan 02 (Gene Coverage Integration) to integrate gene detection into compare_alignments.py and compute per-gene coverage metrics.
+**Phase 10 complete:**
+- Plan 01: Resistance gene detection module (13 min, 3 commits, 55 tests added)
+- Plan 02: Pipeline integration (10 min, 2 commits, 6 tests added)
+- Total: 23 minutes, 5 commits, 61 tests added (219 → 280)
 
-**Key context for Plan 02:**
-- resistance_gene_detection.py module ready for import
-- DetectedGene dataclass provides structured data (name, sanitized_name, start, end, region)
-- locate_genbank_file() helper finds .gb files in output_dir or original plasmid_file
-- coverage_metrics.py get_depth_array() can compute coverage for specific gene regions
-- Need to add gene detection call after insert region parsing in compare_alignments.py
-- New columns in summary.tsv for each detected gene with coverage stats
+**Next step:** Execute Phase 11 (Summary Report Integration) to add resistance gene data to HTML reports.
+
+**Key context for Phase 11:**
+- ResGene_ rows in summary.tsv ready for parsing
+- ResistanceGenesAvailable flag enables conditional report sections
+- Gene data format: ResGene_{sanitized_name}_MeanDepth, Breadth, Start, End, Region
+- HTML template at plasmicheck/templates/report_template.html needs new card
+- generate_report.py parses summary.tsv and passes to template
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 10 Plan 01 execution*
+*Last updated: 2026-02-15 after Phase 10 Plan 02 execution (Phase 10 complete)*
