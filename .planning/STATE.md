@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 8 of 11 (Insert-Region-Aware Filtering) — VERIFIED ✓
-**Plan:** All plans complete, verified
-**Status:** Phase 8 verified, ready for Phase 9
-**Progress:** ██▓░░░░░░░ 25% (1/4 phases complete)
+**Phase:** 9 of 11 (Coverage Metrics) — IN PROGRESS
+**Plan:** 1 of 2 complete (09-01 ✓)
+**Status:** Plan 09-01 complete, ready for Plan 09-02
+**Progress:** ███░░░░░░░ 30% (1.5/4 phases complete)
 
-Last activity: 2026-02-14 -- Phase 8 verified (12/12 must-haves, 5/5 requirements)
+Last activity: 2026-02-15 -- Completed 09-01-PLAN.md (COV-01..05 complete, 216 tests passing)
 
 ## Milestones
 
@@ -29,7 +29,7 @@ Last activity: 2026-02-14 -- Phase 8 verified (12/12 must-haves, 5/5 requirement
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 8 | Insert-Region-Aware Filtering | FILT-01..05 | Complete ✓ |
-| 9 | Coverage Metrics | COV-01..05 | Not Started |
+| 9 | Coverage Metrics | COV-01..05 | Plan 01 Complete ✓ |
 | 10 | Resistance Gene Detection | RGENE-01..04 | Not Started |
 | 11 | Summary Report Integration | REPT-04..10 | Not Started |
 
@@ -55,6 +55,14 @@ Last activity: 2026-02-14 -- Phase 8 verified (12/12 must-haves, 5/5 requirement
   category ordering), sample/plasmid identity bar, comma-formatted numbers,
   parsed mismatches metrics, collapsible run details, print stylesheet
 
+**From Phase 9 Plan 01 (09-01):**
+- Per-region coverage metrics (mean/median depth, breadth, CV) computed via pysam.count_coverage()
+- 10 new rows in summary.tsv: MeanDepthInsert, MedianDepthInsert, BreadthInsert, BreadthInsert_5x, CoverageCV_Insert, MeanDepthBackbone, MedianDepthBackbone, BreadthBackbone, BreadthBackbone_5x, CoverageCV_Backbone
+- 216 tests passing (up from 195)
+- coverage_metrics.py module separates coverage computation logic
+- breadth_thresholds configurable in config.json (default: [5])
+- Graceful fallback for missing insert region (whole-plasmid metrics)
+
 ### Key Context for v0.33.0
 
 - Phase 8 (filtering) must come first: corrects read assignments that all downstream metrics depend on
@@ -74,6 +82,10 @@ Last activity: 2026-02-14 -- Phase 8 verified (12/12 must-haves, 5/5 requirement
 | 08-01 | score_margin=0 means disabled | Preserves Tied category; margin > 0 creates Ambiguous category for borderline reads |
 | 08-01 | Exact ties never Ambiguous | Tied (score_diff=0) is distinct from Ambiguous (0 < score_diff < margin) |
 | 08-01 | Graceful fallback for missing insert region | Warning + pre-v0.33.0 behavior instead of crash enables partial functionality |
+| 09-01 | pysam.count_coverage() with quality_threshold=0 | Matches existing alignment behavior (no base quality filtering) |
+| 09-01 | Always compute breadth_1x plus configurable thresholds | Breadth ≥1 read is fundamental; additional thresholds configurable via breadth_thresholds |
+| 09-01 | CV=0.0 for single-element arrays | Avoids NaN propagation from numpy.std(ddof=1) on single elements |
+| 09-01 | CoverageFallback row in summary.tsv | Enables downstream report detection of whole-plasmid fallback mode |
 
 ### Known Issues
 
@@ -86,30 +98,29 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-14
-**Stopped at:** Phase 8 verified and complete
+**Last session:** 2026-02-15
+**Stopped at:** Completed 09-01-PLAN.md
 **Resume file:** None
 
 **What just happened:**
-- Executed Phase 8 (Insert-Region-Aware Filtering) — 2 plans across 2 waves
-- Plan 08-01: Core filtering logic with 5-category read classification, config toggle, 31 new tests
-- Plan 08-02: Report display updates with structured 5-category table, Plotly/matplotlib color mapping
-- Verification passed: 12/12 must-haves, 5/5 requirements (FILT-01..05) complete
-- 195 tests passing (up from 170)
-- Report UI/UX redesign: complete template rewrite based on audit (3.5/10 -> professional design)
-- Validated with Playwright at 1920px, 1366px, 768px viewports on real contaminated + clean data
+- Executed Phase 9 Plan 01 (Coverage Metrics) — 2 tasks, 8 minutes
+- Task 1: Created coverage_metrics.py module with per-region depth/breadth/CV computation
+- Task 2: Added 21 comprehensive unit tests covering all coverage functions
+- All success criteria met: COV-01 through COV-05 complete
+- 216 tests passing (up from 195)
+- 10 new rows added to summary.tsv with backward compatibility
+- All CI checks passing (lint, format, typecheck, test)
 
-**Next step:** `/gsd:discuss-phase 9` or `/gsd:plan-phase 9` to plan Coverage Metrics.
+**Next step:** Execute Plan 09-02 to display coverage metrics in single-sample HTML reports.
 
-**Key context for Phase 9:**
-- Insert-region-aware classification established (08-01)
-- Report display infrastructure updated (08-02)
-- read_overlaps_insert() function available for coverage calculations
-- Backbone_Only reads should be excluded from insert coverage metrics
-- Requirements: COV-01 through COV-05
-- Core files: compare_alignments.py (add coverage functions), plotting modules
-- pysam.count_coverage() for per-base depth calculations
+**Key context for Plan 09-02:**
+- coverage_metrics.py module ready with compute_region_coverage_metrics()
+- summary.tsv contains all 10 coverage rows (MeanDepthInsert, MedianDepthInsert, etc.)
+- CoverageFallback row indicates whole-plasmid fallback mode
+- conftest.py has sample_summary_df_with_coverage fixture for report tests
+- Report template at plasmicheck/templates/sample_report.html needs Coverage Analysis card
+- Bootstrap 5.3 card layout established in Phase 8 (08-02)
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 8 verification*
+*Last updated: 2026-02-15 after Phase 9 Plan 01 execution*
