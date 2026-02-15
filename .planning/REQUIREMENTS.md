@@ -32,10 +32,10 @@ Requirements for v0.34.0: Robustness & Infrastructure. Each maps to roadmap phas
 
 ### Output Restructuring (#80)
 
-- [ ] **OUT-01**: `OutputPaths` dataclass centralizing all path construction
-- [ ] **OUT-02**: Subfolder layout: `alignments/`, `references/`, `data/`, `reports/`, `plots/`
-- [ ] **OUT-03**: Depth-agnostic `read_compare_outputs()` for summary report reader
-- [ ] **OUT-04**: All pipeline components use `OutputPaths` (no hardcoded path construction)
+- [x] **OUT-01**: `OutputPaths` dataclass centralizing all path construction
+- [x] **OUT-02**: Subfolder layout: `alignments/`, `references/`, `data/`, `reports/`, `plots/`
+- [x] **OUT-03**: Depth-agnostic `read_compare_outputs()` for summary report reader
+- [x] **OUT-04**: All pipeline components use `OutputPaths` (no hardcoded path construction)
 
 ### Splice Junction Metadata (#68)
 
@@ -85,10 +85,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FMT-02 | Phase 12 | Complete |
 | FMT-03 | Phase 12 | Complete |
 | FMT-04 | Phase 12 | Complete |
-| OUT-01 | Phase 13 | Pending |
-| OUT-02 | Phase 13 | Pending |
-| OUT-03 | Phase 13 | Pending |
-| OUT-04 | Phase 13 | Pending |
+| OUT-01 | Phase 13 | Complete |
+| OUT-02 | Phase 13 | Complete |
+| OUT-03 | Phase 13 | Complete |
+| OUT-04 | Phase 13 | Complete |
 | CACHE-01 | Phase 14 | Pending |
 | CACHE-02 | Phase 14 | Pending |
 | CACHE-03 | Phase 14 | Pending |

@@ -83,8 +83,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 13-01-PLAN.md — OutputPaths frozen dataclass, pipeline rewiring, downstream module updates
-- [ ] 13-02-PLAN.md — Depth-agnostic summary reader and both-layout tests
+- [x] 13-01-PLAN.md — OutputPaths frozen dataclass, pipeline rewiring, downstream module updates
+- [x] 13-02-PLAN.md — Depth-agnostic summary reader and both-layout tests
 
 #### Phase 14: Cache Infrastructure
 **Goal:** Batch runs reuse indexes and spliced alignments across samples, dramatically reducing runtime
@@ -143,13 +143,13 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 | 10. Resistance Gene Detection | v0.33.0 | 2/2 | Complete | 2026-02-15 |
 | 11. Summary Report Integration | v0.33.0 | 2/2 | Complete | 2026-02-15 |
 | 12. Format Hardening | v0.34.0 | 2/2 | Complete | 2026-02-15 |
-| 13. Output Restructuring | v0.34.0 | 0/2 | Not started | - |
+| 13. Output Restructuring | v0.34.0 | 2/2 | Complete | 2026-02-15 |
 | 14. Cache Infrastructure | v0.34.0 | 0/3 | Not started | - |
 | 15. Splice Junction Metadata | v0.34.0 | 0/1 | Not started | - |
 | 16. Summary Visualization | v0.34.0 | 0/2 | Not started | - |
 
-**v0.34.0 Progress:** 2/10 plans complete
+**v0.34.0 Progress:** 4/10 plans complete
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 13 planning*
+*Last updated: 2026-02-15 after Phase 13 execution*
