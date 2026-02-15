@@ -125,11 +125,20 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_convert.add_argument("-i", "--input_file", help="Input plasmid file", required=True)
     parser_convert.add_argument("-o", "--output_file", help="Output FASTA file", required=True)
     parser_convert.add_argument(
+        "-f",
+        "--format",
+        dest="format",
+        choices=["snapgene", "xdna", "genbank", "fasta"],
+        default=None,
+        help="File format (auto-detected from file content if not specified)",
+    )
+    # Deprecated: keep -t/--file_type for backward compatibility
+    parser_convert.add_argument(
         "-t",
         "--file_type",
-        choices=["genbank", "xdna"],
-        help="Type of input file: 'genbank' or 'xdna'",
-        required=True,
+        dest="format",
+        choices=["snapgene", "xdna", "genbank", "fasta"],
+        help=argparse.SUPPRESS,  # Hide from help output
     )
     parser_convert.add_argument(
         "-sb",
@@ -375,10 +384,18 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     if args.command == "convert":
         from .scripts.convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta
 
+        # Auto-detect format if not specified
+        file_format = args.format
+        if file_format is None:
+            from .scripts.format_detection import detect_format
+
+            file_format = detect_format(args.input_file)
+            logging.info(f"Auto-detected format: {file_format}")
+
         convert_plasmidfile_to_fasta(
             args.input_file,
             args.output_file,
-            args.file_type,
+            file_format,
             args.shift_bases,
             args.generate_shifted,
             args.overwrite,
