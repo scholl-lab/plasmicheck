@@ -57,7 +57,8 @@
     "marker_style": {
       "size": 8,
       "opacity": 0.7
-    }
+    },
+    "depth_heatmap_cap": 100
   },
   "plot_sample_report": {
     "figsize": {

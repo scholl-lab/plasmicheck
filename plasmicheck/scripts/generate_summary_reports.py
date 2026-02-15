@@ -29,6 +29,7 @@ PLOT_DIMENSIONS: dict[str, int] = PLOT_CONFIG.get(
 ROUND_DECIMALS: int = PLOT_CONFIG.get("round_decimals", 3)
 LOG_OFFSET: float = PLOT_CONFIG.get("log_offset", 1e-9)
 MARKER_STYLE: dict[str, Any] = PLOT_CONFIG.get("marker_style", {"size": 8, "opacity": 0.7})
+DEPTH_HEATMAP_CAP: float = PLOT_CONFIG.get("depth_heatmap_cap", 100.0)
 
 # Setup logging for the libraries used in this script
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
@@ -345,6 +346,274 @@ def plot_heatmap(
     logging.info("Heatmap generated.")
 
     return heatmap_filename_interactive, heatmap_filename_png
+
+
+def create_metric_heatmap_data(summary_df: pd.DataFrame, metric_category: str) -> pd.DataFrame:
+    """Extract and pivot a single metric category from summary_df to Sample x Plasmid grid.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+        metric_category: Category name to filter (e.g., "MeanDepthInsert", "CoverageOutsideINSERT")
+
+    Returns:
+        Pivoted DataFrame with samples as rows, plasmids as columns, values as cells.
+        Returns empty DataFrame if metric_category not found (graceful degradation).
+    """
+    import pandas as pd
+
+    # Filter for the specific metric category
+    filtered = summary_df[summary_df["Category"] == metric_category].copy()
+
+    if filtered.empty:
+        logging.warning(f"Metric category '{metric_category}' not found in summary data")
+        return pd.DataFrame()
+
+    # Convert Value to numeric
+    filtered["Value"] = pd.to_numeric(filtered["Value"], errors="coerce")
+
+    # Pivot to Sample x Plasmid grid
+    metric_data = filtered.pivot(
+        index="Sample", columns="Plasmid", values="Value"
+    ).round(ROUND_DECIMALS)
+
+    return metric_data
+
+
+def plot_metric_heatmap(
+    metric_data: pd.DataFrame,
+    output_dir: str,
+    metric_name: str,
+    vmax: float | None = None,
+    static_report: bool = False,
+    plot_backend: str = "plotly",
+) -> tuple[str, str | None]:
+    """Generate Plotly heatmap for any Sample x Plasmid metric grid.
+
+    Args:
+        metric_data: Pivoted DataFrame (Sample x Plasmid)
+        output_dir: Output directory for plots
+        metric_name: Display name for the metric (e.g., "Mean Depth Insert")
+        vmax: Optional maximum value for color scale (data will be clipped)
+        static_report: If True, also generate PNG
+        plot_backend: "plotly" or "matplotlib" for PNG generation
+
+    Returns:
+        Tuple of (html_filename, png_filename_or_None)
+    """
+    import plotly.express as px
+
+    if metric_data.empty:
+        logging.warning(f"No data for {metric_name} heatmap")
+        return ("", None)
+
+    logging.info(f"Generating heatmap for {metric_name}.")
+
+    # Clip data if vmax provided
+    plot_data = metric_data.clip(upper=vmax) if vmax is not None else metric_data
+
+    # Blue-to-red color scale matching existing ratio heatmap
+    color_scale: list[list[float | str]] = [
+        [0.0, PLOT_CONFIG["colors"]["not_contaminated"]],
+        [1.0, PLOT_CONFIG["colors"]["contaminated"]],
+    ]
+
+    fig = px.imshow(
+        plot_data,
+        color_continuous_scale=color_scale,
+        height=PLOT_DIMENSIONS["height"],
+        aspect="auto",
+    )
+
+    # Update layout
+    fig.update_layout(
+        title=f"Heatmap of {metric_name} by Sample and Plasmid",
+        xaxis_title="Plasmid",
+        yaxis_title="Sample",
+        xaxis={
+            "tickangle": PLOT_CONFIG["xticks_rotation"],
+            "tickfont": {"size": 9},
+            "tickmode": "linear",
+        },
+        yaxis={"tickfont": {"size": 9}},
+    )
+
+    # Disable color bar
+    fig.update_coloraxes(showscale=False)
+
+    # Save interactive HTML
+    plots_dir: str = os.path.join(output_dir, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+
+    slug = metric_name.lower().replace(" ", "_")
+    html_filename: str = os.path.join(plots_dir, f"heatmap_{slug}.html")
+    fig.write_html(html_filename, include_plotlyjs=False, full_html=False)
+
+    # Save static PNG if requested
+    png_filename: str | None = None
+    if static_report:
+        png_filename = os.path.join(plots_dir, f"heatmap_{slug}.png")
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import generate_metric_heatmap_matplotlib
+
+            generate_metric_heatmap_matplotlib(metric_data, png_filename, metric_name, vmax)
+        else:
+            fig.write_image(png_filename)
+
+    logging.info(f"{metric_name} heatmap generated.")
+
+    return html_filename, png_filename
+
+
+def plot_coverage_outside_insert_boxplot(
+    summary_df: pd.DataFrame,
+    output_dir: str,
+    static_report: bool = False,
+    plot_backend: str = "plotly",
+) -> tuple[str, str | None]:
+    """Generate boxplot for CoverageOutsideINSERT distribution across plasmids.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+        output_dir: Output directory for plots
+        static_report: If True, also generate PNG
+        plot_backend: "plotly" or "matplotlib" for PNG generation
+
+    Returns:
+        Tuple of (html_filename, png_filename_or_None)
+    """
+    import pandas as pd
+    import plotly.express as px
+
+    # Extract CoverageOutsideINSERT rows
+    coverage_df = summary_df[summary_df["Category"] == "CoverageOutsideINSERT"].copy()
+
+    if coverage_df.empty:
+        logging.warning("No CoverageOutsideINSERT data found")
+        return ("", None)
+
+    # Convert Value to numeric
+    coverage_df["Value"] = pd.to_numeric(coverage_df["Value"], errors="coerce")
+
+    logging.info("Generating CoverageOutsideINSERT boxplot.")
+
+    # Pivot to Sample x Plasmid, then melt for boxplot
+    coverage_pivot = coverage_df.pivot(
+        index="Sample", columns="Plasmid", values="Value"
+    )
+    boxplot_data = coverage_pivot.melt(
+        var_name="Plasmid", value_name="Value", ignore_index=False
+    ).reset_index()
+
+    # Create boxplot
+    fig = px.box(
+        boxplot_data,
+        x="Plasmid",
+        y="Value",
+        points="all",
+        hover_data={"Sample": True},
+        title="CoverageOutsideINSERT Distribution by Plasmid",
+    )
+
+    fig.update_layout(
+        yaxis_title="Coverage Outside Insert",
+        height=800,
+    )
+
+    # Save interactive HTML
+    plots_dir: str = os.path.join(output_dir, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+
+    html_filename: str = os.path.join(plots_dir, "boxplot_coverage_outside_insert.html")
+    fig.write_html(html_filename, include_plotlyjs=False, full_html=False)
+
+    # Save static PNG if requested
+    png_filename: str | None = None
+    if static_report:
+        png_filename = os.path.join(plots_dir, "boxplot_coverage_outside_insert.png")
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import generate_coverage_boxplot_matplotlib
+
+            generate_coverage_boxplot_matplotlib(coverage_pivot, png_filename)
+        else:
+            fig.write_image(png_filename)
+
+    logging.info("CoverageOutsideINSERT boxplot generated.")
+
+    return html_filename, png_filename
+
+
+def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
+    """Extract resistance gene data from summary_df into a flat table.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+
+    Returns:
+        DataFrame with columns: Sample, Plasmid, Gene Name, Mean Depth, Breadth (%)
+        Returns empty DataFrame with correct columns if no genes found.
+    """
+    import pandas as pd
+
+    # Check if resistance genes are available
+    available_rows = summary_df[summary_df["Category"] == "ResistanceGenesAvailable"]
+    if available_rows.empty or (available_rows["Value"] == "false").all():
+        # No genes available - return empty DataFrame with correct structure
+        return pd.DataFrame(
+            columns=["Sample", "Plasmid", "Gene Name", "Mean Depth", "Breadth (%)"]
+        )
+
+    # Find all ResistanceGenes rows
+    gene_rows = summary_df[summary_df["Category"] == "ResistanceGenes"]
+    if gene_rows.empty:
+        return pd.DataFrame(
+            columns=["Sample", "Plasmid", "Gene Name", "Breadth (%)"]
+        )
+
+    # Build flat table
+    table_rows: list[dict[str, Any]] = []
+
+    for _, row in gene_rows.iterrows():
+        sample = row["Sample"]
+        plasmid = row["Plasmid"]
+        gene_names_str = row["Value"]
+
+        if not gene_names_str or gene_names_str == "":
+            continue
+
+        # Split gene names by comma
+        gene_names = [g.strip() for g in gene_names_str.split(",")]
+
+        for gene_name in gene_names:
+            # Sanitize gene name for lookup (replace "/" and " " with "_")
+            sanitized_name = gene_name.replace("/", "_").replace(" ", "_")
+
+            # Look up depth and breadth
+            depth_category = f"ResGene_{sanitized_name}_MeanDepth"
+            breadth_category = f"ResGene_{sanitized_name}_Breadth"
+
+            depth_row = summary_df[
+                (summary_df["Sample"] == sample)
+                & (summary_df["Plasmid"] == plasmid)
+                & (summary_df["Category"] == depth_category)
+            ]
+            breadth_row = summary_df[
+                (summary_df["Sample"] == sample)
+                & (summary_df["Plasmid"] == plasmid)
+                & (summary_df["Category"] == breadth_category)
+            ]
+
+            mean_depth = float(depth_row.iloc[0]["Value"]) if not depth_row.empty else 0.0
+            breadth = float(breadth_row.iloc[0]["Value"]) if not breadth_row.empty else 0.0
+
+            table_rows.append({
+                "Sample": sample,
+                "Plasmid": plasmid,
+                "Gene Name": gene_name,
+                "Mean Depth": mean_depth,
+                "Breadth (%)": breadth,
+            })
+
+    return pd.DataFrame(table_rows)
 
 
 # Report Generation Functions
