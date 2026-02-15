@@ -132,6 +132,8 @@ def save_tables_as_tsv_and_excel(
     ratio_df: pd.DataFrame,
     p_values_df: pd.DataFrame,
     output_dir: str,
+    extended_metrics_df: pd.DataFrame | None = None,
+    resistance_gene_df: pd.DataFrame | None = None,
 ) -> None:
     """Save the combined, verdict, ratio, and p-value dataframes as TSV and Excel files."""
     import pandas as pd
@@ -151,6 +153,18 @@ def save_tables_as_tsv_and_excel(
     ratio_df.to_csv(os.path.join(data_dir, "ratio_table.tsv"), sep="\t", index=False)
     p_values_df.to_csv(os.path.join(data_dir, "p_value_table.tsv"), sep="\t", index=False)
 
+    # Save extended metrics TSV if provided
+    if extended_metrics_df is not None and not extended_metrics_df.empty:
+        extended_metrics_df.to_csv(
+            os.path.join(data_dir, "extended_metrics_table.tsv"), sep="\t", index=False
+        )
+
+    # Save resistance genes TSV if provided
+    if resistance_gene_df is not None and not resistance_gene_df.empty:
+        resistance_gene_df.to_csv(
+            os.path.join(data_dir, "resistance_genes_table.tsv"), sep="\t", index=False
+        )
+
     # Save Excel file with multiple sheets
     excel_file: str = os.path.join(data_dir, "summary_report_tables.xlsx")
     with pd.ExcelWriter(excel_file, engine="xlsxwriter") as writer:
@@ -158,6 +172,18 @@ def save_tables_as_tsv_and_excel(
         _sanitize_for_excel(verdict_df).to_excel(writer, sheet_name="Verdicts", index=False)
         _sanitize_for_excel(ratio_df).to_excel(writer, sheet_name="Ratios", index=False)
         _sanitize_for_excel(p_values_df).to_excel(writer, sheet_name="P-Values", index=False)
+
+        # Add extended metrics sheet if provided
+        if extended_metrics_df is not None and not extended_metrics_df.empty:
+            _sanitize_for_excel(extended_metrics_df).to_excel(
+                writer, sheet_name="Extended Metrics", index=False
+            )
+
+        # Add resistance genes sheet if provided
+        if resistance_gene_df is not None and not resistance_gene_df.empty:
+            _sanitize_for_excel(resistance_gene_df).to_excel(
+                writer, sheet_name="Resistance Genes", index=False
+            )
 
     logging.info("TSV and Excel files have been saved.")
 
@@ -635,6 +661,17 @@ def generate_report(
     plotly_js_path: str = "",
     plotly_version: str = "",
     plotly_js_inline: str = "",
+    coverage_outside_heatmap_interactive: str = "",
+    coverage_outside_heatmap_png: str | None = None,
+    coverage_outside_boxplot_interactive: str = "",
+    coverage_outside_boxplot_png: str | None = None,
+    mismatches_heatmap_interactive: str = "",
+    mismatches_heatmap_png: str | None = None,
+    depth_heatmap_interactive: str = "",
+    depth_heatmap_png: str | None = None,
+    breadth_heatmap_interactive: str = "",
+    breadth_heatmap_png: str | None = None,
+    resistance_gene_df: pd.DataFrame | None = None,
 ) -> None:
     import pandas as pd
     from jinja2 import Environment, FileSystemLoader
@@ -658,6 +695,32 @@ def generate_report(
     with open(boxplot_filename_interactive) as f:
         boxplot_html_content = f.read()
 
+    # Read new plot HTML files (if they exist)
+    coverage_outside_heatmap_html = ""
+    if coverage_outside_heatmap_interactive:
+        with open(coverage_outside_heatmap_interactive) as f:
+            coverage_outside_heatmap_html = f.read()
+
+    coverage_outside_boxplot_html = ""
+    if coverage_outside_boxplot_interactive:
+        with open(coverage_outside_boxplot_interactive) as f:
+            coverage_outside_boxplot_html = f.read()
+
+    mismatches_heatmap_html = ""
+    if mismatches_heatmap_interactive:
+        with open(mismatches_heatmap_interactive) as f:
+            mismatches_heatmap_html = f.read()
+
+    depth_heatmap_html = ""
+    if depth_heatmap_interactive:
+        with open(depth_heatmap_interactive) as f:
+            depth_heatmap_html = f.read()
+
+    breadth_heatmap_html = ""
+    if breadth_heatmap_interactive:
+        with open(breadth_heatmap_interactive) as f:
+            breadth_heatmap_html = f.read()
+
     # Read the PNG files as base64 for non-interactive report (only if static_report=True)
     heatmap_png_base64 = ""
     boxplot_png_base64 = ""
@@ -665,11 +728,36 @@ def generate_report(
         heatmap_png_base64 = encode_image_to_base64(heatmap_filename_png)
         boxplot_png_base64 = encode_image_to_base64(boxplot_filename_png)
 
+    # Read new plot PNG files (if they exist and static_report=True)
+    coverage_outside_heatmap_png_base64 = ""
+    coverage_outside_boxplot_png_base64 = ""
+    mismatches_heatmap_png_base64 = ""
+    depth_heatmap_png_base64 = ""
+    breadth_heatmap_png_base64 = ""
+    if static_report:
+        if coverage_outside_heatmap_png:
+            coverage_outside_heatmap_png_base64 = encode_image_to_base64(coverage_outside_heatmap_png)
+        if coverage_outside_boxplot_png:
+            coverage_outside_boxplot_png_base64 = encode_image_to_base64(coverage_outside_boxplot_png)
+        if mismatches_heatmap_png:
+            mismatches_heatmap_png_base64 = encode_image_to_base64(mismatches_heatmap_png)
+        if depth_heatmap_png:
+            depth_heatmap_png_base64 = encode_image_to_base64(depth_heatmap_png)
+        if breadth_heatmap_png:
+            breadth_heatmap_png_base64 = encode_image_to_base64(breadth_heatmap_png)
+
     # Convert sorted DataFrames to HTML
     combined_html = combined_df.to_html(classes="table table-striped table-bordered", index=False)
     verdict_html = verdict_df.to_html(classes="table table-striped table-bordered", index=False)
     ratio_html = ratio_df.to_html(classes="table table-striped table-bordered", index=False)
     p_value_html = p_values_df.to_html(classes="table table-striped table-bordered", index=False)
+
+    # Convert resistance gene DataFrame to HTML if provided
+    resistance_gene_html = ""
+    if resistance_gene_df is not None and not resistance_gene_df.empty:
+        resistance_gene_html = resistance_gene_df.to_html(
+            classes="table table-striped table-bordered", index=False
+        )
 
     # Encode the logo
     logo_base64 = encode_image_to_base64(str(get_resource_path(LOGO_PATH)))
@@ -682,6 +770,12 @@ def generate_report(
         heatmap_content=heatmap_html_content,
         boxplot_content=boxplot_html_content,
         p_value_table=p_value_html,
+        coverage_outside_heatmap_content=coverage_outside_heatmap_html,
+        coverage_outside_boxplot_content=coverage_outside_boxplot_html,
+        mismatches_heatmap_content=mismatches_heatmap_html,
+        depth_heatmap_content=depth_heatmap_html,
+        breadth_heatmap_content=breadth_heatmap_html,
+        resistance_gene_table=resistance_gene_html,
         logo_base64=logo_base64,
         threshold=threshold,
         unclear_range=unclear_range,
@@ -709,6 +803,12 @@ def generate_report(
             heatmap_content=heatmap_png_base64,
             boxplot_content=boxplot_png_base64,
             p_value_table=p_value_html,
+            coverage_outside_heatmap_content=coverage_outside_heatmap_png_base64,
+            coverage_outside_boxplot_content=coverage_outside_boxplot_png_base64,
+            mismatches_heatmap_content=mismatches_heatmap_png_base64,
+            depth_heatmap_content=depth_heatmap_png_base64,
+            breadth_heatmap_content=breadth_heatmap_png_base64,
+            resistance_gene_table=resistance_gene_html,
             logo_base64=logo_base64,
             threshold=threshold,
             unclear_range=unclear_range,
@@ -798,6 +898,63 @@ def main(
         plot_backend=plot_backend,
     )
 
+    # --- New: Coverage Outside Insert (REPT-04) ---
+    cov_outside_data = create_metric_heatmap_data(summary_df, "CoverageOutsideINSERT")
+    cov_outside_heatmap_interactive, cov_outside_heatmap_png = plot_metric_heatmap(
+        cov_outside_data,
+        output_dir,
+        "Coverage Outside Insert",
+        static_report=static_report,
+        plot_backend=plot_backend,
+    )
+    cov_outside_boxplot_interactive, cov_outside_boxplot_png = plot_coverage_outside_insert_boxplot(
+        summary_df, output_dir, static_report=static_report, plot_backend=plot_backend
+    )
+
+    # --- New: MismatchesNearINSERT (REPT-05) ---
+    mismatches_data = create_metric_heatmap_data(summary_df, "MismatchesNearINSERT")
+    mismatches_heatmap_interactive, mismatches_heatmap_png = plot_metric_heatmap(
+        mismatches_data,
+        output_dir,
+        "Mismatches Near Insert",
+        static_report=static_report,
+        plot_backend=plot_backend,
+    )
+
+    # --- New: Coverage Depth (REPT-06) ---
+    depth_data = create_metric_heatmap_data(summary_df, "MeanDepthBackbone")
+    depth_heatmap_interactive, depth_heatmap_png = plot_metric_heatmap(
+        depth_data,
+        output_dir,
+        "Backbone Mean Depth",
+        vmax=DEPTH_HEATMAP_CAP,
+        static_report=static_report,
+        plot_backend=plot_backend,
+    )
+
+    # --- New: Coverage Breadth (REPT-07) ---
+    breadth_data = create_metric_heatmap_data(summary_df, "BreadthBackbone")
+    breadth_heatmap_interactive, breadth_heatmap_png = plot_metric_heatmap(
+        breadth_data,
+        output_dir,
+        "Backbone Breadth",
+        vmax=100.0,
+        static_report=static_report,
+        plot_backend=plot_backend,
+    )
+
+    # --- New: Resistance Gene Table (REPT-08) ---
+    resistance_gene_df = create_resistance_gene_table(summary_df)
+
+    # --- Build extended metrics DataFrame for export (REPT-10) ---
+    extended_categories = [
+        "CoverageOutsideINSERT",
+        "MismatchesNearINSERT",
+        "MeanDepthBackbone",
+        "BreadthBackbone",
+    ]
+    extended_metrics_df = summary_df[summary_df["Category"].isin(extended_categories)]
+
     # Save tables
     save_tables_as_tsv_and_excel(
         summary_df[summary_df["Category"].isin(["Plasmid", "Human", "Tied"])],
@@ -805,6 +962,8 @@ def main(
         summary_df[summary_df["Category"] == "Ratio"],
         p_values_df,
         output_dir,
+        extended_metrics_df=extended_metrics_df,
+        resistance_gene_df=resistance_gene_df,
     )
 
     # Generate report
@@ -826,6 +985,17 @@ def main(
         plotly_js_path=plotly_js_path,
         plotly_version=plotly_version,
         plotly_js_inline=plotly_js_inline,
+        coverage_outside_heatmap_interactive=cov_outside_heatmap_interactive,
+        coverage_outside_heatmap_png=cov_outside_heatmap_png,
+        coverage_outside_boxplot_interactive=cov_outside_boxplot_interactive,
+        coverage_outside_boxplot_png=cov_outside_boxplot_png,
+        mismatches_heatmap_interactive=mismatches_heatmap_interactive,
+        mismatches_heatmap_png=mismatches_heatmap_png,
+        depth_heatmap_interactive=depth_heatmap_interactive,
+        depth_heatmap_png=depth_heatmap_png,
+        breadth_heatmap_interactive=breadth_heatmap_interactive,
+        breadth_heatmap_png=breadth_heatmap_png,
+        resistance_gene_df=resistance_gene_df,
     )
 
 
