@@ -43,20 +43,22 @@ Accurately detect plasmid contamination in sequencing data through comparative a
 
 <!-- Current scope. Building toward these. -->
 
-**Current Milestone: v0.33.0 — Scientific & Reporting Enhancements**
+**Current Milestone: v0.34.0 — Robustness & Infrastructure**
 
-**Goal:** Improve scientific accuracy and reporting completeness by adding insert-region-aware filtering, resistance gene coverage, comprehensive depth/breadth metrics, and full metric integration in summary reports.
+**Goal:** Harden format support, improve output organization, add caching for repeated computations, expand summary visualizations, and extract splice junction metadata.
 
-- [ ] Filter ambiguous reads using insert-region awareness (#82)
-- [ ] Add comprehensive coverage metrics per-region (#65)
-- [ ] Detect and report resistance gene coverage (#64)
-- [ ] Integrate all metrics in summary reports (#58)
+- [ ] xDNA format hardening + SnapGene `.dna` support (#75)
+- [ ] Verdict bar charts in summary reports (#51, plots 1-2)
+- [ ] Cross-run index and plasmid caching (#39)
+- [ ] Output folder restructuring with `OutputPaths` dataclass (#80)
+- [ ] Splice junction count extraction and reporting (#68, Phase 1)
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
-- Scientific enhancements (#68, #50) — deferred to v0.34.0+
+- Splice junction normalization + calibration (#68, Phases 2-3) — needs threshold recalibration
+- Correct cutoffs for exon count/CDS length (#50) — deferred
 - ML classification (#44) — exploratory, current scoring works
 - Interactive CLI mode (#25) — nice-to-have, not blocking
 - Anonymize BAM outputs (#5) — privacy feature, lower priority
@@ -67,12 +69,12 @@ Accurately detect plasmid contamination in sequencing data through comparative a
 
 ## Context
 
-- **Current state:** v0.32.0 shipped, starting v0.33.0 — 170 tests passing
-- **Performance (v0.32.0):** Small dataset 0.577s (9.5x faster), real 3M-read alignment 58.4s (1.97x faster)
-- **28 open GitHub issues** — 4 targeted for v0.33.0 (#82, #65, #64, #58)
-- **Key bugs:** #75 (xDNA files), #78 (Snakemake — may be fixed by #86 race condition fix)
+- **Current state:** v0.33.0 shipped — 297 tests passing, 21 requirements delivered
+- **Performance:** Small dataset 0.577s, real 3M-read alignment 58.4s
+- **Key issues targeted:** #75 (xDNA), #51 (plots), #39 (caching), #80 (output structure), #68 (splice junctions)
+- **Key bugs remaining:** #78 (Snakemake — may be fixed by race condition fix in v0.30.0)
 - **External tools:** minimap2 2.28, samtools 1.17, Python 3.10+, pysam, Biopython
-- **v0.33.0 focus:** Scientific accuracy (insert-region filtering) + reporting completeness (coverage metrics, resistance genes)
+- **v0.34.0 focus:** Format robustness, output organization, caching, visualization, scientific metadata
 
 ## Constraints
 
@@ -93,4 +95,4 @@ Accurately detect plasmid contamination in sequencing data through comparative a
 | 5-tier CPU detection chain | SLURM/cgroup/os.cpu_count covers all deployment environments | ✓ Good — transparent with source logging |
 
 ---
-*Last updated: 2026-02-14 after v0.33.0 milestone start*
+*Last updated: 2026-02-15 after v0.34.0 milestone start*
