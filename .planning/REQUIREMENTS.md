@@ -1,59 +1,65 @@
-# Requirements: PlasmiCheck v0.33.0
+# Requirements: PlasmiCheck v0.34.0
 
-**Defined:** 2026-02-14
+**Defined:** 2026-02-15
 **Core Value:** Accurately detect plasmid contamination through comparative alignment scoring -- the contamination verdict must be reliable.
 
-## v0.33.0 Requirements
+## v0.34.0 Requirements
 
-Requirements for v0.33.0: Scientific & Reporting Enhancements. Each maps to roadmap phases.
+Requirements for v0.34.0: Robustness & Infrastructure. Each maps to roadmap phases.
 
-### Scoring & Filtering (#82)
+### Format Hardening (#75)
 
-- [x] **FILT-01**: Reads mapping only to backbone (outside insert region) are classified as Backbone_Only and excluded from contamination ratio
-- [x] **FILT-02**: Optional score margin parameter requires minimum score difference for confident Plasmid/Human assignment
-- [x] **FILT-03**: New read categories (Backbone_Only, Ambiguous) tracked in comparison output alongside existing Plasmid/Human/Tied
-- [x] **FILT-04**: `filter_backbone_only` config toggle (default: true) with `false` restoring pre-v0.33.0 behavior
-- [x] **FILT-05**: New categories displayed in single-sample HTML reports
+- [ ] **FMT-01**: Auto-detect file format via magic bytes to distinguish xDNA vs SnapGene `.dna`
+- [ ] **FMT-02**: Support SnapGene `.dna` files via BioPython `snapgene` parser
+- [ ] **FMT-03**: Override xDNA record ID with sanitized filename instead of truncated comment field
+- [ ] **FMT-04**: Improved error messages for unsupported xDNA versions with conversion suggestions
 
-### Coverage Metrics (#65)
+### Summary Visualization (#51)
 
-- [x] **COV-01**: Per-region mean and median depth computed for insert and backbone regions
-- [x] **COV-02**: Breadth of coverage (fraction of bases with >=1 read) computed per region
-- [x] **COV-03**: Breadth at 5x threshold computed per region
-- [x] **COV-04**: Coverage uniformity (coefficient of variation) computed for backbone region
-- [x] **COV-05**: All new metrics written as additional rows in summary.tsv (backward compatible)
+- [ ] **VIS-01**: Verdict bar chart grouped by plasmid in summary reports
+- [ ] **VIS-02**: Verdict bar chart grouped by sample in summary reports
+- [ ] **VIS-03**: Matplotlib fallback for both new verdict bar charts
+- [ ] **VIS-04**: New plots integrated in summary HTML template and exports
 
-### Resistance Genes (#64)
+### Index & Spliced Caching (#39, #43)
 
-- [x] **RGENE-01**: Resistance genes extracted from GenBank annotations via configurable pattern matching
-- [x] **RGENE-02**: Per-gene coverage metrics (mean depth + breadth) computed using pysam
-- [x] **RGENE-03**: Resistance gene metrics written to summary.tsv per gene
-- [x] **RGENE-04**: Detection works with existing plasmid GenBank files in repository (>=90% recall)
+- [ ] **CACHE-01**: `CacheManager` module with content-addressed cache (`~/.plasmicheck/cache/`)
+- [ ] **CACHE-02**: Within-run plasmid index deduplication (extend `built_indexes` pattern)
+- [ ] **CACHE-03**: Cross-run plasmid index caching with manifest (tool versions, input hashes)
+- [ ] **CACHE-04**: Cross-run spliced alignment caching (BAM, spliced reference, cDNA positions)
+- [ ] **CACHE-05**: CLI flags: `--cache-dir`, `--no-cache`
+- [ ] **CACHE-06**: Cache management subcommand: `plasmicheck cache info|clean`
 
-### Report Integration (#58 + visualization)
+### Output Restructuring (#80)
 
-- [x] **REPT-04**: CoverageOutsideINSERT parsed and displayed in summary reports with heatmap and boxplot
-- [x] **REPT-05**: MismatchesNearINSERT parsed and displayed in summary reports with chart
-- [x] **REPT-06**: Coverage depth heatmap (Sample x Plasmid, backbone mean depth) in summary reports
-- [x] **REPT-07**: Coverage breadth heatmap (backbone breadth %) in summary reports
-- [x] **REPT-08**: Resistance gene coverage table in summary reports
-- [x] **REPT-09**: Matplotlib fallback for all new summary report plots
-- [x] **REPT-10**: TSV and Excel exports include new metric tables
+- [ ] **OUT-01**: `OutputPaths` dataclass centralizing all path construction
+- [ ] **OUT-02**: Subfolder layout: `alignments/`, `references/`, `data/`, `reports/`, `plots/`
+- [ ] **OUT-03**: Depth-agnostic `read_compare_outputs()` for summary report reader
+- [ ] **OUT-04**: All pipeline components use `OutputPaths` (no hardcoded path construction)
+
+### Splice Junction Metadata (#68)
+
+- [ ] **SJ-01**: Extract splice junction count and exon count from spliced alignment BAM CIGAR
+- [ ] **SJ-02**: Store `SpliceJunctionCount` and `ExonCount` in `cDNA_positions.txt` and `summary.tsv`
 
 ## Future Requirements
 
-Deferred to v0.34.0+. Tracked but not in current roadmap.
-
-### Scientific Enhancements
-
-- **SCI-01**: Normalize by splice junction count (#68)
-- **SCI-02**: Correct cutoffs for exon count/CDS length (#50)
-- **SCI-03**: Built-in resistance gene FASTA fallback for unannotated plasmids (#64 extension)
+Deferred to v0.35.0+. Tracked but not in current roadmap.
 
 ### Visualization
 
-- **VIS-01**: Scatter plot overlay on boxplots (#61)
-- **VIS-02**: Additional summary report plots (#51)
+- **VIS-05**: Violin plot of plasmid scores (per-read data, needs opt-in flag + downsampling)
+- **VIS-06**: Facet scatter plot of plasmid vs human scores (per-read data)
+
+### Scientific Enhancements
+
+- **SCI-01**: Normalize contamination ratio by splice junction count (#68 Phase 2)
+- **SCI-02**: Calibrate normalized thresholds against known samples (#68 Phase 3)
+- **SCI-03**: Correct cutoffs for exon count/CDS length (#50)
+
+### Visualization (continued)
+
+- **VIS-07**: Splice junction metadata display in single-sample and summary reports
 
 ## Out of Scope
 
@@ -65,40 +71,42 @@ Explicitly excluded. Documented to prevent scope creep.
 | Interactive CLI mode (#25) | Nice-to-have, not blocking |
 | Anonymize BAM outputs (#5) | Privacy feature, lower priority |
 | IGV session generation (#49) | Power user feature |
-| Built-in resistance gene FASTA (#64 extension) | Annotation parsing sufficient for v0.33.0; fallback deferred |
-| Benchmarking dataset creation (#72) | Separate effort, not tied to scientific enhancements |
+| Benchmarking dataset creation (#72) | Separate effort |
+| Splice junction normalization (#68 Phases 2-3) | Needs threshold recalibration, deferred |
+| Violin + scatter plots (#51 plots 3-4) | Needs memory/opt-in design decision |
 
 ## Traceability
 
+Which phases cover which requirements. Updated during roadmap creation.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FILT-01 | Phase 8 | Complete |
-| FILT-02 | Phase 8 | Complete |
-| FILT-03 | Phase 8 | Complete |
-| FILT-04 | Phase 8 | Complete |
-| FILT-05 | Phase 8 | Complete |
-| COV-01 | Phase 9 | Complete |
-| COV-02 | Phase 9 | Complete |
-| COV-03 | Phase 9 | Complete |
-| COV-04 | Phase 9 | Complete |
-| COV-05 | Phase 9 | Complete |
-| RGENE-01 | Phase 10 | Complete |
-| RGENE-02 | Phase 10 | Complete |
-| RGENE-03 | Phase 10 | Complete |
-| RGENE-04 | Phase 10 | Complete |
-| REPT-04 | Phase 11 | Complete |
-| REPT-05 | Phase 11 | Complete |
-| REPT-06 | Phase 11 | Complete |
-| REPT-07 | Phase 11 | Complete |
-| REPT-08 | Phase 11 | Complete |
-| REPT-09 | Phase 11 | Complete |
-| REPT-10 | Phase 11 | Complete |
+| FMT-01 | TBD | Pending |
+| FMT-02 | TBD | Pending |
+| FMT-03 | TBD | Pending |
+| FMT-04 | TBD | Pending |
+| VIS-01 | TBD | Pending |
+| VIS-02 | TBD | Pending |
+| VIS-03 | TBD | Pending |
+| VIS-04 | TBD | Pending |
+| CACHE-01 | TBD | Pending |
+| CACHE-02 | TBD | Pending |
+| CACHE-03 | TBD | Pending |
+| CACHE-04 | TBD | Pending |
+| CACHE-05 | TBD | Pending |
+| CACHE-06 | TBD | Pending |
+| OUT-01 | TBD | Pending |
+| OUT-02 | TBD | Pending |
+| OUT-03 | TBD | Pending |
+| OUT-04 | TBD | Pending |
+| SJ-01 | TBD | Pending |
+| SJ-02 | TBD | Pending |
 
 **Coverage:**
-- v0.33.0 requirements: 21 total
-- Mapped to phases: 21
-- Unmapped: 0
+- v0.34.0 requirements: 20 total
+- Mapped to phases: 0
+- Unmapped: 20
 
 ---
-*Requirements defined: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 11 completion (all 21 requirements complete)*
+*Requirements defined: 2026-02-15*
+*Last updated: 2026-02-15 after initial definition*
