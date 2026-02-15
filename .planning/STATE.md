@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 9 of 11 (Coverage Metrics) — IN PROGRESS
-**Plan:** 1 of 2 complete (09-01 ✓)
-**Status:** Plan 09-01 complete, ready for Plan 09-02
-**Progress:** ███░░░░░░░ 30% (1.5/4 phases complete)
+**Phase:** 9 of 11 (Coverage Metrics) — COMPLETE ✓
+**Plan:** 2 of 2 complete (09-01 ✓, 09-02 ✓)
+**Status:** Phase 9 complete, ready for Phase 10
+**Progress:** ███▓░░░░░░ 32% (2/4 phases complete)
 
-Last activity: 2026-02-15 -- Completed 09-01-PLAN.md (COV-01..05 complete, 216 tests passing)
+Last activity: 2026-02-15 -- Completed 09-02-PLAN.md (Coverage metrics now visible in HTML reports, 219 tests passing)
 
 ## Milestones
 
@@ -29,7 +29,7 @@ Last activity: 2026-02-15 -- Completed 09-01-PLAN.md (COV-01..05 complete, 216 t
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 8 | Insert-Region-Aware Filtering | FILT-01..05 | Complete ✓ |
-| 9 | Coverage Metrics | COV-01..05 | Plan 01 Complete ✓ |
+| 9 | Coverage Metrics | COV-01..05 | Complete ✓ |
 | 10 | Resistance Gene Detection | RGENE-01..04 | Not Started |
 | 11 | Summary Report Integration | REPT-04..10 | Not Started |
 
@@ -55,13 +55,16 @@ Last activity: 2026-02-15 -- Completed 09-01-PLAN.md (COV-01..05 complete, 216 t
   category ordering), sample/plasmid identity bar, comma-formatted numbers,
   parsed mismatches metrics, collapsible run details, print stylesheet
 
-**From Phase 9 Plan 01 (09-01):**
+**From Phase 9 (Coverage Metrics - 09-01, 09-02):**
 - Per-region coverage metrics (mean/median depth, breadth, CV) computed via pysam.count_coverage()
 - 10 new rows in summary.tsv: MeanDepthInsert, MedianDepthInsert, BreadthInsert, BreadthInsert_5x, CoverageCV_Insert, MeanDepthBackbone, MedianDepthBackbone, BreadthBackbone, BreadthBackbone_5x, CoverageCV_Backbone
-- 216 tests passing (up from 195)
+- 219 tests passing (up from 195)
 - coverage_metrics.py module separates coverage computation logic
 - breadth_thresholds configurable in config.json (default: [5])
 - Graceful fallback for missing insert region (whole-plasmid metrics)
+- Coverage Analysis card in HTML reports displays depth, breadth, and uniformity metrics for insert and backbone
+- Fallback warning shown when insert region not defined
+- Backward compatible template rendering (missing metrics show 0.00)
 
 ### Key Context for v0.33.0
 
@@ -86,6 +89,9 @@ Last activity: 2026-02-15 -- Completed 09-01-PLAN.md (COV-01..05 complete, 216 t
 | 09-01 | Always compute breadth_1x plus configurable thresholds | Breadth ≥1 read is fundamental; additional thresholds configurable via breadth_thresholds |
 | 09-01 | CV=0.0 for single-element arrays | Avoids NaN propagation from numpy.std(ddof=1) on single elements |
 | 09-01 | CoverageFallback row in summary.tsv | Enables downstream report detection of whole-plasmid fallback mode |
+| 09-02 | Always show Coverage Analysis card | Avoids confusion when metrics exist but card is hidden; users see card structure |
+| 09-02 | Use Jinja2 default() filter for backward compatibility | Old summary.tsv files render 0.00 instead of error |
+| 09-02 | Display fallback warning inline in card | Keeps coverage context together, users immediately understand whole-plasmid metrics |
 
 ### Known Issues
 
@@ -99,28 +105,27 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped at:** Completed 09-01-PLAN.md
+**Stopped at:** Completed 09-02-PLAN.md
 **Resume file:** None
 
 **What just happened:**
-- Executed Phase 9 Plan 01 (Coverage Metrics) — 2 tasks, 8 minutes
-- Task 1: Created coverage_metrics.py module with per-region depth/breadth/CV computation
-- Task 2: Added 21 comprehensive unit tests covering all coverage functions
-- All success criteria met: COV-01 through COV-05 complete
-- 216 tests passing (up from 195)
-- 10 new rows added to summary.tsv with backward compatibility
+- Executed Phase 9 Plan 02 (Coverage Metrics Display) — 2 tasks, 5 minutes
+- Task 1: Updated generate_report.py to parse coverage metrics from summary.tsv and pass to template
+- Task 2: Added Coverage Analysis card to report_template.html with table showing insert/backbone metrics
+- All success criteria met: Coverage metrics visible in HTML reports
+- 219 tests passing (up from 216) with 3 new report-specific coverage tests
 - All CI checks passing (lint, format, typecheck, test)
+- Phase 9 complete ✓
 
-**Next step:** Execute Plan 09-02 to display coverage metrics in single-sample HTML reports.
+**Next step:** Execute Phase 10 (Resistance Gene Detection) to parse plasmid GenBank annotations and compute gene-level coverage.
 
-**Key context for Plan 09-02:**
-- coverage_metrics.py module ready with compute_region_coverage_metrics()
-- summary.tsv contains all 10 coverage rows (MeanDepthInsert, MedianDepthInsert, etc.)
-- CoverageFallback row indicates whole-plasmid fallback mode
-- conftest.py has sample_summary_df_with_coverage fixture for report tests
-- Report template at plasmicheck/templates/sample_report.html needs Coverage Analysis card
-- Bootstrap 5.3 card layout established in Phase 8 (08-02)
+**Key context for Phase 10:**
+- coverage_metrics.py infrastructure ready for gene-level coverage computation
+- Biopython SeqIO for GenBank annotation parsing (CDS features)
+- pysam.count_coverage() can be called for specific gene regions
+- compare_alignments.py is the integration point (add gene detection after coverage metrics)
+- New columns in summary.tsv for detected resistance genes with coverage stats
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 9 Plan 01 execution*
+*Last updated: 2026-02-15 after Phase 9 Plan 02 execution (Phase 9 complete)*
