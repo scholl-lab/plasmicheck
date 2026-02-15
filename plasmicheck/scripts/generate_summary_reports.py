@@ -56,6 +56,38 @@ def find_tsv_files(input_dir: str, pattern: str) -> list[str]:
     return tsv_files
 
 
+def _extract_sample_plasmid(file_path: str) -> tuple[str, str]:
+    """Extract sample and plasmid names from a comparison output file path.
+
+    Handles both directory layouts:
+    - Old (flat): output/sample/plasmid/file.tsv
+    - New (subfolder): output/sample/plasmid/data/file.tsv
+
+    Strategy: if the immediate parent directory is named 'data',
+    go one level further up for plasmid and sample names.
+
+    Args:
+        file_path: Path to the comparison file
+
+    Returns:
+        Tuple of (sample_name, plasmid_name)
+    """
+    parent = os.path.dirname(file_path)
+    parent_name = os.path.basename(parent)
+
+    if parent_name == "data":
+        # New subfolder layout: .../sample/plasmid/data/file.tsv
+        plasmid_dir = os.path.dirname(parent)
+        plasmid_name = os.path.basename(plasmid_dir)
+        sample_name = os.path.basename(os.path.dirname(plasmid_dir))
+    else:
+        # Old flat layout: .../sample/plasmid/file.tsv
+        plasmid_name = parent_name
+        sample_name = os.path.basename(os.path.dirname(parent))
+
+    return sample_name, plasmid_name
+
+
 def read_compare_outputs(
     input_dir: str, substring_to_remove: str | None = None
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -71,8 +103,7 @@ def read_compare_outputs(
 
     reads_df_list: list[pd.DataFrame] = []
     for file in reads_assignment_files:
-        sample_name: str = os.path.basename(os.path.dirname(os.path.dirname(file)))
-        plasmid_name: str = os.path.basename(os.path.dirname(file))
+        sample_name, plasmid_name = _extract_sample_plasmid(file)
 
         # Remove the substring from the sample name if provided
         if substring_to_remove:
@@ -87,8 +118,7 @@ def read_compare_outputs(
 
     summary_df_list: list[pd.DataFrame] = []
     for file in summary_files:
-        sample_name = os.path.basename(os.path.dirname(os.path.dirname(file)))
-        plasmid_name = os.path.basename(os.path.dirname(file))
+        sample_name, plasmid_name = _extract_sample_plasmid(file)
 
         # Remove the substring from the sample name if provided
         if substring_to_remove:
