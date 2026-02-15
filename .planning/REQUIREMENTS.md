@@ -17,11 +17,11 @@ Requirements for v0.33.0: Scientific & Reporting Enhancements. Each maps to road
 
 ### Coverage Metrics (#65)
 
-- [ ] **COV-01**: Per-region mean and median depth computed for insert and backbone regions
-- [ ] **COV-02**: Breadth of coverage (fraction of bases with >=1 read) computed per region
-- [ ] **COV-03**: Breadth at 5x threshold computed per region
-- [ ] **COV-04**: Coverage uniformity (coefficient of variation) computed for backbone region
-- [ ] **COV-05**: All new metrics written as additional rows in summary.tsv (backward compatible)
+- [x] **COV-01**: Per-region mean and median depth computed for insert and backbone regions
+- [x] **COV-02**: Breadth of coverage (fraction of bases with >=1 read) computed per region
+- [x] **COV-03**: Breadth at 5x threshold computed per region
+- [x] **COV-04**: Coverage uniformity (coefficient of variation) computed for backbone region
+- [x] **COV-05**: All new metrics written as additional rows in summary.tsv (backward compatible)
 
 ### Resistance Genes (#64)
 
@@ -77,11 +77,11 @@ Explicitly excluded. Documented to prevent scope creep.
 | FILT-03 | Phase 8 | Complete |
 | FILT-04 | Phase 8 | Complete |
 | FILT-05 | Phase 8 | Complete |
-| COV-01 | Phase 9 | Pending |
-| COV-02 | Phase 9 | Pending |
-| COV-03 | Phase 9 | Pending |
-| COV-04 | Phase 9 | Pending |
-| COV-05 | Phase 9 | Pending |
+| COV-01 | Phase 9 | Complete |
+| COV-02 | Phase 9 | Complete |
+| COV-03 | Phase 9 | Complete |
+| COV-04 | Phase 9 | Complete |
+| COV-05 | Phase 9 | Complete |
 | RGENE-01 | Phase 10 | Pending |
 | RGENE-02 | Phase 10 | Pending |
 | RGENE-03 | Phase 10 | Pending |
@@ -101,4 +101,4 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after Phase 8 completion (FILT-01..05 complete)*
+*Last updated: 2026-02-15 after Phase 9 completion (COV-01..05 complete)*

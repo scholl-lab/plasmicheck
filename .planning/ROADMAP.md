@@ -44,8 +44,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md -- Coverage computation engine, config, summary.tsv integration, and unit tests
-- [ ] 09-02-PLAN.md -- Coverage Analysis card in per-sample HTML report
+- [x] 09-01-PLAN.md -- Coverage computation engine, config, summary.tsv integration, and unit tests
+- [x] 09-02-PLAN.md -- Coverage Analysis card in per-sample HTML report
 
 **Requirements:**
 - COV-01: Per-region mean and median depth
@@ -107,11 +107,11 @@ Plans:
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 8 | Insert-Region-Aware Filtering | FILT-01..05 (5) | Complete ✓ |
-| 9 | Coverage Metrics | COV-01..05 (5) | Not Started |
+| 9 | Coverage Metrics | COV-01..05 (5) | Complete ✓ |
 | 10 | Resistance Gene Detection | RGENE-01..04 (4) | Not Started |
 | 11 | Summary Report Integration | REPT-04..10 (7) | Not Started |
 
-**Total:** 21 requirements across 4 phases. 5/21 complete.
+**Total:** 21 requirements across 4 phases. 10/21 complete.
 
 ## Coverage Map
 
@@ -145,4 +145,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 9 planning*
+*Last updated: 2026-02-15 after Phase 9 execution*
