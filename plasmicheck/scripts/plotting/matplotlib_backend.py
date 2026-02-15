@@ -290,3 +290,137 @@ def generate_summary_boxplot_matplotlib(
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     logger.info(f"Saved summary boxplot to {output_path}")
+
+
+def generate_metric_heatmap_matplotlib(
+    metric_data: pd.DataFrame,
+    output_path: Path | str,
+    metric_name: str,
+    vmax: float | None = None,
+) -> None:
+    """Generate heatmap for any metric using matplotlib.
+
+    Args:
+        metric_data: Pivoted DataFrame (Sample x Plasmid) with metric values
+        output_path: Output PNG file path
+        metric_name: Display name for the metric (e.g., "Mean Depth Insert")
+        vmax: Optional maximum value for color scale (data will be clipped)
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from matplotlib.colors import LinearSegmentedColormap
+
+    if metric_data.empty:
+        logger.warning(f"Empty DataFrame provided to generate_metric_heatmap_matplotlib for {metric_name}")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.text(
+            0.5,
+            0.5,
+            "No data available",
+            ha="center",
+            va="center",
+            fontsize=12,
+        )
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    sns.set_theme(style="whitegrid")
+
+    # Clip data if vmax provided
+    plot_data = metric_data.clip(upper=vmax) if vmax is not None else metric_data
+
+    # Create custom colormap from lightblue to red
+    cmap = LinearSegmentedColormap.from_list("coverage", ["lightblue", "red"], N=100)
+
+    # Determine figure size based on data dimensions
+    n_samples, n_plasmids = metric_data.shape
+    figwidth = max(10, n_plasmids * 0.8)
+    figheight = max(6, n_samples * 0.4)
+
+    fig, ax = plt.subplots(figsize=(figwidth, figheight))
+
+    # Generate heatmap
+    sns.heatmap(
+        plot_data,
+        annot=False,
+        cbar=False,
+        cmap=cmap,
+        vmin=0,
+        vmax=vmax,
+        mask=metric_data.isna(),
+        ax=ax,
+    )
+
+    ax.set_xlabel("Plasmid")
+    ax.set_ylabel("Sample")
+    ax.set_title(metric_name)
+
+    # Rotate x labels
+    plt.xticks(rotation=45, ha="right")
+
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved metric heatmap to {output_path}")
+
+
+def generate_coverage_boxplot_matplotlib(
+    boxplot_data: pd.DataFrame,
+    output_path: Path | str,
+) -> None:
+    """Generate boxplot for CoverageOutsideINSERT distribution using matplotlib.
+
+    Args:
+        boxplot_data: Pivoted DataFrame (Sample x Plasmid) with coverage values
+        output_path: Output PNG file path
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    if boxplot_data.empty:
+        logger.warning("Empty DataFrame provided to generate_coverage_boxplot_matplotlib")
+        fig, ax = plt.subplots(figsize=(10, 8))
+        ax.text(
+            0.5,
+            0.5,
+            "No data available",
+            ha="center",
+            va="center",
+            fontsize=12,
+        )
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    sns.set_theme(style="whitegrid")
+
+    # Melt the data for boxplot
+    melted = boxplot_data.melt(var_name="Plasmid", value_name="Value")
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Create boxplot grouped by Plasmid
+    boxplot_data_grouped = melted.groupby("Plasmid")["Value"].apply(list)
+    plasmid_labels = list(boxplot_data_grouped.index)
+    boxplot_values = [list(vals) for vals in boxplot_data_grouped.values]
+
+    ax.boxplot(
+        boxplot_values,
+        patch_artist=True,
+    )
+
+    ax.set_xlabel("Plasmid")
+    ax.set_ylabel("Coverage Outside Insert")
+    ax.set_title("CoverageOutsideINSERT Distribution by Plasmid")
+
+    # Set x-axis labels
+    ax.set_xticklabels(plasmid_labels)
+
+    # Rotate x labels if many plasmids
+    if len(plasmid_labels) > 5:
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved coverage boxplot to {output_path}")
