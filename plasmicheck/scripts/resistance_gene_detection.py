@@ -23,14 +23,14 @@ from Bio.SeqFeature import CompoundLocation
 # Bacterial resistance genes (antibiotics)
 BACTERIAL_RESISTANCE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bAmpR\b", re.IGNORECASE),
-    re.compile(r"\bAmp\b", re.IGNORECASE),
+    re.compile(r"\bampicillin\b", re.IGNORECASE),
     re.compile(r"\bbla\b", re.IGNORECASE),
     re.compile(r"\bKanR\b", re.IGNORECASE),
-    re.compile(r"\bKan\b", re.IGNORECASE),
+    re.compile(r"\bkanamycin\b", re.IGNORECASE),
     re.compile(r"\bChlR\b", re.IGNORECASE),
-    re.compile(r"\bChl\b", re.IGNORECASE),
+    re.compile(r"\bchloramphenicol\b", re.IGNORECASE),
     re.compile(r"\bTetR\b", re.IGNORECASE),
-    re.compile(r"\bTet\b", re.IGNORECASE),
+    re.compile(r"\btetracycline\b", re.IGNORECASE),
     re.compile(r"\bSpec\b", re.IGNORECASE),
     re.compile(r"\bStrep\b", re.IGNORECASE),
     re.compile(r"\bCamR\b", re.IGNORECASE),
