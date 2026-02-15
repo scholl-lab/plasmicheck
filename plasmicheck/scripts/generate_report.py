@@ -387,6 +387,8 @@ def generate_report(
     mismatches_without: int = 0,
     sample_name: str = "",
     plasmid_name: str = "",
+    coverage_metrics: dict[str, str] | None = None,
+    coverage_fallback: bool = False,
 ) -> None:
     from jinja2 import Environment, FileSystemLoader
 
@@ -456,6 +458,8 @@ def generate_report(
         gauge_threshold_pos=gauge_threshold_pos,
         sample_name=sample_name,
         plasmid_name=plasmid_name,
+        coverage_metrics=coverage_metrics or {},
+        coverage_fallback=coverage_fallback,
     )
 
     # Save interactive HTML report
@@ -514,6 +518,8 @@ def generate_report(
             gauge_threshold_pos=gauge_threshold_pos,
             sample_name=sample_name,
             plasmid_name=plasmid_name,
+            coverage_metrics=coverage_metrics or {},
+            coverage_fallback=coverage_fallback,
         )
 
         # Save non-interactive HTML report
@@ -577,6 +583,31 @@ def main(
     mis_rows = summary_df[summary_df["Category"] == "MismatchesNearINSERT"]
     mismatches_near_insert = str(mis_rows["Count"].values[0]) if not mis_rows.empty else "N/A"
 
+    # Extract coverage metrics (Phase 9)
+    def _get_metric(df: pd.DataFrame, category: str, default: str = "0.00") -> str:
+        rows = df[df["Category"] == category]
+        return str(rows["Count"].values[0]) if not rows.empty else default
+
+    coverage_metrics = {
+        "mean_depth_insert": _get_metric(summary_df, "MeanDepthInsert"),
+        "median_depth_insert": _get_metric(summary_df, "MedianDepthInsert"),
+        "breadth_insert": _get_metric(summary_df, "BreadthInsert"),
+        "breadth_insert_5x": _get_metric(summary_df, "BreadthInsert_5x"),
+        "cv_insert": _get_metric(summary_df, "CoverageCV_Insert"),
+        "mean_depth_backbone": _get_metric(summary_df, "MeanDepthBackbone"),
+        "median_depth_backbone": _get_metric(summary_df, "MedianDepthBackbone"),
+        "breadth_backbone": _get_metric(summary_df, "BreadthBackbone"),
+        "breadth_backbone_5x": _get_metric(summary_df, "BreadthBackbone_5x"),
+        "cv_backbone": _get_metric(summary_df, "CoverageCV_Backbone"),
+    }
+
+    # Detect coverage fallback mode
+    coverage_fallback_rows = summary_df[summary_df["Category"] == "CoverageFallback"]
+    coverage_fallback = (
+        not coverage_fallback_rows.empty
+        and str(coverage_fallback_rows["Count"].values[0]).lower() == "true"
+    )
+
     # Determine if backbone filtering was unavailable
     backbone_warning = ""
 
@@ -599,9 +630,7 @@ def main(
         else ""
     )
     plasmid_name = (
-        os.path.splitext(os.path.basename(plasmid_gb))[0]
-        if plasmid_gb not in ("None", "")
-        else ""
+        os.path.splitext(os.path.basename(plasmid_gb))[0] if plasmid_gb not in ("None", "") else ""
     )
 
     # Determine output_root for shared assets
@@ -675,6 +704,8 @@ def main(
         mismatches_without=mismatches_without,
         sample_name=sample_name,
         plasmid_name=plasmid_name,
+        coverage_metrics=coverage_metrics,
+        coverage_fallback=coverage_fallback,
     )
 
 
