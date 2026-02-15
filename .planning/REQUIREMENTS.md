@@ -32,13 +32,13 @@ Requirements for v0.33.0: Scientific & Reporting Enhancements. Each maps to road
 
 ### Report Integration (#58 + visualization)
 
-- [ ] **REPT-04**: CoverageOutsideINSERT parsed and displayed in summary reports with heatmap and boxplot
-- [ ] **REPT-05**: MismatchesNearINSERT parsed and displayed in summary reports with chart
-- [ ] **REPT-06**: Coverage depth heatmap (Sample x Plasmid, backbone mean depth) in summary reports
-- [ ] **REPT-07**: Coverage breadth heatmap (backbone breadth %) in summary reports
-- [ ] **REPT-08**: Resistance gene coverage table in summary reports
-- [ ] **REPT-09**: Matplotlib fallback for all new summary report plots
-- [ ] **REPT-10**: TSV and Excel exports include new metric tables
+- [x] **REPT-04**: CoverageOutsideINSERT parsed and displayed in summary reports with heatmap and boxplot
+- [x] **REPT-05**: MismatchesNearINSERT parsed and displayed in summary reports with chart
+- [x] **REPT-06**: Coverage depth heatmap (Sample x Plasmid, backbone mean depth) in summary reports
+- [x] **REPT-07**: Coverage breadth heatmap (backbone breadth %) in summary reports
+- [x] **REPT-08**: Resistance gene coverage table in summary reports
+- [x] **REPT-09**: Matplotlib fallback for all new summary report plots
+- [x] **REPT-10**: TSV and Excel exports include new metric tables
 
 ## Future Requirements
 
@@ -86,13 +86,13 @@ Explicitly excluded. Documented to prevent scope creep.
 | RGENE-02 | Phase 10 | Complete |
 | RGENE-03 | Phase 10 | Complete |
 | RGENE-04 | Phase 10 | Complete |
-| REPT-04 | Phase 11 | Pending |
-| REPT-05 | Phase 11 | Pending |
-| REPT-06 | Phase 11 | Pending |
-| REPT-07 | Phase 11 | Pending |
-| REPT-08 | Phase 11 | Pending |
-| REPT-09 | Phase 11 | Pending |
-| REPT-10 | Phase 11 | Pending |
+| REPT-04 | Phase 11 | Complete |
+| REPT-05 | Phase 11 | Complete |
+| REPT-06 | Phase 11 | Complete |
+| REPT-07 | Phase 11 | Complete |
+| REPT-08 | Phase 11 | Complete |
+| REPT-09 | Phase 11 | Complete |
+| REPT-10 | Phase 11 | Complete |
 
 **Coverage:**
 - v0.33.0 requirements: 21 total
@@ -101,4 +101,4 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 10 completion (RGENE-01..04 complete)*
+*Last updated: 2026-02-15 after Phase 11 completion (all 21 requirements complete)*
