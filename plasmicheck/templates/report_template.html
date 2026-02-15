@@ -601,6 +601,52 @@
         </div>
     </div>
 
+    <!-- ---- Coverage Analysis ------------------------------ -->
+    <div class="pc-card">
+        <div class="pc-card-header">Coverage Analysis</div>
+        {% if coverage_fallback %}
+        <div class="pc-notice" style="margin-bottom: 1rem;">
+            Insert region not defined &mdash; metrics computed for whole plasmid
+        </div>
+        {% endif %}
+        <table class="pc-table">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th class="pc-num">Insert Region</th>
+                    <th class="pc-num">Backbone</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Mean Depth</td>
+                    <td class="pc-num">{{ coverage_metrics.mean_depth_insert | default('0.00') }}</td>
+                    <td class="pc-num">{{ coverage_metrics.mean_depth_backbone | default('0.00') }}</td>
+                </tr>
+                <tr>
+                    <td>Median Depth</td>
+                    <td class="pc-num">{{ coverage_metrics.median_depth_insert | default('0.00') }}</td>
+                    <td class="pc-num">{{ coverage_metrics.median_depth_backbone | default('0.00') }}</td>
+                </tr>
+                <tr>
+                    <td>Breadth (&ge;1x)</td>
+                    <td class="pc-num">{{ coverage_metrics.breadth_insert | default('0.00') }}</td>
+                    <td class="pc-num">{{ coverage_metrics.breadth_backbone | default('0.00') }}</td>
+                </tr>
+                <tr>
+                    <td>Breadth (&ge;5x)</td>
+                    <td class="pc-num">{{ coverage_metrics.breadth_insert_5x | default('0.00') }}</td>
+                    <td class="pc-num">{{ coverage_metrics.breadth_backbone_5x | default('0.00') }}</td>
+                </tr>
+                <tr>
+                    <td>Uniformity (CV)</td>
+                    <td class="pc-num">{{ coverage_metrics.cv_insert | default('0.00') }}</td>
+                    <td class="pc-num">{{ coverage_metrics.cv_backbone | default('0.00') }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
     <!-- ---- Run Details (collapsible) --------------------- -->
     <details class="pc-details-toggle">
         <summary>Run Details</summary>
