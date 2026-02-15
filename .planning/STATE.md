@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 10 of 11 (Resistance Gene Detection) — COMPLETE ✓
-**Plan:** 2 of 2 complete (10-01 ✓, 10-02 ✓)
-**Status:** Phase complete, verified ✓, ready for Phase 11
-**Progress:** ███████░░░ 75% (3/4 phases complete)
+**Phase:** 11 of 11 (Summary Report Integration) — IN PROGRESS
+**Plan:** 1 of 2 complete (11-01 ✓)
+**Status:** Plan 01 complete, ready for Plan 02
+**Progress:** ███████░░░ 78% (3.5/4 phases complete)
 
-Last activity: 2026-02-15 -- Completed 10-02-PLAN.md (Gene detection integration with per-gene coverage, 280 tests passing)
+Last activity: 2026-02-15 -- Completed 11-01-PLAN.md (Plot building blocks: 6 new functions for metric heatmaps, coverage boxplots, gene tables)
 
 ## Milestones
 
@@ -31,7 +31,7 @@ Last activity: 2026-02-15 -- Completed 10-02-PLAN.md (Gene detection integration
 | 8 | Insert-Region-Aware Filtering | FILT-01..05 | Complete ✓ |
 | 9 | Coverage Metrics | COV-01..05 | Complete ✓ |
 | 10 | Resistance Gene Detection | RGENE-01..04 | Complete ✓ |
-| 11 | Summary Report Integration | REPT-04..10 | Not Started |
+| 11 | Summary Report Integration | REPT-04..10 | In Progress (Plan 01 ✓) |
 
 ## Accumulated Context
 
@@ -91,6 +91,13 @@ Last activity: 2026-02-15 -- Completed 10-02-PLAN.md (Gene detection integration
 - Existing matplotlib backend at plasmicheck/scripts/plotting/matplotlib_backend.py
 - Detailed milestone plan: .planning/v0.33.0-MILESTONE-PLAN.md
 
+**Phase 11 Plan 01 outcomes:**
+- Six new pure functions for summary report plots (4 in generate_summary_reports.py, 2 in matplotlib_backend.py)
+- Generic metric extraction pattern: create_metric_heatmap_data(summary_df, metric_category)
+- Resistance gene table flattening: create_resistance_gene_table() parses ResistanceGenes rows
+- All functions handle empty DataFrames gracefully (backward compatibility with pre-v0.33.0 data)
+- Ready for Plan 02 to wire new plots into main() flow
+
 ### Decisions Log
 
 | Phase | Decision | Rationale |
@@ -116,6 +123,10 @@ Last activity: 2026-02-15 -- Completed 10-02-PLAN.md (Gene detection integration
 | 10-02 | Per-gene coverage computed before streaming compare | Requires BAM file access - done early in flow |
 | 10-02 | GenBank preservation enabled in pipeline | preserve_genbank=True in run_pipeline - gene detection needs annotations |
 | 10-02 | ResistanceGenesAvailable flag | false = no GenBank file, true = GenBank present (may/may not find genes) |
+| 11-01 | Generic metric heatmap function | Single plot_metric_heatmap() handles all metric types with blue-to-red color scale and optional vmax |
+| 11-01 | depth_heatmap_cap defaults to 100 | Prevents extreme outliers from dominating color scale in depth heatmaps |
+| 11-01 | Graceful degradation for missing metrics | Empty DataFrame returns when metric category not found (pre-v0.33.0 compatibility) |
+| 11-01 | Matplotlib functions follow existing patterns | sns.set_theme, empty-check, 300 dpi, logger.info for consistency |
 
 ### Known Issues
 
@@ -129,30 +140,31 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped at:** Completed Phase 10 (Resistance Gene Detection)
+**Stopped at:** Completed Phase 11 Plan 01 (Plot Building Blocks)
 **Resume file:** None
 
 **What just happened:**
-- Executed Phase 10 Plan 02 (Gene Detection Integration) — 2 tasks, 10 minutes
-- Task 1: Integrated gene detection into compare_alignments.py with per-gene coverage; modified run_pipeline.py to preserve GenBank files and forward path
-- Task 2: Added 6 integration and recall validation tests (3 for summary.tsv output, 3 for real GenBank file coverage)
-- All success criteria met: Per-gene coverage in summary.tsv, GenBank preservation, graceful fallback, backward compatibility
-- 280 tests passing (274 from 10-01 + 6 new) with all CI checks passing
-- 2 commits: feat, test
+- Executed Phase 11 Plan 01 (Plot Building Blocks) — 2 tasks, 5 minutes
+- Task 1: Added 4 new functions to generate_summary_reports.py (create_metric_heatmap_data, plot_metric_heatmap, plot_coverage_outside_insert_boxplot, create_resistance_gene_table) plus DEPTH_HEATMAP_CAP config; added depth_heatmap_cap: 100 to config.json
+- Task 2: Added 2 matplotlib fallback functions (generate_metric_heatmap_matplotlib, generate_coverage_boxplot_matplotlib)
+- All success criteria met: 6 new functions total, all with type annotations/docstrings, graceful empty DataFrame handling
+- 280 tests passing (no test changes, existing behavior unchanged)
+- 2 commits: feat, feat
 
-**Phase 10 complete:**
-- Plan 01: Resistance gene detection module (13 min, 3 commits, 55 tests added)
-- Plan 02: Pipeline integration (10 min, 2 commits, 6 tests added)
-- Total: 23 minutes, 5 commits, 61 tests added (219 → 280)
+**Phase 11 Plan 01 complete:**
+- Duration: 5 minutes
+- 2 tasks, 2 commits
+- 3 files modified (generate_summary_reports.py, matplotlib_backend.py, config.json)
+- No deviations from plan
 
-**Next step:** Execute Phase 11 (Summary Report Integration) to add resistance gene data to HTML reports.
+**Next step:** Execute Phase 11 Plan 02 (Wire new plots into report pipeline) to integrate the building-block functions into main() flow.
 
-**Key context for Phase 11:**
-- ResGene_ rows in summary.tsv ready for parsing
-- ResistanceGenesAvailable flag enables conditional report sections
-- Gene data format: ResGene_{sanitized_name}_MeanDepth, Breadth, Start, End, Region
-- HTML template at plasmicheck/templates/report_template.html needs new card
-- generate_report.py parses summary.tsv and passes to template
+**Key context for Phase 11 Plan 02:**
+- Building-block functions ready: create_metric_heatmap_data, plot_metric_heatmap, plot_coverage_outside_insert_boxplot, create_resistance_gene_table
+- All functions handle empty DataFrames gracefully (backward compatibility)
+- depth_heatmap_cap = 100 for capping depth metric heatmaps
+- Need to call new functions in generate_summary_reports.py main() and pass filenames to generate_report()
+- Need to update report template to display new plots and gene table
 
 ---
 *State initialized: 2026-02-14*
