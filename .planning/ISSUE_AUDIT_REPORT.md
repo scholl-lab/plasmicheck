@@ -1,14 +1,14 @@
 # PlasmiCheck Open Issues Audit Report
 
-**Date:** 2026-02-14 (updated after v0.32.0 milestone)
-**Codebase version:** v0.32.0 (branch `main`)
-**Total open issues:** 29 (24 closed total: 6 during audit + 6 in PR #91 + 6 in PR #92)
+**Date:** 2026-02-15 (updated after v0.33.0 milestone)
+**Codebase version:** v0.33.0 (branch `main`)
+**Total open issues:** 25 (28 closed total: 6 during audit + 6 in PR #91 + 6 in PR #92 + 0 in v0.32.0 + 4 in PR #93 + 6 pre-existing)
 
 ---
 
 ## Executive Summary
 
-Of the original 48 open issues, **24 have been closed** (6 already resolved during audit + 6 fixed in PR #91 / v0.30.0 + 6 implemented in Phase 3 / v0.31.0 and merged in PR #92), and **29 remain open and valid**. v0.32.0 (Performance Optimization, Phases 4-7) did not close any GitHub issues but delivered significant internal improvements. The remaining issues span bugs (2), features (23), and documentation (4). Below is a full categorization with priority ratings and actionability assessment.
+Of the original 53 issues (48 original + 5 added later), **28 have been closed** across 5 milestones. v0.33.0 (Scientific Enhancements, Phases 8-11) closed 4 issues: insert-region filtering (#82), resistance gene detection (#64), coverage metrics in summary (#65), and metrics integration (#58). **25 remain open**. The remaining issues span bugs (2), features (19), and documentation (2), plus 2 partially resolved.
 
 ---
 
@@ -72,11 +72,24 @@ v0.32.0 did not close any GitHub issues (performance goals were tracked internal
 
 ---
 
+## 1e. Issues Closed in PR #93 (v0.33.0)
+
+These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://github.com/scholl-lab/plasmicheck/pull/93) merged to main on 2026-02-15.
+
+| # | Title | Fix Summary |
+|---|-------|-------------|
+| **#82** | Filter ambiguous reads / backbone-only reads | Phase 8: Insert-region-aware filtering. Reads mapping only to backbone classified as `Backbone_Only`, excluded from contamination ratio. |
+| **#64** | Coverage on antibiotic resistance genes | Phase 10: Resistance gene detection. Extracts genes from GenBank annotations, reports per-gene depth/breadth. |
+| **#58** | Integrate CoverageOutsideINSERT and MismatchesNearINSERT in summary report | Phase 9+11: Full coverage metrics (depth, breadth, CV) integrated into summary with heatmaps, boxplots, TSV/Excel export. |
+| **#65** | Add coverage to summary report | Phase 9+11: Coverage for insert and backbone regions in single-sample and summary reports. |
+
+---
+
 ## 2. Issues Updated With Status Comments (Partially Resolved)
 
 | # | Title | What's Done | What Remains |
 |---|-------|------------|--------------|
-| **#31** | Feat: Automated versioning with each commit | Manual semver works. Tags v0.28.0 through v0.32.0 exist. GitHub releases created. | No automated bump on commit (no `semantic-release` or CI release workflow). |
+| **#31** | Feat: Automated versioning with each commit | Manual semver works. Tags v0.28.0 through v0.33.0 exist. GitHub releases created. | No automated bump on commit (no `semantic-release` or CI release workflow). |
 | **#78** | Bug: Jobs not finished in snakemake | Race condition (#86) fixed in v0.30.0. | Re-test with v0.30.0+ to confirm fix. If still failing, investigate other causes. |
 
 ---
@@ -101,10 +114,7 @@ v0.32.0 did not close any GitHub issues (performance goals were tracked internal
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
-| **#82** | Filter ambiguous reads | **HIGH** | Highly contaminated samples produce elevated scores for unrelated plasmids. Core scientific accuracy issue. | Medium |
-| **#64** | Coverage on antibiotic resistance genes | **HIGH** | AmpR/KanR coverage is strong contamination evidence (no human homolog). Scientifically sound enhancement. | Medium |
 | **#68** | Normalize by splice junction count | **MEDIUM** | Standardize cross-sample comparisons accounting for junction usage differences. | Medium |
-| **#65** | Add coverage to summary report | **MEDIUM** | Coverage depth/uniformity is standard QC metric missing from output. | Low-Medium |
 | **#50** | Correct cutoffs for exon count/CDS length | **MEDIUM** | Current thresholds may not be biologically justified. Research needed. | High (research-heavy) |
 | **#22** | Synthetic plasmid standard for p-value | **LOW** | Research/exploration phase. Statistical framework for contamination detection. | High |
 | **#21** | Control samples for p-value | **LOW** | Related to #22. Requires experimental design decisions. | High |
@@ -118,7 +128,6 @@ v0.32.0 did not close any GitHub issues (performance goals were tracked internal
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
-| **#58** | Integrate CoverageOutsideINSERT and MismatchesNearINSERT in summary report | **HIGH** | These metrics are already computed but not shown in summary reports. Low-hanging fruit. | Low |
 | **#51** | Additional plots for summary report | **MEDIUM** | 4 new plot types requested (verdict bar by plasmid, by sample, violin, facet scatter) | Medium |
 | **#61** | Scatter plot on top of boxplot | **LOW** | Minor visualization improvement. Plotly supports this natively with `stripmode`. | Low |
 | **#53** | Favicon for HTML output | **LOW** | Cosmetic. One-line `<link>` tag in template. | Trivial |
@@ -175,7 +184,7 @@ v0.32.0 did not close any GitHub issues (performance goals were tracked internal
 
 ## Priority Matrix Summary
 
-### Closed (24 issues total)
+### Closed (28 issues total)
 
 | Tier | Issues | Milestone |
 |------|--------|-----------|
@@ -183,17 +192,19 @@ v0.32.0 did not close any GitHub issues (performance goals were tracked internal
 | Tier 2 — Bug fixes & refactoring | `#86` `#63` `#81` `#79` `#87` `#88` | v0.30.0 |
 | Tier 3 — Enhancements & infrastructure | `#89` `#85` `#33` `#32` `#29` `#71` | v0.31.0 |
 | Tier 4 — Performance optimization | (no issues closed, internal requirements) | v0.32.0 |
+| Tier 5 — Scientific & reporting | `#82` `#64` `#58` `#65` | v0.33.0 |
 
-### Next Up — Tier 5: Scientific & Reporting (v0.33.0+)
+### Next Up — Tier 6: Suggested for v0.34.0+
 
 | Issue | Type | Effort | Why Next |
 |-------|------|--------|----------|
-| **#82** | Science: filter ambiguous reads | Medium | Core scientific accuracy — highest impact |
-| **#64** | Science: resistance gene coverage | Medium | Strong contamination signal, no human homolog |
-| **#58** | Report: integrate existing metrics | Low | Already computed, just not displayed — quick win |
-| **#65** | Report: coverage in summary | Low-Medium | Standard QC metric, natural complement to #58 |
+| **#75** | Bug: xDNA files don't work | Unknown | Only remaining HIGH bug — needs reproduction data |
+| **#51** | Report: additional summary plots | Medium | Builds on v0.33.0 summary report infrastructure |
+| **#80** | UX: structure output folders | Low-Medium | Quality-of-life improvement |
+| **#68** | Science: normalize by splice junction count | Medium | Cross-sample comparison standardization |
+| **#39** | Perf: reuse indices via md5sum | Medium | Cross-run caching, natural follow-up to v0.32.0 within-run dedup |
 
-### Tier 6 — Nice to Have (remaining 25 issues)
+### Tier 7 — Nice to Have (remaining 20 issues)
 
 Everything else — valid but lower priority. See sections above for details.
 
@@ -227,12 +238,19 @@ Everything else — valid but lower priority. See sections above for details.
 3. ~~Alignment optimization (auto threads, -m 2G, SLURM/cgroup detection)~~ Done
 4. ~~Comparison & cleanup (index dedup, batch resilience, matplotlib backend)~~ Done
 
-### Next: Scientific Enhancements (v0.33.0+)
-1. Implement #82 (filter ambiguous reads)
-2. Implement #64 (resistance gene coverage)
-3. Implement #58 (integrate metrics in summary)
-4. Implement #65 (coverage in summary)
-5. Remaining feature requests per user priority
+### Phases 8-11: Scientific Enhancements (v0.33.0) ~~done~~
+1. ~~Implement #82 (insert-region-aware filtering)~~ Done (Phase 8)
+2. ~~Implement #65 (coverage metrics)~~ Done (Phase 9)
+3. ~~Implement #64 (resistance gene detection)~~ Done (Phase 10)
+4. ~~Implement #58 (summary report integration)~~ Done (Phase 11)
+
+### Next: v0.34.0+
+1. Investigate #75 (xDNA bugs — needs reproduction data)
+2. Implement #51 (additional summary plots)
+3. Implement #80 (output folder structure)
+4. Implement #68 (splice junction normalization)
+5. Implement #39 (cross-run index caching)
+6. Remaining feature requests per user priority
 
 ---
 
