@@ -315,16 +315,17 @@ def plot_heatmap(
     ).round(ROUND_DECIMALS)
 
     # Define a custom color scale using Plotly's built-in scaling
+    max_val = ratio_data.max().max()
+    if max_val > 0:
+        lower_norm = min(unclear_range["lower_bound"] / max_val, 0.99)
+        upper_norm = min(unclear_range["upper_bound"] / max_val, 0.995)
+    else:
+        lower_norm = 0.5
+        upper_norm = 0.75
     color_scale: list[list[float | str]] = [
         [0.0, plot_config["colors"]["not_contaminated"]],  # Start
-        [
-            unclear_range["lower_bound"] / ratio_data.max().max(),
-            plot_config["colors"]["unclear"],
-        ],  # Lower bound
-        [
-            unclear_range["upper_bound"] / ratio_data.max().max(),
-            plot_config["colors"]["unclear"],
-        ],  # Upper bound
+        [lower_norm, plot_config["colors"]["unclear"]],  # Lower bound
+        [upper_norm, plot_config["colors"]["unclear"]],  # Upper bound
         [1.0, plot_config["colors"]["contaminated"]],  # End
     ]
 
@@ -597,7 +598,7 @@ def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
         plasmid = row["Plasmid"]
         gene_names_str = row["Value"]
 
-        if not gene_names_str or gene_names_str == "":
+        if not isinstance(gene_names_str, str) or not gene_names_str:
             continue
 
         # Split gene names by comma
