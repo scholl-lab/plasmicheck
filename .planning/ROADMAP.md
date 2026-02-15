@@ -96,12 +96,12 @@ Plans:
   3. Subsequent pipeline runs reuse cached spliced alignments when human reference and plasmid match
   4. User can disable caching via --no-cache or override cache directory via --cache-dir
   5. User can inspect cache contents and clean old entries via `plasmicheck cache info|clean`
-**Plans:** 3 plans (estimated)
+**Plans:** 3 plans
 
 Plans:
-- [ ] 14-01: CacheManager module with content-addressed storage and manifest
-- [ ] 14-02: Within-run and cross-run index caching
-- [ ] 14-03: Spliced alignment caching and cache management CLI
+- [ ] 14-01-PLAN.md — CacheManager module with content-addressed storage, manifest, and unit tests
+- [ ] 14-02-PLAN.md — Pipeline integration for index and spliced alignment caching
+- [ ] 14-03-PLAN.md — Cache management CLI subcommand (info, clean)
 
 #### Phase 15: Splice Junction Metadata
 **Goal:** Reports display splice junction and exon counts extracted from spliced alignments
@@ -152,4 +152,4 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 13 execution*
+*Last updated: 2026-02-15 after Phase 14 planning*
