@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 11 of 11 (Summary Report Integration) — IN PROGRESS
-**Plan:** 1 of 2 complete (11-01 ✓)
-**Status:** Plan 01 complete, ready for Plan 02
-**Progress:** ███████░░░ 78% (3.5/4 phases complete)
+**Phase:** 11 of 11 (Summary Report Integration) — COMPLETE ✓
+**Plan:** 2 of 2 complete (11-01 ✓, 11-02 ✓)
+**Status:** Phase 11 complete, v0.33.0 milestone ready for deployment
+**Progress:** ████████░░ 100% (4/4 phases complete)
 
-Last activity: 2026-02-15 -- Completed 11-01-PLAN.md (Plot building blocks: 6 new functions for metric heatmaps, coverage boxplots, gene tables)
+Last activity: 2026-02-15 -- Completed 11-02-PLAN.md (Summary report integration: wired all new plots/tables into report flow, added 17 tests)
 
 ## Milestones
 
@@ -31,7 +31,7 @@ Last activity: 2026-02-15 -- Completed 11-01-PLAN.md (Plot building blocks: 6 ne
 | 8 | Insert-Region-Aware Filtering | FILT-01..05 | Complete ✓ |
 | 9 | Coverage Metrics | COV-01..05 | Complete ✓ |
 | 10 | Resistance Gene Detection | RGENE-01..04 | Complete ✓ |
-| 11 | Summary Report Integration | REPT-04..10 | In Progress (Plan 01 ✓) |
+| 11 | Summary Report Integration | REPT-04..10 | Complete ✓ |
 
 ## Accumulated Context
 
@@ -91,12 +91,15 @@ Last activity: 2026-02-15 -- Completed 11-01-PLAN.md (Plot building blocks: 6 ne
 - Existing matplotlib backend at plasmicheck/scripts/plotting/matplotlib_backend.py
 - Detailed milestone plan: .planning/v0.33.0-MILESTONE-PLAN.md
 
-**Phase 11 Plan 01 outcomes:**
+**Phase 11 outcomes (Plans 01 + 02):**
 - Six new pure functions for summary report plots (4 in generate_summary_reports.py, 2 in matplotlib_backend.py)
 - Generic metric extraction pattern: create_metric_heatmap_data(summary_df, metric_category)
 - Resistance gene table flattening: create_resistance_gene_table() parses ResistanceGenes rows
 - All functions handle empty DataFrames gracefully (backward compatibility with pre-v0.33.0 data)
-- Ready for Plan 02 to wire new plots into main() flow
+- Restructured summary_template.html with 5 collapsible Bootstrap 4 card sections
+- All new plots/tables wired into main() → generate_report() flow
+- Extended TSV/Excel exports with extended_metrics_table.tsv and resistance_genes_table.tsv
+- 297 tests passing (280 from Phase 10 + 17 new unit tests in 11-02)
 
 ### Decisions Log
 
@@ -127,6 +130,11 @@ Last activity: 2026-02-15 -- Completed 11-01-PLAN.md (Plot building blocks: 6 ne
 | 11-01 | depth_heatmap_cap defaults to 100 | Prevents extreme outliers from dominating color scale in depth heatmaps |
 | 11-01 | Graceful degradation for missing metrics | Empty DataFrame returns when metric category not found (pre-v0.33.0 compatibility) |
 | 11-01 | Matplotlib functions follow existing patterns | sns.set_theme, empty-check, 300 dpi, logger.info for consistency |
+| 11-02 | Section ordering: Contamination → Coverage Outside Insert → Coverage Analysis → Mismatch Analysis → Resistance Genes | Per requirement prioritization (REPT-04 to REPT-08) |
+| 11-02 | All sections default to expanded | Users see all data immediately without clicking (class="collapse show") |
+| 11-02 | Bootstrap 4 syntax (data-toggle/data-target) | Matches existing template's Bootstrap 4.5.2, not Bootstrap 5 |
+| 11-02 | Empty plot filenames return '' | Triggers {% if %} guards to skip sections when data unavailable |
+| 11-02 | Extended metrics composition | Combine 4 categories into single DataFrame for export consistency |
 
 ### Known Issues
 
@@ -140,32 +148,28 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped at:** Completed Phase 11 Plan 01 (Plot Building Blocks)
+**Stopped at:** Completed Phase 11 Plan 02 (Summary Report Integration) — v0.33.0 milestone complete
 **Resume file:** None
 
 **What just happened:**
-- Executed Phase 11 Plan 01 (Plot Building Blocks) — 2 tasks, 5 minutes
-- Task 1: Added 4 new functions to generate_summary_reports.py (create_metric_heatmap_data, plot_metric_heatmap, plot_coverage_outside_insert_boxplot, create_resistance_gene_table) plus DEPTH_HEATMAP_CAP config; added depth_heatmap_cap: 100 to config.json
-- Task 2: Added 2 matplotlib fallback functions (generate_metric_heatmap_matplotlib, generate_coverage_boxplot_matplotlib)
-- All success criteria met: 6 new functions total, all with type annotations/docstrings, graceful empty DataFrame handling
-- 280 tests passing (no test changes, existing behavior unchanged)
-- 2 commits: feat, feat
+- Executed Phase 11 Plan 02 (Summary Report Integration) — 2 tasks, 8 minutes
+- Task 1: Restructured summary_template.html with 5 collapsible sections, updated generate_report() with 10 new parameters, wired all plot functions in main(), extended save_tables_as_tsv_and_excel() with 2 optional DataFrames
+- Task 2: Added 17 comprehensive unit tests (5 test classes: TestCreateMetricHeatmapData, TestCreateResistanceGeneTable, TestPlotMetricHeatmap, TestPlotCoverageOutsideInsertBoxplot, TestSaveTablesExtended)
+- All success criteria met: 5 collapsible sections, dual-mode rendering (Plotly/matplotlib), TSV/Excel exports, 297 tests passing
+- 3 commits: feat, test, style (ruff formatting)
 
-**Phase 11 Plan 01 complete:**
-- Duration: 5 minutes
-- 2 tasks, 2 commits
-- 3 files modified (generate_summary_reports.py, matplotlib_backend.py, config.json)
+**Phase 11 complete:**
+- Total duration: 13 minutes (Plan 01: 5 min, Plan 02: 8 min)
+- 4 tasks, 5 commits (2 feat, 1 test, 1 style, 1 docs from 11-01)
+- 3 files modified (summary_template.html, generate_summary_reports.py, test_generate_summary_reports.py)
 - No deviations from plan
+- All 7 summary report requirements (REPT-04 to REPT-10) satisfied
 
-**Next step:** Execute Phase 11 Plan 02 (Wire new plots into report pipeline) to integrate the building-block functions into main() flow.
-
-**Key context for Phase 11 Plan 02:**
-- Building-block functions ready: create_metric_heatmap_data, plot_metric_heatmap, plot_coverage_outside_insert_boxplot, create_resistance_gene_table
-- All functions handle empty DataFrames gracefully (backward compatibility)
-- depth_heatmap_cap = 100 for capping depth metric heatmaps
-- Need to call new functions in generate_summary_reports.py main() and pass filenames to generate_report()
-- Need to update report template to display new plots and gene table
+**v0.33.0 milestone complete:**
+- All 4 phases complete (Phases 8-11)
+- 297 tests passing (125 → 280 → 297 across milestone)
+- Ready for deployment and testing on real datasets
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 10 Plan 02 execution (Phase 10 complete)*
+*Last updated: 2026-02-15 after Phase 11 Plan 02 execution (v0.33.0 milestone complete)*
