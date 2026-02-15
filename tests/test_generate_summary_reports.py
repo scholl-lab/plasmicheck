@@ -11,7 +11,12 @@ from plasmicheck.scripts.generate_summary_reports import (
     _sanitize_for_excel,
     apply_sorting,
     calculate_variations,
+    create_metric_heatmap_data,
+    create_resistance_gene_table,
     find_tsv_files,
+    plot_coverage_outside_insert_boxplot,
+    plot_metric_heatmap,
+    save_tables_as_tsv_and_excel,
 )
 
 
@@ -146,3 +151,389 @@ class TestCalculateVariations:
             # Corrected p-values should be >= raw p-values (FDR only inflates)
             for _, row in p_values_df.iterrows():
                 assert row["p_value_corrected"] >= row["p_value"] - 1e-10
+
+
+class TestCreateMetricHeatmapData:
+    @pytest.mark.unit
+    def test_extracts_metric_and_pivots(self) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s1", "s2", "s2"],
+                "Plasmid": ["p1", "p2", "p1", "p2"],
+                "Category": [
+                    "MeanDepthBackbone",
+                    "MeanDepthBackbone",
+                    "MeanDepthBackbone",
+                    "MeanDepthBackbone",
+                ],
+                "Value": [10.5, 20.3, 15.2, 25.8],
+            }
+        )
+        result = create_metric_heatmap_data(df, "MeanDepthBackbone")
+        assert result.shape == (2, 2)  # 2 samples x 2 plasmids
+        assert result.loc["s1", "p1"] == 10.5
+        assert result.loc["s2", "p2"] == 25.8
+
+    @pytest.mark.unit
+    def test_empty_for_missing_category(self) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["MeanDepthBackbone"],
+                "Value": [10.0],
+            }
+        )
+        result = create_metric_heatmap_data(df, "NonExistent")
+        assert result.empty
+
+    @pytest.mark.unit
+    def test_coerces_non_numeric(self) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "Category": ["MeanDepthBackbone", "MeanDepthBackbone"],
+                "Value": [10.0, "bad"],
+            }
+        )
+        result = create_metric_heatmap_data(df, "MeanDepthBackbone")
+        assert pd.isna(result.loc["s2", "p1"])
+
+    @pytest.mark.unit
+    def test_handles_single_sample(self) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s1"],
+                "Plasmid": ["p1", "p2"],
+                "Category": ["BreadthBackbone", "BreadthBackbone"],
+                "Value": [95.0, 98.5],
+            }
+        )
+        result = create_metric_heatmap_data(df, "BreadthBackbone")
+        assert result.shape == (1, 2)  # 1 sample, 2 plasmids
+
+
+class TestCreateResistanceGeneTable:
+    @pytest.mark.unit
+    def test_extracts_genes_correctly(self) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": [
+                    "s1",
+                    "s1",
+                    "s1",
+                    "s1",
+                    "s1",
+                    "s1",
+                ],
+                "Plasmid": ["p1", "p1", "p1", "p1", "p1", "p1"],
+                "Category": [
+                    "ResistanceGenesAvailable",
+                    "ResistanceGenes",
+                    "ResGene_AmpR_MeanDepth",
+                    "ResGene_AmpR_Breadth",
+                    "ResGene_KanR_MeanDepth",
+                    "ResGene_KanR_Breadth",
+                ],
+                "Value": ["true", "AmpR,KanR", "50.5", "95.2", "30.1", "88.0"],
+            }
+        )
+        result = create_resistance_gene_table(df)
+        assert len(result) == 2
+        assert list(result.columns) == [
+            "Sample",
+            "Plasmid",
+            "Gene Name",
+            "Mean Depth",
+            "Breadth (%)",
+        ]
+        assert result.iloc[0]["Gene Name"] == "AmpR"
+        assert result.iloc[0]["Mean Depth"] == 50.5
+        assert result.iloc[1]["Gene Name"] == "KanR"
+        assert result.iloc[1]["Breadth (%)"] == 88.0
+
+    @pytest.mark.unit
+    def test_empty_when_no_genbank(self) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["ResistanceGenesAvailable"],
+                "Value": ["false"],
+            }
+        )
+        result = create_resistance_gene_table(df)
+        assert result.empty
+        assert list(result.columns) == [
+            "Sample",
+            "Plasmid",
+            "Gene Name",
+            "Mean Depth",
+            "Breadth (%)",
+        ]
+
+    @pytest.mark.unit
+    def test_empty_when_no_resistance_genes_available_row(self) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["SomeOtherCategory"],
+                "Value": ["123"],
+            }
+        )
+        result = create_resistance_gene_table(df)
+        assert result.empty
+
+    @pytest.mark.unit
+    def test_skips_samples_with_no_genes(self) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s1", "s1", "s1", "s2", "s2"],
+                "Plasmid": ["p1", "p1", "p1", "p1", "p1", "p1"],
+                "Category": [
+                    "ResistanceGenesAvailable",
+                    "ResistanceGenes",
+                    "ResGene_AmpR_MeanDepth",
+                    "ResGene_AmpR_Breadth",
+                    "ResistanceGenesAvailable",
+                    "ResistanceGenes",
+                ],
+                "Value": ["true", "AmpR", "40.0", "90.0", "true", ""],
+            }
+        )
+        result = create_resistance_gene_table(df)
+        assert len(result) == 1
+        assert result.iloc[0]["Sample"] == "s1"
+
+
+class TestPlotMetricHeatmap:
+    @pytest.mark.unit
+    def test_creates_html_file(self, tmp_path: Path) -> None:
+        df = pd.DataFrame({"p1": [10.0, 15.0], "p2": [20.0, 25.0]}, index=["s1", "s2"])
+        html_file, png_file = plot_metric_heatmap(
+            df, str(tmp_path), "Test Metric", static_report=False
+        )
+        assert Path(html_file).exists()
+        assert png_file is None
+
+    @pytest.mark.unit
+    def test_empty_data_returns_empty_strings(self, tmp_path: Path) -> None:
+        df = pd.DataFrame()
+        html_file, png_file = plot_metric_heatmap(
+            df, str(tmp_path), "Test Metric", static_report=False
+        )
+        assert html_file == ""
+        assert png_file is None
+
+    @pytest.mark.unit
+    def test_vmax_clips_data(self, tmp_path: Path) -> None:
+        df = pd.DataFrame({"p1": [100.0, 200.0]}, index=["s1", "s2"])
+        html_file, png_file = plot_metric_heatmap(
+            df, str(tmp_path), "Test Metric", vmax=50.0, static_report=False
+        )
+        assert Path(html_file).exists()
+        assert png_file is None
+
+
+class TestPlotCoverageOutsideInsertBoxplot:
+    @pytest.mark.unit
+    def test_creates_html_file(self, tmp_path: Path) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "Category": ["CoverageOutsideINSERT", "CoverageOutsideINSERT"],
+                "Value": [5.0, 10.0],
+            }
+        )
+        html_file, png_file = plot_coverage_outside_insert_boxplot(
+            df, str(tmp_path), static_report=False
+        )
+        assert Path(html_file).exists()
+        assert png_file is None
+
+    @pytest.mark.unit
+    def test_empty_returns_empty(self, tmp_path: Path) -> None:
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["SomeOtherCategory"],
+                "Value": [10.0],
+            }
+        )
+        html_file, png_file = plot_coverage_outside_insert_boxplot(
+            df, str(tmp_path), static_report=False
+        )
+        assert html_file == ""
+        assert png_file is None
+
+
+class TestSaveTablesExtended:
+    @pytest.mark.unit
+    def test_extended_metrics_tsv_created(self, tmp_path: Path) -> None:
+        combined_df = pd.DataFrame(
+            {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Plasmid"], "Value": [100]}
+        )
+        verdict_df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["Verdict"],
+                "Value": ["Contaminated"],
+            }
+        )
+        ratio_df = pd.DataFrame(
+            {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Ratio"], "Value": [1.5]}
+        )
+        p_values_df = pd.DataFrame({"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]})
+        extended_df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["MeanDepthBackbone"],
+                "Value": [50.0],
+            }
+        )
+
+        save_tables_as_tsv_and_excel(
+            combined_df,
+            verdict_df,
+            ratio_df,
+            p_values_df,
+            str(tmp_path),
+            extended_metrics_df=extended_df,
+        )
+
+        tsv_path = tmp_path / "data" / "extended_metrics_table.tsv"
+        assert tsv_path.exists()
+
+    @pytest.mark.unit
+    def test_resistance_genes_tsv_created(self, tmp_path: Path) -> None:
+        combined_df = pd.DataFrame(
+            {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Plasmid"], "Value": [100]}
+        )
+        verdict_df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["Verdict"],
+                "Value": ["Contaminated"],
+            }
+        )
+        ratio_df = pd.DataFrame(
+            {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Ratio"], "Value": [1.5]}
+        )
+        p_values_df = pd.DataFrame({"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]})
+        resistance_df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Gene Name": ["AmpR"],
+                "Mean Depth": [40.0],
+                "Breadth (%)": [90.0],
+            }
+        )
+
+        save_tables_as_tsv_and_excel(
+            combined_df,
+            verdict_df,
+            ratio_df,
+            p_values_df,
+            str(tmp_path),
+            resistance_gene_df=resistance_df,
+        )
+
+        tsv_path = tmp_path / "data" / "resistance_genes_table.tsv"
+        assert tsv_path.exists()
+
+    @pytest.mark.unit
+    def test_excel_has_new_sheets(self, tmp_path: Path) -> None:
+        combined_df = pd.DataFrame(
+            {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Plasmid"], "Value": [100]}
+        )
+        verdict_df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["Verdict"],
+                "Value": ["Contaminated"],
+            }
+        )
+        ratio_df = pd.DataFrame(
+            {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Ratio"], "Value": [1.5]}
+        )
+        p_values_df = pd.DataFrame({"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]})
+        extended_df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["MeanDepthBackbone"],
+                "Value": [50.0],
+            }
+        )
+        resistance_df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Gene Name": ["AmpR"],
+                "Mean Depth": [40.0],
+                "Breadth (%)": [90.0],
+            }
+        )
+
+        save_tables_as_tsv_and_excel(
+            combined_df,
+            verdict_df,
+            ratio_df,
+            p_values_df,
+            str(tmp_path),
+            extended_metrics_df=extended_df,
+            resistance_gene_df=resistance_df,
+        )
+
+        excel_path = tmp_path / "data" / "summary_report_tables.xlsx"
+        assert excel_path.exists()
+
+        # Read Excel and check sheets exist
+        import openpyxl
+
+        wb = openpyxl.load_workbook(excel_path)
+        sheet_names = wb.sheetnames
+        assert "Extended Metrics" in sheet_names
+        assert "Resistance Genes" in sheet_names
+
+    @pytest.mark.unit
+    def test_backward_compatible_without_new_args(self, tmp_path: Path) -> None:
+        combined_df = pd.DataFrame(
+            {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Plasmid"], "Value": [100]}
+        )
+        verdict_df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["Verdict"],
+                "Value": ["Contaminated"],
+            }
+        )
+        ratio_df = pd.DataFrame(
+            {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Ratio"], "Value": [1.5]}
+        )
+        p_values_df = pd.DataFrame({"Plasmid": ["p1"], "p_value": [0.05], "p_value_corrected": [0.05]})
+
+        # Call without new optional args (like pre-v0.33.0 code)
+        save_tables_as_tsv_and_excel(
+            combined_df, verdict_df, ratio_df, p_values_df, str(tmp_path)
+        )
+
+        data_dir = tmp_path / "data"
+        assert (data_dir / "combined_table.tsv").exists()
+        assert (data_dir / "verdict_table.tsv").exists()
+        assert (data_dir / "ratio_table.tsv").exists()
+        assert (data_dir / "p_value_table.tsv").exists()
+        assert (data_dir / "summary_report_tables.xlsx").exists()
+        # New files should NOT exist
+        assert not (data_dir / "extended_metrics_table.tsv").exists()
+        assert not (data_dir / "resistance_genes_table.tsv").exists()
