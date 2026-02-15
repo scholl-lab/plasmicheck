@@ -475,7 +475,7 @@ def run_pipeline(
     # Perform quality control checks
     logging.info("Performing quality control checks on input files...")
     quality_control([human_fasta], expected_formats=["fasta"])
-    quality_control(plan.plasmid_files, expected_formats=["genbank", "xdna"])
+    quality_control(plan.plasmid_files, expected_formats=["genbank", "xdna", "snapgene"])
 
     fastq_extensions = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
     for seq_input in plan.sequencing_inputs:
@@ -510,11 +510,9 @@ def run_pipeline(
 
     with _progress_context(progress, plan.total_steps) as prog:
         for plasmid_file in plan.plasmid_files:
-            plasmid_file_type: str = (
-                "genbank"
-                if plasmid_file.endswith(".gb") or plasmid_file.endswith(".gbk")
-                else "xdna"
-            )
+            # Auto-detect plasmid file format from magic bytes and content
+            from .format_detection import detect_format
+            plasmid_file_type: str = detect_format(plasmid_file)
             logging.info(f"Processing plasmid file: {plasmid_file}")
 
             for seq_input in plan.sequencing_inputs:
