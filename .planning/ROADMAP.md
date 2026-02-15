@@ -80,11 +80,11 @@ Plans:
   2. Summary report reader can find comparison files regardless of directory depth
   3. All pipeline components construct paths via OutputPaths dataclass (no hardcoded strings)
   4. Existing summary report TSV/Excel files continue to work with new structure
-**Plans:** 2 plans (estimated)
+**Plans:** 2 plans
 
 Plans:
-- [ ] 13-01: OutputPaths dataclass and subfolder layout implementation
-- [ ] 13-02: Depth-agnostic summary reader and pipeline integration
+- [ ] 13-01-PLAN.md — OutputPaths frozen dataclass, pipeline rewiring, downstream module updates
+- [ ] 13-02-PLAN.md — Depth-agnostic summary reader and both-layout tests
 
 #### Phase 14: Cache Infrastructure
 **Goal:** Batch runs reuse indexes and spliced alignments across samples, dramatically reducing runtime
@@ -152,4 +152,4 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 12 completion*
+*Last updated: 2026-02-15 after Phase 13 planning*
