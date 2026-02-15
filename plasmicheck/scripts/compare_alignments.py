@@ -11,7 +11,12 @@ import pysam
 
 from plasmicheck.config import get_config
 
-from .coverage_metrics import compute_region_coverage_metrics
+from .coverage_metrics import (
+    compute_coverage_stats,
+    compute_region_coverage_metrics,
+    get_depth_array,
+)
+from .resistance_gene_detection import DetectedGene, detect_resistance_genes, locate_genbank_file
 from .utils import add_logging_args, configure_logging_from_args
 
 _cfg = get_config()
@@ -24,6 +29,7 @@ SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
 FILTER_BACKBONE_ONLY: bool = _cfg.get("filter_backbone_only", True)
 SCORE_MARGIN: int = _cfg.get("score_margin", 0)
 BREADTH_THRESHOLDS: list[int] = _cfg.get("breadth_thresholds", [5])
+CUSTOM_RESISTANCE_PATTERNS: list[str] = _cfg.get("resistance_gene_patterns", [])
 
 
 def calculate_alignment_score(read: Any) -> int:
@@ -326,7 +332,11 @@ def _streaming_compare(
 
 
 def compare_alignments(
-    plasmid_bam: str, human_bam: str, output_basename: str, threshold: float = DEFAULT_THRESHOLD
+    plasmid_bam: str,
+    human_bam: str,
+    output_basename: str,
+    threshold: float = DEFAULT_THRESHOLD,
+    genbank_file: str | None = None,
 ) -> None:
     logging.info("Starting comparison of alignments")
     logging.debug(f"Processing BAM files: {plasmid_bam} (plasmid), {human_bam} (human)")
@@ -365,6 +375,46 @@ def compare_alignments(
             "Coverage metrics computed for whole plasmid (insert region not defined). "
             "Backbone metrics are 0.0."
         )
+
+    # Resistance gene detection and per-gene coverage
+    detected_genes: list[DetectedGene] = []
+    gene_coverage: dict[str, dict[str, float]] = {}
+    genbank_located = False
+
+    try:
+        # Try provided genbank_file first, fallback to locate_genbank_file
+        gb_file = genbank_file
+        if gb_file is None:
+            gb_file = locate_genbank_file(os.path.dirname(output_basename))
+            if gb_file is not None:
+                genbank_located = True
+                logging.debug(f"Located GenBank file: {gb_file}")
+
+        if gb_file is not None:
+            logging.info(f"Detecting resistance genes from {gb_file}")
+            detected_genes = detect_resistance_genes(
+                gb_file, insert_region, CUSTOM_RESISTANCE_PATTERNS
+            )
+            logging.info(f"Detected {len(detected_genes)} resistance/reporter genes")
+
+            if detected_genes:
+                # Compute per-gene coverage using Phase 9 infrastructure
+                with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
+                    contig = bam.get_reference_name(0)
+
+                for gene in detected_genes:
+                    # get_depth_array uses half-open intervals, gene coordinates are inclusive
+                    depth_array = get_depth_array(plasmid_bam, contig, gene.start, gene.end + 1)
+                    stats = compute_coverage_stats(depth_array, [1])
+                    gene_coverage[gene.sanitized_name] = stats
+                    logging.debug(
+                        f"Gene {gene.name}: mean_depth={stats['mean_depth']:.2f}, "
+                        f"breadth={stats['breadth_1x']:.2f}"
+                    )
+    except Exception as e:
+        logging.warning(f"Resistance gene detection failed: {e}. Continuing without gene data.")
+        detected_genes = []
+        gene_coverage = {}
 
     # Group BAMs by read name into temporary files for streaming merge
     plasmid_ns = plasmid_bam.replace(".bam", ".namesorted.bam")
@@ -453,6 +503,25 @@ def compare_alignments(
         # Fallback indicator
         summary_file.write(f"CoverageFallback\t{coverage_fallback}\n")
 
+        # Resistance gene detection results
+        if genbank_file is not None or genbank_located:
+            summary_file.write("ResistanceGenesAvailable\ttrue\n")
+            if gene_coverage:
+                gene_names = [g.name for g in detected_genes]
+                summary_file.write(f"ResistanceGenes\t{','.join(gene_names)}\n")
+                for gene in detected_genes:
+                    s = gene.sanitized_name
+                    metrics = gene_coverage[s]
+                    summary_file.write(f"ResGene_{s}_MeanDepth\t{metrics['mean_depth']:.2f}\n")
+                    summary_file.write(f"ResGene_{s}_Breadth\t{metrics['breadth_1x']:.2f}\n")
+                    summary_file.write(f"ResGene_{s}_Start\t{gene.start}\n")
+                    summary_file.write(f"ResGene_{s}_End\t{gene.end}\n")
+                    summary_file.write(f"ResGene_{s}_Region\t{gene.region}\n")
+            else:
+                summary_file.write("ResistanceGenes\tNone\n")
+        else:
+            summary_file.write("ResistanceGenesAvailable\tfalse\n")
+
 
 if __name__ == "__main__":
     import argparse
@@ -470,9 +539,18 @@ if __name__ == "__main__":
         default=DEFAULT_THRESHOLD,
         help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})",
     )
+    parser.add_argument(
+        "-gb",
+        "--genbank_file",
+        type=str,
+        default=None,
+        help="GenBank file for resistance gene detection (optional)",
+    )
     add_logging_args(parser)
     args = parser.parse_args()
 
     configure_logging_from_args(args)
 
-    compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)
+    compare_alignments(
+        args.plasmid_bam, args.human_bam, args.output_basename, args.threshold, args.genbank_file
+    )
