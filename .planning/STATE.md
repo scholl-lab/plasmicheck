@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-**Phase:** 9 of 11 (Coverage Metrics) — COMPLETE ✓
-**Plan:** 2 of 2 complete (09-01 ✓, 09-02 ✓)
-**Status:** Phase 9 complete, ready for Phase 10
-**Progress:** ███▓░░░░░░ 32% (2/4 phases complete)
+**Phase:** 10 of 11 (Resistance Gene Detection) — IN PROGRESS
+**Plan:** 1 of 2 complete (10-01 ✓)
+**Status:** Gene detection module ready, integration pending
+**Progress:** ████░░░░░░ 38% (2.5/4 phases complete)
 
-Last activity: 2026-02-15 -- Completed 09-02-PLAN.md (Coverage metrics now visible in HTML reports, 219 tests passing)
+Last activity: 2026-02-15 -- Completed 10-01-PLAN.md (Resistance gene detection module with 90% recall, 274 tests passing)
 
 ## Milestones
 
@@ -30,7 +30,7 @@ Last activity: 2026-02-15 -- Completed 09-02-PLAN.md (Coverage metrics now visib
 |-------|------|--------------|--------|
 | 8 | Insert-Region-Aware Filtering | FILT-01..05 | Complete ✓ |
 | 9 | Coverage Metrics | COV-01..05 | Complete ✓ |
-| 10 | Resistance Gene Detection | RGENE-01..04 | Not Started |
+| 10 | Resistance Gene Detection | RGENE-01..04 | Plan 01 Complete ✓ |
 | 11 | Summary Report Integration | REPT-04..10 | Not Started |
 
 ## Accumulated Context
@@ -66,6 +66,16 @@ Last activity: 2026-02-15 -- Completed 09-02-PLAN.md (Coverage metrics now visib
 - Fallback warning shown when insert region not defined
 - Backward compatible template rendering (missing metrics show 0.00)
 
+**From Phase 10 (Resistance Gene Detection - 10-01):**
+- resistance_gene_detection.py module with curated pattern matching for 14 bacterial, 7 mammalian, and 9 reporter gene patterns
+- GenBank CDS feature parsing via Biopython SeqIO with CompoundLocation handling (origin-crossing features)
+- Affinity tag exclusion (His-tag, FLAG, Myc, V5, HA) prevents false positives
+- Conservative insert region overlap exclusion ensures backbone-only gene detection
+- preserve_genbank parameter in convert_plasmidfile_to_fasta retains .gb files for gene detection
+- resistance_gene_patterns extension point in config.json for custom patterns
+- 274 tests passing (219 existing + 55 new resistance gene detection tests)
+- 90% recall validated against real plasmid GenBank files (pWPI-KCNJ5-WT.gb, pCMV6 files)
+
 ### Key Context for v0.33.0
 
 - Phase 8 (filtering) must come first: corrects read assignments that all downstream metrics depend on
@@ -92,6 +102,11 @@ Last activity: 2026-02-15 -- Completed 09-02-PLAN.md (Coverage metrics now visib
 | 09-02 | Always show Coverage Analysis card | Avoids confusion when metrics exist but card is hidden; users see card structure |
 | 09-02 | Use Jinja2 default() filter for backward compatibility | Old summary.tsv files render 0.00 instead of error |
 | 09-02 | Display fallback warning inline in card | Keeps coverage context together, users immediately understand whole-plasmid metrics |
+| 10-01 | Extended bacterial patterns to include full antibiotic names | Broader coverage of GenBank annotation styles (ampicillin, kanamycin vs AmpR, KanR) |
+| 10-01 | Curated exclusion list for affinity tags | Prevent false positives from His-tag, FLAG, Myc, V5, HA epitope tags |
+| 10-01 | Conservative overlap exclusion for insert region | Any gene overlap (full or partial) with insert is excluded for backbone-only detection |
+| 10-01 | Default preserve_genbank=False | Backward compatibility - no changes to existing convert_plasmidfile_to_fasta callers |
+| 10-01 | GenBank file location priority (output_dir then plasmid_file) | Always finds most relevant .gb file (from conversion or original) |
 
 ### Known Issues
 
@@ -105,27 +120,27 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped at:** Completed 09-02-PLAN.md
+**Stopped at:** Completed 10-01-PLAN.md
 **Resume file:** None
 
 **What just happened:**
-- Executed Phase 9 Plan 02 (Coverage Metrics Display) — 2 tasks, 5 minutes
-- Task 1: Updated generate_report.py to parse coverage metrics from summary.tsv and pass to template
-- Task 2: Added Coverage Analysis card to report_template.html with table showing insert/backbone metrics
-- All success criteria met: Coverage metrics visible in HTML reports
-- 219 tests passing (up from 216) with 3 new report-specific coverage tests
-- All CI checks passing (lint, format, typecheck, test)
-- Phase 9 complete ✓
+- Executed Phase 10 Plan 01 (Resistance Gene Detection) — 2 tasks, 13 minutes
+- Task 1: Created resistance_gene_detection.py module with curated pattern matching for bacterial, mammalian, and reporter genes; modified convert_plasmidfile_to_fasta to preserve GenBank files
+- Task 2: Comprehensive unit tests (55 new tests) covering pattern matching, GenBank parsing, insert region exclusion, and real file validation
+- All success criteria met: Gene detection module with 90% recall, GenBank preservation, config extension point
+- 274 tests passing (219 existing + 55 new) with all CI checks passing
+- 3 commits: feat, test, style
 
-**Next step:** Execute Phase 10 (Resistance Gene Detection) to parse plasmid GenBank annotations and compute gene-level coverage.
+**Next step:** Execute Phase 10 Plan 02 (Gene Coverage Integration) to integrate gene detection into compare_alignments.py and compute per-gene coverage metrics.
 
-**Key context for Phase 10:**
-- coverage_metrics.py infrastructure ready for gene-level coverage computation
-- Biopython SeqIO for GenBank annotation parsing (CDS features)
-- pysam.count_coverage() can be called for specific gene regions
-- compare_alignments.py is the integration point (add gene detection after coverage metrics)
-- New columns in summary.tsv for detected resistance genes with coverage stats
+**Key context for Plan 02:**
+- resistance_gene_detection.py module ready for import
+- DetectedGene dataclass provides structured data (name, sanitized_name, start, end, region)
+- locate_genbank_file() helper finds .gb files in output_dir or original plasmid_file
+- coverage_metrics.py get_depth_array() can compute coverage for specific gene regions
+- Need to add gene detection call after insert region parsing in compare_alignments.py
+- New columns in summary.tsv for each detected gene with coverage stats
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 9 Plan 02 execution (Phase 9 complete)*
+*Last updated: 2026-02-15 after Phase 10 Plan 01 execution*
