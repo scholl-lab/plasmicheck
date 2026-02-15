@@ -81,32 +81,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FMT-01 | TBD | Pending |
-| FMT-02 | TBD | Pending |
-| FMT-03 | TBD | Pending |
-| FMT-04 | TBD | Pending |
-| VIS-01 | TBD | Pending |
-| VIS-02 | TBD | Pending |
-| VIS-03 | TBD | Pending |
-| VIS-04 | TBD | Pending |
-| CACHE-01 | TBD | Pending |
-| CACHE-02 | TBD | Pending |
-| CACHE-03 | TBD | Pending |
-| CACHE-04 | TBD | Pending |
-| CACHE-05 | TBD | Pending |
-| CACHE-06 | TBD | Pending |
-| OUT-01 | TBD | Pending |
-| OUT-02 | TBD | Pending |
-| OUT-03 | TBD | Pending |
-| OUT-04 | TBD | Pending |
-| SJ-01 | TBD | Pending |
-| SJ-02 | TBD | Pending |
+| FMT-01 | Phase 12 | Pending |
+| FMT-02 | Phase 12 | Pending |
+| FMT-03 | Phase 12 | Pending |
+| FMT-04 | Phase 12 | Pending |
+| OUT-01 | Phase 13 | Pending |
+| OUT-02 | Phase 13 | Pending |
+| OUT-03 | Phase 13 | Pending |
+| OUT-04 | Phase 13 | Pending |
+| CACHE-01 | Phase 14 | Pending |
+| CACHE-02 | Phase 14 | Pending |
+| CACHE-03 | Phase 14 | Pending |
+| CACHE-04 | Phase 14 | Pending |
+| CACHE-05 | Phase 14 | Pending |
+| CACHE-06 | Phase 14 | Pending |
+| SJ-01 | Phase 15 | Pending |
+| SJ-02 | Phase 15 | Pending |
+| VIS-01 | Phase 16 | Pending |
+| VIS-02 | Phase 16 | Pending |
+| VIS-03 | Phase 16 | Pending |
+| VIS-04 | Phase 16 | Pending |
 
 **Coverage:**
 - v0.34.0 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20
+- Mapped to phases: 20
+- Unmapped: 0
+
+**Verification:** 100% coverage (20/20 requirements mapped to phases)
 
 ---
 *Requirements defined: 2026-02-15*
-*Last updated: 2026-02-15 after initial definition*
+*Last updated: 2026-02-15 after roadmap creation (traceability complete)*

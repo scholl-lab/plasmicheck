@@ -1,158 +1,155 @@
-# Roadmap: PlasmiCheck v0.33.0
+# Roadmap: PlasmiCheck
 
-**Milestone:** v0.33.0 -- Scientific & Reporting Enhancements
-**Phases:** 4 (Phase 8 through Phase 11, continuing from v0.32.0)
-**Depth:** Standard
-**Coverage:** 21/21 requirements mapped
+## Milestones
 
-## Overview
+- ✅ **v0.29.0** Bug Fixes & Housekeeping (Phase 1) - shipped 2026-02-13
+- ✅ **v0.30.0** Code Quality (Phase 2) - shipped 2026-02-13
+- ✅ **v0.31.0** Enhancements & Infrastructure (Phase 3) - shipped 2026-02-13
+- ✅ **v0.32.0** Performance Optimization (Phases 4-7) - shipped 2026-02-14
+- ✅ **v0.33.0** Scientific & Reporting Enhancements (Phases 8-11) - shipped 2026-02-15
+- 🚧 **v0.34.0** Robustness & Infrastructure (Phases 12-16) - in progress
 
-This roadmap delivers multi-dimensional contamination evidence by correcting read assignment accuracy (insert-region-aware filtering), adding quantitative coverage metrics, detecting resistance gene markers, and surfacing all metrics in summary reports. Phases follow a strict dependency chain: filtering must come first because all downstream metrics depend on correct read assignments, coverage metrics establish per-region infrastructure, resistance gene detection builds on that infrastructure, and report integration renders all data sources.
+## Phases
 
-## Phase 8: Insert-Region-Aware Filtering
+<details>
+<summary>✅ v0.33.0 Scientific & Reporting Enhancements (Phases 8-11) - SHIPPED 2026-02-15</summary>
 
-**Goal:** Reads mapping only to shared backbone are excluded from contamination ratio, eliminating false positive calls for unrelated plasmids.
-
-**Issue:** #82
-**Dependencies:** None (first phase)
+### Phase 8: Insert-Region-Aware Filtering
+**Goal:** Reads mapping only to shared backbone are excluded from contamination ratio
+**Requirements:** FILT-01, FILT-02, FILT-03, FILT-04, FILT-05
 **Plans:** 2 plans
 
 Plans:
-- [x] 08-01-PLAN.md -- Core filtering logic, config, pipeline wiring, and unit tests
-- [x] 08-02-PLAN.md -- Report display updates for new read categories
+- [x] 08-01: Core filtering logic, config, pipeline wiring, and unit tests
+- [x] 08-02: Report display updates for new read categories
 
-**Requirements:**
-- FILT-01: Backbone_Only classification and exclusion from ratio
-- FILT-02: Optional score margin parameter
-- FILT-03: New read categories (Backbone_Only, Ambiguous) in comparison output
-- FILT-04: filter_backbone_only config toggle with backward-compatible default
-- FILT-05: New categories displayed in single-sample HTML reports
-
-**Success Criteria:**
-1. A sample contaminated with Plasmid A no longer shows elevated contamination scores for unrelated Plasmid B that shares only backbone sequence
-2. Running with `filter_backbone_only=false` produces identical output to pre-v0.33.0 behavior (all existing tests pass without modification)
-3. Comparison TSV output includes Backbone_Only and Ambiguous columns alongside existing Plasmid/Human/Tied counts
-4. Single-sample HTML report displays the new read categories with counts and proportions
-5. Setting a non-zero `score_margin` causes reads with small score differences to be classified as Ambiguous rather than Plasmid or Human
-
-## Phase 9: Coverage Metrics
-
-**Goal:** Every sample-plasmid pair has quantitative depth, breadth, and uniformity metrics computed per-region (insert vs backbone) and written to summary.tsv.
-
-**Issue:** #65
-**Dependencies:** Phase 8 (insert-region concept established, correct read assignments in place)
+### Phase 9: Coverage Metrics
+**Goal:** Quantitative depth, breadth, and uniformity metrics per-region
+**Requirements:** COV-01, COV-02, COV-03, COV-04, COV-05
 **Plans:** 2 plans
 
 Plans:
-- [x] 09-01-PLAN.md -- Coverage computation engine, config, summary.tsv integration, and unit tests
-- [x] 09-02-PLAN.md -- Coverage Analysis card in per-sample HTML report
+- [x] 09-01: Coverage computation engine, config, summary.tsv integration, and unit tests
+- [x] 09-02: Coverage Analysis card in per-sample HTML report
 
-**Requirements:**
-- COV-01: Per-region mean and median depth
-- COV-02: Breadth of coverage (fraction >=1 read) per region
-- COV-03: Breadth at 5x threshold per region
-- COV-04: Coverage uniformity (CV) for backbone
-- COV-05: Metrics as additional rows in summary.tsv (backward compatible)
-
-**Success Criteria:**
-1. Running the pipeline produces summary.tsv files containing new rows for mean_depth_insert, mean_depth_backbone, median_depth_backbone, breadth_insert, breadth_backbone, breadth_backbone_5x, and coverage_cv_backbone
-2. Existing summary.tsv rows (Ratio, Plasmid, Human, Tied, Verdict, CoverageOutsideINSERT, MismatchesNearINSERT) are unchanged -- parsers consuming the old format continue to work
-3. Coverage metrics are computed from actual per-base depth (via pysam), not from read count approximations
-4. A contaminated sample shows measurable backbone breadth and depth, while a clean sample shows near-zero backbone coverage
-
-## Phase 10: Resistance Gene Detection
-
-**Goal:** Resistance genes are automatically detected from plasmid GenBank annotations and their per-gene coverage is reported as an independent contamination signal.
-
-**Issue:** #64
-**Dependencies:** Phase 9 (coverage infrastructure in place)
+### Phase 10: Resistance Gene Detection
+**Goal:** Resistance genes automatically detected from GenBank annotations with per-gene coverage
+**Requirements:** RGENE-01, RGENE-02, RGENE-03, RGENE-04
 **Plans:** 2 plans
 
 Plans:
-- [x] 10-01-PLAN.md -- GenBank preservation, resistance gene detection module, curated patterns, unit tests
-- [x] 10-02-PLAN.md -- Pipeline integration, per-gene coverage, summary.tsv output, integration tests
+- [x] 10-01: GenBank preservation, resistance gene detection module, curated patterns, unit tests
+- [x] 10-02: Pipeline integration, per-gene coverage, summary.tsv output, integration tests
 
-**Requirements:**
-- RGENE-01: Resistance genes extracted from GenBank annotations via pattern matching
-- RGENE-02: Per-gene coverage metrics (mean depth + breadth) via pysam
-- RGENE-03: Resistance gene metrics in summary.tsv per gene
-- RGENE-04: Works with existing plasmid GenBank files (>=90% recall)
-
-**Success Criteria:**
-1. Running the pipeline with a GenBank plasmid file containing a resistance gene (e.g., AmpR) produces per-gene mean depth and breadth values in summary.tsv
-2. Testing against the 6 existing GenBank files in `reference/plasmid/` detects resistance genes in at least 90% of cases where annotations contain them
-3. When no GenBank file is provided or no resistance genes are found, the pipeline completes without error and summary.tsv omits resistance gene rows gracefully
-4. Per-gene coverage values are biologically coherent: a contaminated sample shows nonzero resistance gene depth, while a clean sample shows zero
-
-## Phase 11: Summary Report Integration
-
-**Goal:** All metrics -- existing (CoverageOutsideINSERT, MismatchesNearINSERT) and new (coverage depth/breadth, resistance genes) -- are visible in multi-sample summary reports with plots, tables, and exports.
-
-**Issue:** #58 + visualization for #65 and #64
-**Dependencies:** Phase 8, Phase 9, Phase 10 (all data sources must exist)
+### Phase 11: Summary Report Integration
+**Goal:** All metrics visible in multi-sample summary reports with plots, tables, and exports
+**Requirements:** REPT-04, REPT-05, REPT-06, REPT-07, REPT-08, REPT-09, REPT-10
 **Plans:** 2 plans
 
 Plans:
-- [x] 11-01-PLAN.md -- New metric plot/table generation functions (Plotly + matplotlib)
-- [x] 11-02-PLAN.md -- Template restructuring, wiring, exports, and tests
+- [x] 11-01: New metric plot/table generation functions (Plotly + matplotlib)
+- [x] 11-02: Template restructuring, wiring, exports, and tests
 
-**Requirements:**
-- REPT-04: CoverageOutsideINSERT in summary reports (heatmap + boxplot)
-- REPT-05: MismatchesNearINSERT in summary reports (chart)
-- REPT-06: Coverage depth heatmap (backbone mean depth)
-- REPT-07: Coverage breadth heatmap (backbone breadth %)
-- REPT-08: Resistance gene coverage table in summary reports
-- REPT-09: Matplotlib fallback for all new summary plots
-- REPT-10: TSV and Excel exports with new metric tables
+</details>
 
-**Success Criteria:**
-1. Multi-sample summary report contains heatmaps for CoverageOutsideINSERT, backbone mean depth, and backbone breadth, plus a chart for MismatchesNearINSERT and a table for resistance gene coverage
-2. All new plots render in both interactive (Plotly) and static (matplotlib) modes without error
-3. When summary data lacks new metrics (e.g., reports generated from pre-v0.33.0 data), the report renders without error and omits the new sections gracefully
-4. TSV and Excel exports include tables for all new metrics alongside existing tables
-5. New plots follow the existing visual style (matching color scales, layout conventions, and dimensions of existing summary report plots)
+### 🚧 v0.34.0 Robustness & Infrastructure (In Progress)
+
+**Milestone Goal:** Harden file format support, restructure outputs for clarity, add content-addressed caching for batch runs, enrich reports with splice junction metadata, and improve multi-sample visualization.
+
+#### Phase 12: Format Hardening
+**Goal:** Users can reliably convert diverse plasmid file formats without manual intervention
+**Depends on:** Nothing (first phase of v0.34.0)
+**Requirements:** FMT-01, FMT-02, FMT-03, FMT-04
+**Success Criteria** (what must be TRUE):
+  1. User can convert SnapGene .dna files via `plasmicheck convert`
+  2. User receives clear error message for unsupported xDNA versions with conversion instructions
+  3. Converted FASTA files use sanitized filename as record ID (not truncated comment field)
+  4. Tool automatically distinguishes xDNA vs SnapGene .dna files by magic bytes
+**Plans:** 2 plans (estimated)
+
+Plans:
+- [ ] 12-01: Magic byte detection and SnapGene parser integration
+- [ ] 12-02: xDNA ID override and improved error messages
+
+#### Phase 13: Output Restructuring
+**Goal:** Pipeline outputs are organized in logical subfolders with predictable paths
+**Depends on:** Phase 12
+**Requirements:** OUT-01, OUT-02, OUT-03, OUT-04
+**Success Criteria** (what must be TRUE):
+  1. Pipeline creates outputs in subfolder structure (alignments/, references/, data/, reports/, plots/)
+  2. Summary report reader can find comparison files regardless of directory depth
+  3. All pipeline components construct paths via OutputPaths dataclass (no hardcoded strings)
+  4. Existing summary report TSV/Excel files continue to work with new structure
+**Plans:** 2 plans (estimated)
+
+Plans:
+- [ ] 13-01: OutputPaths dataclass and subfolder layout implementation
+- [ ] 13-02: Depth-agnostic summary reader and pipeline integration
+
+#### Phase 14: Cache Infrastructure
+**Goal:** Batch runs reuse indexes and spliced alignments across samples, dramatically reducing runtime
+**Depends on:** Phase 13 (output paths must be stable)
+**Requirements:** CACHE-01, CACHE-02, CACHE-03, CACHE-04, CACHE-05, CACHE-06
+**Success Criteria** (what must be TRUE):
+  1. Identical plasmid files produce same index once per pipeline run (within-run deduplication)
+  2. Subsequent pipeline runs reuse cached indexes from ~/.plasmicheck/cache/indexes/
+  3. Subsequent pipeline runs reuse cached spliced alignments when human reference and plasmid match
+  4. User can disable caching via --no-cache or override cache directory via --cache-dir
+  5. User can inspect cache contents and clean old entries via `plasmicheck cache info|clean`
+**Plans:** 3 plans (estimated)
+
+Plans:
+- [ ] 14-01: CacheManager module with content-addressed storage and manifest
+- [ ] 14-02: Within-run and cross-run index caching
+- [ ] 14-03: Spliced alignment caching and cache management CLI
+
+#### Phase 15: Splice Junction Metadata
+**Goal:** Reports display splice junction and exon counts extracted from spliced alignments
+**Depends on:** Phase 13 (needs stable output paths)
+**Requirements:** SJ-01, SJ-02
+**Success Criteria** (what must be TRUE):
+  1. cDNA_positions.txt contains SpliceJunctionCount and ExonCount fields
+  2. summary.tsv exports include SpliceJunctionCount and ExonCount columns
+  3. Splice junction count accurately reflects N operations in spliced alignment CIGAR string
+**Plans:** 1 plan (estimated)
+
+Plans:
+- [ ] 15-01: CIGAR parsing and metadata storage
+
+#### Phase 16: Summary Visualization
+**Goal:** Multi-sample summary reports include verdict bar charts grouped by plasmid and by sample
+**Depends on:** Phase 13 (needs stable output paths)
+**Requirements:** VIS-01, VIS-02, VIS-03, VIS-04
+**Success Criteria** (what must be TRUE):
+  1. Summary report HTML displays verdict bar chart grouped by plasmid
+  2. Summary report HTML displays verdict bar chart grouped by sample
+  3. Matplotlib fallback PNGs generated for both new verdict bar charts
+  4. Exported summary report packages include both new plots
+**Plans:** 2 plans (estimated)
+
+Plans:
+- [ ] 16-01: Verdict bar chart plotting functions (Plotly + Matplotlib)
+- [ ] 16-02: Template integration and export inclusion
 
 ## Progress
 
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 8 | Insert-Region-Aware Filtering | FILT-01..05 (5) | Complete |
-| 9 | Coverage Metrics | COV-01..05 (5) | Complete |
-| 10 | Resistance Gene Detection | RGENE-01..04 (4) | Complete |
-| 11 | Summary Report Integration | REPT-04..10 (7) | Complete |
+**Execution Order:**
+Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 
-**Total:** 21 requirements across 4 phases. 21/21 complete.
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 8. Insert-Region-Aware Filtering | v0.33.0 | 2/2 | Complete | 2026-02-14 |
+| 9. Coverage Metrics | v0.33.0 | 2/2 | Complete | 2026-02-14 |
+| 10. Resistance Gene Detection | v0.33.0 | 2/2 | Complete | 2026-02-15 |
+| 11. Summary Report Integration | v0.33.0 | 2/2 | Complete | 2026-02-15 |
+| 12. Format Hardening | v0.34.0 | 0/2 | Not started | - |
+| 13. Output Restructuring | v0.34.0 | 0/2 | Not started | - |
+| 14. Cache Infrastructure | v0.34.0 | 0/3 | Not started | - |
+| 15. Splice Junction Metadata | v0.34.0 | 0/1 | Not started | - |
+| 16. Summary Visualization | v0.34.0 | 0/2 | Not started | - |
 
-## Coverage Map
-
-| Requirement | Phase | Verified |
-|-------------|-------|----------|
-| FILT-01 | Phase 8 | Yes |
-| FILT-02 | Phase 8 | Yes |
-| FILT-03 | Phase 8 | Yes |
-| FILT-04 | Phase 8 | Yes |
-| FILT-05 | Phase 8 | Yes |
-| COV-01 | Phase 9 | Yes |
-| COV-02 | Phase 9 | Yes |
-| COV-03 | Phase 9 | Yes |
-| COV-04 | Phase 9 | Yes |
-| COV-05 | Phase 9 | Yes |
-| RGENE-01 | Phase 10 | Yes |
-| RGENE-02 | Phase 10 | Yes |
-| RGENE-03 | Phase 10 | Yes |
-| RGENE-04 | Phase 10 | Yes |
-| REPT-04 | Phase 11 | Yes |
-| REPT-05 | Phase 11 | Yes |
-| REPT-06 | Phase 11 | Yes |
-| REPT-07 | Phase 11 | Yes |
-| REPT-08 | Phase 11 | Yes |
-| REPT-09 | Phase 11 | Yes |
-| REPT-10 | Phase 11 | Yes |
-
-**Orphaned requirements:** None
-**Duplicate mappings:** None
-**Coverage:** 21/21 (100%)
+**v0.34.0 Progress:** 0/10 plans complete
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 11 completion (all phases complete)*
+*Last updated: 2026-02-15 for v0.34.0 milestone*
