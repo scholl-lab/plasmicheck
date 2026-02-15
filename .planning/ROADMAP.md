@@ -65,11 +65,11 @@ Plans:
   2. User receives clear error message for unsupported xDNA versions with conversion instructions
   3. Converted FASTA files use sanitized filename as record ID (not truncated comment field)
   4. Tool automatically distinguishes xDNA vs SnapGene .dna files by magic bytes
-**Plans:** 2 plans (estimated)
+**Plans:** 2 plans
 
 Plans:
-- [ ] 12-01: Magic byte detection and SnapGene parser integration
-- [ ] 12-02: xDNA ID override and improved error messages
+- [ ] 12-01-PLAN.md — Format detection module, SnapGene support, CLI --format flag, sanitized record IDs
+- [ ] 12-02-PLAN.md — Pipeline integration, quality control update, comprehensive tests
 
 #### Phase 13: Output Restructuring
 **Goal:** Pipeline outputs are organized in logical subfolders with predictable paths
