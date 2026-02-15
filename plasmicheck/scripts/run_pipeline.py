@@ -8,9 +8,11 @@ import sys
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from ..config import get_config
+from ..output_paths import OutputPaths
 from ..thread_config import allocate_threads, detect_cpu_count
 from .align_reads import align_reads
 from .compare_alignments import compare_alignments
@@ -171,27 +173,30 @@ def build_plan(
             sequencing_file = seq_input.file1
             bam_basename = sanitize_filename(os.path.splitext(os.path.basename(sequencing_file))[0])
             file_basename = sanitize_filename(os.path.splitext(os.path.basename(plasmid_file))[0])
-            output_sub = os.path.join(output_folder, bam_basename, file_basename)
             combo_label = f"{os.path.basename(plasmid_file)} x {os.path.basename(sequencing_file)}"
             plan.combinations.append((combo_label, seq_input))
 
-            # Compute output paths
-            plasmid_fasta = os.path.join(
-                output_sub, os.path.splitext(os.path.basename(plasmid_file))[0] + ".fasta"
+            # Create OutputPaths instance for this combination
+            paths = OutputPaths(
+                output_root=Path(output_folder),
+                sample_name=bam_basename,
+                plasmid_name=file_basename,
             )
+
+            # Compute output paths using OutputPaths dataclass
+            output_sub = str(paths.base)
+            plasmid_fasta = str(paths.plasmid_fasta)
             human_index = os.path.join(
                 os.path.dirname(human_fasta),
                 os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
             )
-            plasmid_index = os.path.join(
-                output_sub, os.path.splitext(os.path.basename(plasmid_fasta))[0] + ".mmi"
-            )
-            spliced_bam = os.path.join(output_sub, "spliced_alignment.bam")
-            spliced_fasta = os.path.join(output_sub, "spliced_reference.fasta")
-            unique_cdna = cdna_output or os.path.join(output_sub, "cDNA_positions.txt")
-            plasmid_bam = os.path.join(output_sub, "plasmid_alignment.bam")
-            spliced_human_bam = os.path.join(output_sub, "spliced_human_alignment.bam")
-            comparison_output = os.path.join(output_sub, "comparison_result")
+            plasmid_index = str(paths.plasmid_index)
+            spliced_bam = str(paths.spliced_bam)
+            spliced_fasta = str(paths.spliced_fasta)
+            unique_cdna = cdna_output or str(paths.cdna_positions)
+            plasmid_bam = str(paths.plasmid_bam)
+            spliced_human_bam = str(paths.spliced_human_bam)
+            comparison_output = paths.comparison_prefix
 
             steps: list[PipelineStep] = []
 
@@ -533,15 +538,22 @@ def run_pipeline(
                     file_basename = sanitize_filename(
                         os.path.splitext(os.path.basename(plasmid_file))[0]
                     )
-                    output_subfolder = os.path.join(output_folder, bam_basename, file_basename)
 
-                    os.makedirs(output_subfolder, exist_ok=True)
+                    # Create OutputPaths instance for this combination
+                    paths = OutputPaths(
+                        output_root=Path(output_folder),
+                        sample_name=bam_basename,
+                        plasmid_name=file_basename,
+                    )
+
+                    # Ensure all output subdirectories exist
+                    paths.ensure_directories()
+
+                    # Keep output_subfolder as alias for minimal diff (used in logging, md5, archive)
+                    output_subfolder = str(paths.base)
 
                     # Step 1: Convert the plasmid file to a FASTA file
-                    plasmid_fasta = os.path.join(
-                        output_subfolder,
-                        os.path.splitext(os.path.basename(plasmid_file))[0] + ".fasta",
-                    )
+                    plasmid_fasta = str(paths.plasmid_fasta)
                     if not os.path.exists(plasmid_fasta) or overwrite:
                         logging.info(f"Converting {plasmid_file} to FASTA format.")
                         convert_plasmidfile_to_fasta(
@@ -560,14 +572,12 @@ def run_pipeline(
                     prog.advance()
 
                     # Step 2: Generate indices
+                    # Human index stays next to human reference (shared across all samples)
                     human_index = os.path.join(
                         os.path.dirname(human_fasta),
                         os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
                     )
-                    plasmid_index = os.path.join(
-                        output_subfolder,
-                        os.path.splitext(os.path.basename(plasmid_fasta))[0] + ".mmi",
-                    )
+                    plasmid_index = str(paths.plasmid_index)
                     # Human index already built in upfront phase, skip redundant call
                     if human_index not in plan.built_indexes:
                         # Defensive: should not happen after upfront phase
@@ -582,8 +592,8 @@ def run_pipeline(
                     prog.advance()
 
                     # Step 3: Spliced alignment
-                    spliced_bam = os.path.join(output_subfolder, "spliced_alignment.bam")
-                    spliced_fasta = os.path.join(output_subfolder, "spliced_reference.fasta")
+                    spliced_bam = str(paths.spliced_bam)
+                    spliced_fasta = str(paths.spliced_fasta)
                     logging.info(
                         f"Performing spliced alignment for {sequencing_file} and {plasmid_file}..."
                     )
@@ -596,19 +606,14 @@ def run_pipeline(
                         write_md5sum(spliced_bam, "intermediate", output_subfolder)
                         write_md5sum(spliced_fasta, "intermediate", output_subfolder)
 
-                    spliced_index = os.path.join(
-                        output_subfolder,
-                        os.path.splitext(os.path.basename(spliced_fasta))[0] + ".mmi",
-                    )
+                    spliced_index = str(paths.spliced_index)
                     create_indexes(spliced_fasta, overwrite)
                     if md5_level in ["all", "intermediate"]:
                         write_md5sum(spliced_index, "intermediate", output_subfolder)
                     prog.advance()
 
                     # Step 4: cDNA positions
-                    unique_cdna_output = cdna_output or os.path.join(
-                        output_subfolder, "cDNA_positions.txt"
-                    )
+                    unique_cdna_output = cdna_output or str(paths.cdna_positions)
                     logging.info("Extracting cDNA positions from the spliced alignment...")
                     extract_plasmid_cdna_positions(plasmid_fasta, spliced_bam, unique_cdna_output)
                     if md5_level in ["all", "intermediate"]:
@@ -616,10 +621,8 @@ def run_pipeline(
                     prog.advance()
 
                     # Step 5: Align reads
-                    plasmid_bam = os.path.join(output_subfolder, "plasmid_alignment.bam")
-                    spliced_human_bam = os.path.join(
-                        output_subfolder, "spliced_human_alignment.bam"
-                    )
+                    plasmid_bam = str(paths.plasmid_bam)
+                    spliced_human_bam = str(paths.spliced_human_bam)
                     logging.info("Aligning reads to the plasmid and spliced human reference...")
                     align_reads(
                         plasmid_index,
@@ -647,7 +650,7 @@ def run_pipeline(
                     prog.advance()
 
                     # Step 6: Compare alignments
-                    comparison_output = os.path.join(output_subfolder, "comparison_result")
+                    comparison_output = paths.comparison_prefix
                     logging.info("Comparing the two alignments...")
 
                     # Determine GenBank file path for resistance gene detection
@@ -655,11 +658,8 @@ def run_pipeline(
                     if plasmid_file_type == "genbank":
                         genbank_file_path = plasmid_file  # Original .gb file
                     elif plasmid_file_type == "xdna":
-                        # xDNA conversion preserves .gb file in output_subfolder
-                        candidate_gb = os.path.join(
-                            output_subfolder,
-                            os.path.splitext(os.path.basename(plasmid_file))[0] + ".gb",
-                        )
+                        # xDNA conversion preserves .gb file in references_dir
+                        candidate_gb = str(paths.plasmid_genbank)
                         if os.path.exists(candidate_gb):
                             genbank_file_path = candidate_gb
 
@@ -668,6 +668,7 @@ def run_pipeline(
                         spliced_human_bam,
                         comparison_output,
                         genbank_file=genbank_file_path,
+                        cdna_positions_file=str(paths.cdna_positions),
                     )
                     prog.advance()
 
@@ -679,7 +680,7 @@ def run_pipeline(
                     generate_report(
                         reads_assignment_file,
                         summary_file,
-                        output_subfolder,
+                        output_subfolder,  # Plots go to base/plots/ (plots/ subdir created by generate_plots)
                         threshold=threshold,
                         human_fasta=human_fasta,
                         plasmid_gb=plasmid_file,
@@ -689,6 +690,7 @@ def run_pipeline(
                         plotly_mode=plotly_mode,
                         plot_backend=plot_backend,
                         output_root=output_folder,
+                        reports_dir=str(paths.reports_dir),
                     )
 
                     # Write MD5 checksums for the output files
