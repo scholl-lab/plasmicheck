@@ -34,42 +34,175 @@
     <img src="{{ logo_base64 }}" alt="plasmicheck Logo" class="logo">
     <h1>plasmicheck Summary Report</h1>
 
-    <h2>Plots</h2>
-    <div class="plot">
-        {% if interactive %}
-            {{ heatmap_content|safe }}
-        {% else %}
-            <img src="{{ heatmap_content }}" alt="Heatmap">
-        {% endif %}
+    <!-- Section 1: Contamination Analysis -->
+    <div class="card mb-3">
+        <div class="card-header" id="headingContamination">
+            <h5 class="mb-0">
+                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseContamination" aria-expanded="true">
+                    Contamination Analysis
+                </button>
+            </h5>
+        </div>
+        <div id="collapseContamination" class="collapse show" aria-labelledby="headingContamination">
+            <div class="card-body">
+                <h3>Contamination Ratio Heatmap</h3>
+                <div class="plot">
+                    {% if interactive %}
+                        {{ heatmap_content|safe }}
+                    {% else %}
+                        <img src="{{ heatmap_content }}" alt="Contamination Ratio Heatmap">
+                    {% endif %}
+                </div>
+
+                <h3>Contamination Ratio Boxplot</h3>
+                <div class="plot">
+                    {% if interactive %}
+                        {{ boxplot_content|safe }}
+                    {% else %}
+                        <img src="{{ boxplot_content }}" alt="Contamination Ratio Boxplot">
+                    {% endif %}
+                </div>
+
+                <h3>Summary Table</h3>
+                <div class="table-container">
+                    {{ combined_df|safe }}
+                </div>
+
+                <h3>Verdicts</h3>
+                <div class="table-container">
+                    {{ verdict_df|safe }}
+                </div>
+
+                <h3>Contamination Ratios</h3>
+                <div class="table-container">
+                    {{ ratio_df|safe }}
+                </div>
+
+                <h3>P-Value Table</h3>
+                <div class="table-container">
+                    {{ p_value_table|safe }}
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="plot">
-        {% if interactive %}
-            {{ boxplot_content|safe }}
-        {% else %}
-            <img src="{{ boxplot_content }}" alt="Boxplot">
-        {% endif %}
+    <!-- Section 2: Coverage Outside Insert -->
+    {% if coverage_outside_heatmap_content %}
+    <div class="card mb-3">
+        <div class="card-header" id="headingCovOutside">
+            <h5 class="mb-0">
+                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseCovOutside" aria-expanded="true">
+                    Coverage Outside Insert
+                </button>
+            </h5>
+        </div>
+        <div id="collapseCovOutside" class="collapse show" aria-labelledby="headingCovOutside">
+            <div class="card-body">
+                <h3>Coverage Outside Insert Heatmap</h3>
+                <div class="plot">
+                    {% if interactive %}
+                        {{ coverage_outside_heatmap_content|safe }}
+                    {% else %}
+                        <img src="{{ coverage_outside_heatmap_content }}" alt="CoverageOutsideINSERT Heatmap">
+                    {% endif %}
+                </div>
+                {% if coverage_outside_boxplot_content %}
+                <h3>Coverage Outside Insert Distribution</h3>
+                <div class="plot">
+                    {% if interactive %}
+                        {{ coverage_outside_boxplot_content|safe }}
+                    {% else %}
+                        <img src="{{ coverage_outside_boxplot_content }}" alt="CoverageOutsideINSERT Boxplot">
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
+    {% endif %}
 
-    <h2>Summary</h2>
-    <div class="table-container">
-        {{ combined_df|safe }}
+    <!-- Section 3: Coverage Analysis -->
+    {% if depth_heatmap_content or breadth_heatmap_content %}
+    <div class="card mb-3">
+        <div class="card-header" id="headingCoverage">
+            <h5 class="mb-0">
+                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseCoverage" aria-expanded="true">
+                    Coverage Analysis
+                </button>
+            </h5>
+        </div>
+        <div id="collapseCoverage" class="collapse show" aria-labelledby="headingCoverage">
+            <div class="card-body">
+                {% if depth_heatmap_content %}
+                <h3>Backbone Mean Depth Heatmap</h3>
+                <div class="plot">
+                    {% if interactive %}
+                        {{ depth_heatmap_content|safe }}
+                    {% else %}
+                        <img src="{{ depth_heatmap_content }}" alt="Backbone Mean Depth Heatmap">
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% if breadth_heatmap_content %}
+                <h3>Backbone Breadth Heatmap</h3>
+                <div class="plot">
+                    {% if interactive %}
+                        {{ breadth_heatmap_content|safe }}
+                    {% else %}
+                        <img src="{{ breadth_heatmap_content }}" alt="Backbone Breadth Heatmap">
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
+    {% endif %}
 
-    <h2>Verdicts</h2>
-    <div class="table-container">
-        {{ verdict_df|safe }}
+    <!-- Section 4: Mismatch Analysis -->
+    {% if mismatches_heatmap_content %}
+    <div class="card mb-3">
+        <div class="card-header" id="headingMismatches">
+            <h5 class="mb-0">
+                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseMismatches" aria-expanded="true">
+                    Mismatch Analysis
+                </button>
+            </h5>
+        </div>
+        <div id="collapseMismatches" class="collapse show" aria-labelledby="headingMismatches">
+            <div class="card-body">
+                <h3>Mismatches Near Insert Heatmap</h3>
+                <div class="plot">
+                    {% if interactive %}
+                        {{ mismatches_heatmap_content|safe }}
+                    {% else %}
+                        <img src="{{ mismatches_heatmap_content }}" alt="MismatchesNearINSERT Heatmap">
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
+    {% endif %}
 
-    <h2>Ratios</h2>
-    <div class="table-container">
-        {{ ratio_df|safe }}
+    <!-- Section 5: Resistance Gene Coverage -->
+    {% if resistance_gene_table %}
+    <div class="card mb-3">
+        <div class="card-header" id="headingResGenes">
+            <h5 class="mb-0">
+                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseResGenes" aria-expanded="true">
+                    Resistance Gene Coverage
+                </button>
+            </h5>
+        </div>
+        <div id="collapseResGenes" class="collapse show" aria-labelledby="headingResGenes">
+            <div class="card-body">
+                <h3>Resistance Gene Table</h3>
+                <div class="table-container">
+                    {{ resistance_gene_table|safe }}
+                </div>
+            </div>
+        </div>
     </div>
-
-    <h2>P-Value Table</h2>
-    <div class="table-container">
-        {{ p_value_table|safe }}
-    </div>
+    {% endif %}
 
     <div class="details">
         <p><span>Threshold for Contamination:</span> {{ threshold }}</p>

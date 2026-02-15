@@ -43,13 +43,20 @@ Accurately detect plasmid contamination in sequencing data through comparative a
 
 <!-- Current scope. Building toward these. -->
 
-(No active requirements — next milestone not yet defined)
+**Current Milestone: v0.33.0 — Scientific & Reporting Enhancements**
+
+**Goal:** Improve scientific accuracy and reporting completeness by adding insert-region-aware filtering, resistance gene coverage, comprehensive depth/breadth metrics, and full metric integration in summary reports.
+
+- [ ] Filter ambiguous reads using insert-region awareness (#82)
+- [ ] Add comprehensive coverage metrics per-region (#65)
+- [ ] Detect and report resistance gene coverage (#64)
+- [ ] Integrate all metrics in summary reports (#58)
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
-- Scientific enhancements (#82, #64, #68, #65, #50) — deferred to v0.33.0+
+- Scientific enhancements (#68, #50) — deferred to v0.34.0+
 - ML classification (#44) — exploratory, current scoring works
 - Interactive CLI mode (#25) — nice-to-have, not blocking
 - Anonymize BAM outputs (#5) — privacy feature, lower priority
@@ -60,12 +67,12 @@ Accurately detect plasmid contamination in sequencing data through comparative a
 
 ## Context
 
-- **Current state:** v0.32.0 on branch `feat/phase3-v0.31.0` — 170 tests passing, all Phase 4-7 features implemented
-- **Performance (v0.32.0):** Small dataset 0.577s (was 5.5s, 9.5x faster), real 3M-read alignment 58.4s (was 115.2s, 1.97x faster), report step 0.108s (was 5.1s)
-- **30 open GitHub issues** remaining after 18 closures in Phases 1-3
+- **Current state:** v0.32.0 shipped, starting v0.33.0 — 170 tests passing
+- **Performance (v0.32.0):** Small dataset 0.577s (9.5x faster), real 3M-read alignment 58.4s (1.97x faster)
+- **28 open GitHub issues** — 4 targeted for v0.33.0 (#82, #65, #64, #58)
 - **Key bugs:** #75 (xDNA files), #78 (Snakemake — may be fixed by #86 race condition fix)
-- **External tools:** minimap2 2.28, samtools 1.17, Python 3.10+, Kaleido 1.2.0 (optional), Plotly 6.3.0
-- **New CLI flags (v0.32.0):** --static-report, --plotly-mode, --threads, --plot-backend
+- **External tools:** minimap2 2.28, samtools 1.17, Python 3.10+, pysam, Biopython
+- **v0.33.0 focus:** Scientific accuracy (insert-region filtering) + reporting completeness (coverage metrics, resistance genes)
 
 ## Constraints
 
@@ -86,4 +93,4 @@ Accurately detect plasmid contamination in sequencing data through comparative a
 | 5-tier CPU detection chain | SLURM/cgroup/os.cpu_count covers all deployment environments | ✓ Good — transparent with source logging |
 
 ---
-*Last updated: 2026-02-14 after v0.32.0 milestone*
+*Last updated: 2026-02-14 after v0.33.0 milestone start*

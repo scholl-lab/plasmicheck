@@ -552,6 +552,7 @@ def run_pipeline(
                             shift_bases,
                             generate_shifted,
                             overwrite,
+                            preserve_genbank=True,  # Preserve .gb for resistance gene detection
                         )
                     if md5_level in ["all", "intermediate"]:
                         write_md5sum(plasmid_fasta, "intermediate", output_subfolder)
@@ -649,7 +650,26 @@ def run_pipeline(
                     # Step 6: Compare alignments
                     comparison_output = os.path.join(output_subfolder, "comparison_result")
                     logging.info("Comparing the two alignments...")
-                    compare_alignments(plasmid_bam, spliced_human_bam, comparison_output)
+
+                    # Determine GenBank file path for resistance gene detection
+                    genbank_file_path: str | None = None
+                    if plasmid_file_type == "genbank":
+                        genbank_file_path = plasmid_file  # Original .gb file
+                    elif plasmid_file_type == "xdna":
+                        # xDNA conversion preserves .gb file in output_subfolder
+                        candidate_gb = os.path.join(
+                            output_subfolder,
+                            os.path.splitext(os.path.basename(plasmid_file))[0] + ".gb",
+                        )
+                        if os.path.exists(candidate_gb):
+                            genbank_file_path = candidate_gb
+
+                    compare_alignments(
+                        plasmid_bam,
+                        spliced_human_bam,
+                        comparison_output,
+                        genbank_file=genbank_file_path,
+                    )
                     prog.advance()
 
                     # Step 7: Generate report

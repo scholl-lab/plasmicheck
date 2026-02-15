@@ -11,6 +11,12 @@ import pysam
 
 from plasmicheck.config import get_config
 
+from .coverage_metrics import (
+    compute_coverage_stats,
+    compute_region_coverage_metrics,
+    get_depth_array,
+)
+from .resistance_gene_detection import DetectedGene, detect_resistance_genes, locate_genbank_file
 from .utils import add_logging_args, configure_logging_from_args
 
 _cfg = get_config()
@@ -20,6 +26,10 @@ MISMATCH_PENALTY: int = _cfg["scoring"]["mismatch_penalty"]
 DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
 UNCLEAR_RANGE: dict[str, float] = _cfg["unclear_range"]
 SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
+FILTER_BACKBONE_ONLY: bool = _cfg.get("filter_backbone_only", True)
+SCORE_MARGIN: int = _cfg.get("score_margin", 0)
+BREADTH_THRESHOLDS: list[int] = _cfg.get("breadth_thresholds", [5])
+CUSTOM_RESISTANCE_PATTERNS: list[str] = _cfg.get("resistance_gene_patterns", [])
 
 
 def calculate_alignment_score(read: Any) -> int:
@@ -60,6 +70,25 @@ def parse_insert_region(cdna_positions_file: str) -> tuple[int, int]:
     cdna_start = int(lines[0].split(": ")[1])
     cdna_end = int(lines[1].split(": ")[1])
     return (cdna_start, cdna_end)
+
+
+def read_overlaps_insert(read: Any, insert_region: tuple[int, int]) -> bool:
+    """Check if read alignment overlaps the insert region.
+
+    Uses pysam half-open interval convention:
+    - read.reference_start: 0-based, inclusive
+    - read.reference_end: 0-based, exclusive
+
+    insert_region uses inclusive boundaries on both ends (from cDNA_positions.txt).
+    """
+    if read.is_unmapped:
+        return False
+    read_start = read.reference_start
+    read_end = read.reference_end
+    if read_start is None or read_end is None:
+        return False
+    # No overlap: read ends before insert starts, or read starts after insert ends
+    return not (read_end <= insert_region[0] or read_start > insert_region[1])
 
 
 def calculate_coverage_outside_insert(plasmid_bam: str, insert_region: tuple[int, int]) -> float:
@@ -193,21 +222,62 @@ def _write_assignment(
     )
 
 
-def _assign(plasmid_score: int, human_score: int) -> str:
+def _assign(
+    plasmid_score: int,
+    human_score: int,
+    *,
+    plasmid_read: Any | None = None,
+    insert_region: tuple[int, int] | None = None,
+    score_margin: int = 0,
+) -> str:
+    """Assign read to category with optional backbone and margin filtering.
+
+    Order of checks:
+    1. Score margin (if enabled and scores differ) -> Ambiguous
+    2. Exact tie -> Tied
+    3. Plasmid wins + insert_region available -> check overlap -> Plasmid or Backbone_Only
+    4. Plasmid wins + no insert_region -> Plasmid (fallback)
+    5. Human wins -> Human
+    """
+    # Score margin check first (if enabled)
+    if score_margin > 0:
+        score_diff = abs(plasmid_score - human_score)
+        if 0 < score_diff < score_margin:
+            return "Ambiguous"
+
+    # Exact tie
+    if plasmid_score == human_score:
+        return "Tied"
+
+    # Plasmid wins
     if plasmid_score > human_score:
+        if insert_region is not None and plasmid_read is not None:
+            if read_overlaps_insert(plasmid_read, insert_region):
+                return "Plasmid"
+            else:
+                return "Backbone_Only"
         return "Plasmid"
-    elif human_score > plasmid_score:
-        return "Human"
-    return "Tied"
+
+    # Human wins
+    return "Human"
 
 
 def _streaming_compare(
     plasmid_ns_bam: str,
     human_ns_bam: str,
     outfile: IO[str],
+    *,
+    insert_region: tuple[int, int] | None = None,
+    score_margin: int = 0,
 ) -> dict[str, int]:
     """Two-pointer merge over name-sorted BAMs.  Returns assigned counts."""
-    assigned_counts: dict[str, int] = {"Plasmid": 0, "Human": 0, "Tied": 0}
+    assigned_counts: dict[str, int] = {
+        "Plasmid": 0,
+        "Human": 0,
+        "Tied": 0,
+        "Backbone_Only": 0,
+        "Ambiguous": 0,
+    }
 
     plasmid_iter = _iter_reads_by_name(plasmid_ns_bam)
     human_iter = _iter_reads_by_name(human_ns_bam)
@@ -227,7 +297,9 @@ def _streaming_compare(
             h_read = _best_read(h_item[1])
             ps = calculate_alignment_score(p_read)
             hs = calculate_alignment_score(h_read)
-            assigned = _assign(ps, hs)
+            assigned = _assign(
+                ps, hs, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin
+            )
             assigned_counts[assigned] += 1
             _write_assignment(outfile, p_name, assigned, ps, hs, p_read, h_read)
             p_item = next(plasmid_iter, None)
@@ -239,7 +311,9 @@ def _streaming_compare(
             assert p_name is not None
             p_read = _best_read(p_item[1])
             ps = calculate_alignment_score(p_read)
-            assigned = _assign(ps, 0)
+            assigned = _assign(
+                ps, 0, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin
+            )
             assigned_counts[assigned] += 1
             _write_assignment(outfile, p_name, assigned, ps, 0, p_read, None)
             p_item = next(plasmid_iter, None)
@@ -249,7 +323,7 @@ def _streaming_compare(
             assert h_item is not None
             h_read = _best_read(h_item[1])
             hs = calculate_alignment_score(h_read)
-            assigned = _assign(0, hs)
+            assigned = _assign(0, hs, score_margin=score_margin)
             assigned_counts[assigned] += 1
             _write_assignment(outfile, h_name, assigned, 0, hs, None, h_read)
             h_item = next(human_iter, None)
@@ -258,26 +332,89 @@ def _streaming_compare(
 
 
 def compare_alignments(
-    plasmid_bam: str, human_bam: str, output_basename: str, threshold: float = DEFAULT_THRESHOLD
+    plasmid_bam: str,
+    human_bam: str,
+    output_basename: str,
+    threshold: float = DEFAULT_THRESHOLD,
+    genbank_file: str | None = None,
 ) -> None:
     logging.info("Starting comparison of alignments")
     logging.debug(f"Processing BAM files: {plasmid_bam} (plasmid), {human_bam} (human)")
 
-    # Extract the INSERT_REGION from cDNA_positions.txt
+    # Parse insert region with graceful fallback
     cdna_positions_file = os.path.join(os.path.dirname(output_basename), "cDNA_positions.txt")
-    if not os.path.exists(cdna_positions_file):
-        raise FileNotFoundError(
-            f"Expected cDNA_positions.txt at {cdna_positions_file} but the file was not found."
+    insert_region: tuple[int, int] | None = None
+    try:
+        insert_region = parse_insert_region(cdna_positions_file)
+        logging.debug(f"INSERT_REGION extracted from {cdna_positions_file}: {insert_region}")
+    except (FileNotFoundError, ValueError, IndexError) as e:
+        logging.warning(
+            f"Backbone filtering unavailable: {e}. "
+            "Falling back to pre-v0.33.0 behavior (no insert-region filtering)."
         )
 
-    insert_region = parse_insert_region(cdna_positions_file)
-    logging.debug(f"INSERT_REGION extracted from {cdna_positions_file}: {insert_region}")
+    coverage_outside_insert = 0.0
+    mismatches_near_insert: dict[str, int] = {
+        "with_mismatches_or_clipping": 0,
+        "without_mismatches_or_clipping": 0,
+    }
+    if insert_region is not None:
+        coverage_outside_insert = calculate_coverage_outside_insert(plasmid_bam, insert_region)
+        logging.debug(f"Coverage outside INSERT_REGION: {coverage_outside_insert}")
+        mismatches_near_insert = count_mismatches_near_insert_end(plasmid_bam, insert_region)
+        logging.debug(f"Mismatches near INSERT_REGION: {mismatches_near_insert}")
+    else:
+        logging.warning("Skipping coverage/mismatch metrics (insert region unavailable).")
 
-    coverage_outside_insert = calculate_coverage_outside_insert(plasmid_bam, insert_region)
-    logging.debug(f"Coverage outside INSERT_REGION: {coverage_outside_insert}")
+    # Compute per-region coverage metrics
+    coverage_metrics, coverage_fallback = compute_region_coverage_metrics(
+        plasmid_bam, insert_region, BREADTH_THRESHOLDS
+    )
+    if coverage_fallback:
+        logging.warning(
+            "Coverage metrics computed for whole plasmid (insert region not defined). "
+            "Backbone metrics are 0.0."
+        )
 
-    mismatches_near_insert = count_mismatches_near_insert_end(plasmid_bam, insert_region)
-    logging.debug(f"Mismatches near INSERT_REGION: {mismatches_near_insert}")
+    # Resistance gene detection and per-gene coverage
+    detected_genes: list[DetectedGene] = []
+    gene_coverage: dict[str, dict[str, float]] = {}
+    genbank_located = False
+
+    try:
+        # Try provided genbank_file first, fallback to locate_genbank_file
+        gb_file = genbank_file
+        if gb_file is None:
+            gb_file = locate_genbank_file(os.path.dirname(output_basename))
+            if gb_file is not None:
+                genbank_located = True
+                logging.debug(f"Located GenBank file: {gb_file}")
+
+        if gb_file is not None:
+            logging.info(f"Detecting resistance genes from {gb_file}")
+            detected_genes = detect_resistance_genes(
+                gb_file, insert_region, CUSTOM_RESISTANCE_PATTERNS
+            )
+            logging.info(f"Detected {len(detected_genes)} resistance/reporter genes")
+
+            if detected_genes:
+                # Compute per-gene coverage using Phase 9 infrastructure
+                with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
+                    contig = bam.get_reference_name(0)
+
+                for gene in detected_genes:
+                    # get_depth_array uses half-open intervals, gene coordinates are inclusive
+                    depth_array = get_depth_array(plasmid_bam, contig, gene.start, gene.end + 1)
+                    stats = compute_coverage_stats(depth_array, [1])
+                    gene_coverage[gene.sanitized_name] = stats
+                    logging.debug(
+                        f"Gene {gene.name}: mean_depth={stats['mean_depth']:.2f}, "
+                        f"breadth={stats['breadth_1x']:.2f}"
+                    )
+    except Exception as e:
+        logging.warning(f"Resistance gene detection failed: {e}. Continuing without gene data.")
+        detected_genes = []
+        gene_coverage = {}
 
     # Group BAMs by read name into temporary files for streaming merge
     plasmid_ns = plasmid_bam.replace(".bam", ".namesorted.bam")
@@ -292,7 +429,13 @@ def compare_alignments(
         outfile.write(
             "ReadID\tAssignedTo\tPlasmidScore\tHumanScore\tPlasmidCIGAR\tHumanCIGAR\tPlasmidMapQ\tHumanMapQ\n"
         )
-        assigned_counts = _streaming_compare(plasmid_ns, human_ns, outfile)
+        assigned_counts = _streaming_compare(
+            plasmid_ns,
+            human_ns,
+            outfile,
+            insert_region=insert_region,
+            score_margin=SCORE_MARGIN,
+        )
 
     # Clean up temporary name-sorted BAMs
     for ns_bam in (plasmid_ns, human_ns):
@@ -303,7 +446,15 @@ def compare_alignments(
 
     plasmid_count = assigned_counts["Plasmid"]
     human_count = assigned_counts["Human"]
-    ratio = plasmid_count / human_count if human_count != 0 else float("inf")
+    if FILTER_BACKBONE_ONLY:
+        # Exclude Backbone_Only and Ambiguous from ratio (new v0.33.0 behavior)
+        ratio = plasmid_count / human_count if human_count != 0 else float("inf")
+    else:
+        # Include all plasmid-favoring categories (pre-v0.33.0 behavior)
+        effective_plasmid = (
+            plasmid_count + assigned_counts["Backbone_Only"] + assigned_counts["Ambiguous"]
+        )
+        ratio = effective_plasmid / human_count if human_count != 0 else float("inf")
 
     if ratio > threshold:
         verdict = "Sample is contaminated with plasmid DNA"
@@ -323,6 +474,54 @@ def compare_alignments(
         summary_file.write(f"CoverageOutsideINSERT\t{coverage_outside_insert:.4f}\n")
         summary_file.write(f"MismatchesNearINSERT\t{mismatches_near_insert}\n")
 
+        # Coverage metrics (new in Phase 9)
+        insert_metrics = coverage_metrics["insert"]
+        backbone_metrics = coverage_metrics["backbone"]
+
+        # Insert metrics
+        summary_file.write(f"MeanDepthInsert\t{insert_metrics['mean_depth']:.2f}\n")
+        summary_file.write(f"MedianDepthInsert\t{insert_metrics['median_depth']:.2f}\n")
+        summary_file.write(f"BreadthInsert\t{insert_metrics['breadth_1x']:.2f}\n")
+        for threshold in BREADTH_THRESHOLDS:
+            if threshold != 1:
+                summary_file.write(
+                    f"BreadthInsert_{threshold}x\t{insert_metrics[f'breadth_{threshold}x']:.2f}\n"
+                )
+        summary_file.write(f"CoverageCV_Insert\t{insert_metrics['cv']:.2f}\n")
+
+        # Backbone metrics
+        summary_file.write(f"MeanDepthBackbone\t{backbone_metrics['mean_depth']:.2f}\n")
+        summary_file.write(f"MedianDepthBackbone\t{backbone_metrics['median_depth']:.2f}\n")
+        summary_file.write(f"BreadthBackbone\t{backbone_metrics['breadth_1x']:.2f}\n")
+        for threshold in BREADTH_THRESHOLDS:
+            if threshold != 1:
+                summary_file.write(
+                    f"BreadthBackbone_{threshold}x\t{backbone_metrics[f'breadth_{threshold}x']:.2f}\n"
+                )
+        summary_file.write(f"CoverageCV_Backbone\t{backbone_metrics['cv']:.2f}\n")
+
+        # Fallback indicator
+        summary_file.write(f"CoverageFallback\t{coverage_fallback}\n")
+
+        # Resistance gene detection results
+        if genbank_file is not None or genbank_located:
+            summary_file.write("ResistanceGenesAvailable\ttrue\n")
+            if gene_coverage:
+                gene_names = [g.name for g in detected_genes]
+                summary_file.write(f"ResistanceGenes\t{','.join(gene_names)}\n")
+                for gene in detected_genes:
+                    s = gene.sanitized_name
+                    metrics = gene_coverage[s]
+                    summary_file.write(f"ResGene_{s}_MeanDepth\t{metrics['mean_depth']:.2f}\n")
+                    summary_file.write(f"ResGene_{s}_Breadth\t{metrics['breadth_1x']:.2f}\n")
+                    summary_file.write(f"ResGene_{s}_Start\t{gene.start}\n")
+                    summary_file.write(f"ResGene_{s}_End\t{gene.end}\n")
+                    summary_file.write(f"ResGene_{s}_Region\t{gene.region}\n")
+            else:
+                summary_file.write("ResistanceGenes\tNone\n")
+        else:
+            summary_file.write("ResistanceGenesAvailable\tfalse\n")
+
 
 if __name__ == "__main__":
     import argparse
@@ -340,9 +539,18 @@ if __name__ == "__main__":
         default=DEFAULT_THRESHOLD,
         help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})",
     )
+    parser.add_argument(
+        "-gb",
+        "--genbank_file",
+        type=str,
+        default=None,
+        help="GenBank file for resistance gene detection (optional)",
+    )
     add_logging_args(parser)
     args = parser.parse_args()
 
     configure_logging_from_args(args)
 
-    compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)
+    compare_alignments(
+        args.plasmid_bam, args.human_bam, args.output_basename, args.threshold, args.genbank_file
+    )

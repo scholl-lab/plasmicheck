@@ -1,0 +1,104 @@
+# Requirements: PlasmiCheck v0.33.0
+
+**Defined:** 2026-02-14
+**Core Value:** Accurately detect plasmid contamination through comparative alignment scoring -- the contamination verdict must be reliable.
+
+## v0.33.0 Requirements
+
+Requirements for v0.33.0: Scientific & Reporting Enhancements. Each maps to roadmap phases.
+
+### Scoring & Filtering (#82)
+
+- [x] **FILT-01**: Reads mapping only to backbone (outside insert region) are classified as Backbone_Only and excluded from contamination ratio
+- [x] **FILT-02**: Optional score margin parameter requires minimum score difference for confident Plasmid/Human assignment
+- [x] **FILT-03**: New read categories (Backbone_Only, Ambiguous) tracked in comparison output alongside existing Plasmid/Human/Tied
+- [x] **FILT-04**: `filter_backbone_only` config toggle (default: true) with `false` restoring pre-v0.33.0 behavior
+- [x] **FILT-05**: New categories displayed in single-sample HTML reports
+
+### Coverage Metrics (#65)
+
+- [x] **COV-01**: Per-region mean and median depth computed for insert and backbone regions
+- [x] **COV-02**: Breadth of coverage (fraction of bases with >=1 read) computed per region
+- [x] **COV-03**: Breadth at 5x threshold computed per region
+- [x] **COV-04**: Coverage uniformity (coefficient of variation) computed for backbone region
+- [x] **COV-05**: All new metrics written as additional rows in summary.tsv (backward compatible)
+
+### Resistance Genes (#64)
+
+- [x] **RGENE-01**: Resistance genes extracted from GenBank annotations via configurable pattern matching
+- [x] **RGENE-02**: Per-gene coverage metrics (mean depth + breadth) computed using pysam
+- [x] **RGENE-03**: Resistance gene metrics written to summary.tsv per gene
+- [x] **RGENE-04**: Detection works with existing plasmid GenBank files in repository (>=90% recall)
+
+### Report Integration (#58 + visualization)
+
+- [x] **REPT-04**: CoverageOutsideINSERT parsed and displayed in summary reports with heatmap and boxplot
+- [x] **REPT-05**: MismatchesNearINSERT parsed and displayed in summary reports with chart
+- [x] **REPT-06**: Coverage depth heatmap (Sample x Plasmid, backbone mean depth) in summary reports
+- [x] **REPT-07**: Coverage breadth heatmap (backbone breadth %) in summary reports
+- [x] **REPT-08**: Resistance gene coverage table in summary reports
+- [x] **REPT-09**: Matplotlib fallback for all new summary report plots
+- [x] **REPT-10**: TSV and Excel exports include new metric tables
+
+## Future Requirements
+
+Deferred to v0.34.0+. Tracked but not in current roadmap.
+
+### Scientific Enhancements
+
+- **SCI-01**: Normalize by splice junction count (#68)
+- **SCI-02**: Correct cutoffs for exon count/CDS length (#50)
+- **SCI-03**: Built-in resistance gene FASTA fallback for unannotated plasmids (#64 extension)
+
+### Visualization
+
+- **VIS-01**: Scatter plot overlay on boxplots (#61)
+- **VIS-02**: Additional summary report plots (#51)
+
+## Out of Scope
+
+Explicitly excluded. Documented to prevent scope creep.
+
+| Feature | Reason |
+|---------|--------|
+| ML classification (#44) | Exploratory, current scoring works |
+| Interactive CLI mode (#25) | Nice-to-have, not blocking |
+| Anonymize BAM outputs (#5) | Privacy feature, lower priority |
+| IGV session generation (#49) | Power user feature |
+| Built-in resistance gene FASTA (#64 extension) | Annotation parsing sufficient for v0.33.0; fallback deferred |
+| Benchmarking dataset creation (#72) | Separate effort, not tied to scientific enhancements |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| FILT-01 | Phase 8 | Complete |
+| FILT-02 | Phase 8 | Complete |
+| FILT-03 | Phase 8 | Complete |
+| FILT-04 | Phase 8 | Complete |
+| FILT-05 | Phase 8 | Complete |
+| COV-01 | Phase 9 | Complete |
+| COV-02 | Phase 9 | Complete |
+| COV-03 | Phase 9 | Complete |
+| COV-04 | Phase 9 | Complete |
+| COV-05 | Phase 9 | Complete |
+| RGENE-01 | Phase 10 | Complete |
+| RGENE-02 | Phase 10 | Complete |
+| RGENE-03 | Phase 10 | Complete |
+| RGENE-04 | Phase 10 | Complete |
+| REPT-04 | Phase 11 | Complete |
+| REPT-05 | Phase 11 | Complete |
+| REPT-06 | Phase 11 | Complete |
+| REPT-07 | Phase 11 | Complete |
+| REPT-08 | Phase 11 | Complete |
+| REPT-09 | Phase 11 | Complete |
+| REPT-10 | Phase 11 | Complete |
+
+**Coverage:**
+- v0.33.0 requirements: 21 total
+- Mapped to phases: 21
+- Unmapped: 0
+
+---
+*Requirements defined: 2026-02-14*
+*Last updated: 2026-02-15 after Phase 11 completion (all 21 requirements complete)*

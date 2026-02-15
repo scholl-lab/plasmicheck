@@ -1,6 +1,10 @@
 {
   "required_tools": ["minimap2", "samtools"],
   "required_python_packages": ["Bio", "pysam", "jinja2", "matplotlib"],
+  "resistance_gene_patterns": [],
+  "filter_backbone_only": true,
+  "score_margin": 0,
+  "breadth_thresholds": [5],
   "default_threshold": 0.8,
   "unclear_range": {
     "lower_bound": 0.6,
@@ -53,7 +57,8 @@
     "marker_style": {
       "size": 8,
       "opacity": 0.7
-    }
+    },
+    "depth_heatmap_cap": 100
   },
   "plot_sample_report": {
     "figsize": {
@@ -63,7 +68,9 @@
     "colors": {
       "human": "blue",
       "tied": "orange",
-      "plasmid": "red"
+      "plasmid": "red",
+      "backbone_only": "lightgray",
+      "ambiguous": "darkgray"
     },
     "title_box_plot": "Box Plot of Plasmid Scores by Assignment",
     "title_scatter_plot": "Scatter Plot of Plasmid vs. Human Scores by Assignment",

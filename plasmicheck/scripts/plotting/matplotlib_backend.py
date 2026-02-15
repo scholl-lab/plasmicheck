@@ -2,16 +2,32 @@
 
 from __future__ import annotations
 
+import gc
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")  # Headless backend — must be set before importing pyplot
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
 
 from .colors import ASSIGNMENT_COLORS
 
 logger = logging.getLogger(__name__)
+
+# Set seaborn theme once at module level (repeated calls accumulate state)
+sns.set_theme(style="whitegrid")
+
+
+def _close_and_collect(fig: matplotlib.figure.Figure) -> None:
+    """Close a matplotlib figure and run garbage collection to free memory."""
+    plt.close(fig)
+    gc.collect()
 
 
 def generate_boxplot_matplotlib(
@@ -30,10 +46,6 @@ def generate_boxplot_matplotlib(
         width: Plot width in pixels (default: 900)
         height: Plot height in pixels (default: 600)
     """
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import seaborn as sns
-
     if reads_df.empty:
         logger.warning("Empty DataFrame provided to generate_boxplot_matplotlib")
         fig, ax = plt.subplots(figsize=(width / 100, height / 100))
@@ -46,15 +58,13 @@ def generate_boxplot_matplotlib(
             fontsize=12,
         )
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
+        _close_and_collect(fig)
         return
-
-    sns.set_theme(style="whitegrid")
 
     fig, ax = plt.subplots(figsize=(width / 100, height / 100))
 
     # Create boxplot with custom colors
-    categories = ["Plasmid", "Human", "Tied"]
+    categories = ["Plasmid", "Human", "Tied", "Backbone_Only", "Ambiguous"]
     colors = [ASSIGNMENT_COLORS.get(cat, "#999999") for cat in categories]
 
     # Prepare data for boxplot
@@ -96,7 +106,7 @@ def generate_boxplot_matplotlib(
     ax.set_title(title)
 
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _close_and_collect(fig)
     logger.info(f"Saved boxplot to {output_path}")
 
 
@@ -116,9 +126,6 @@ def generate_scatter_matplotlib(
         width: Plot width in pixels (default: 900)
         height: Plot height in pixels (default: 600)
     """
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
     if reads_df.empty:
         logger.warning("Empty DataFrame provided to generate_scatter_matplotlib")
         fig, ax = plt.subplots(figsize=(width / 100, height / 100))
@@ -131,15 +138,13 @@ def generate_scatter_matplotlib(
             fontsize=12,
         )
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
+        _close_and_collect(fig)
         return
-
-    sns.set_theme(style="whitegrid")
 
     fig, ax = plt.subplots(figsize=(width / 100, height / 100))
 
     # Plot each category with its color
-    categories = ["Plasmid", "Human", "Tied"]
+    categories = ["Plasmid", "Human", "Tied", "Backbone_Only", "Ambiguous"]
     for cat in categories:
         cat_data = reads_df[reads_df["AssignedTo"] == cat]
         if not cat_data.empty:
@@ -158,7 +163,7 @@ def generate_scatter_matplotlib(
     ax.legend()
 
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _close_and_collect(fig)
     logger.info(f"Saved scatter plot to {output_path}")
 
 
@@ -176,9 +181,6 @@ def generate_heatmap_matplotlib(
         threshold: Contamination threshold (not directly used, kept for API consistency)
         plot_config: Plot configuration dict (kept for API consistency)
     """
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
     if ratio_data.empty:
         logger.warning("Empty DataFrame provided to generate_heatmap_matplotlib")
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -191,10 +193,11 @@ def generate_heatmap_matplotlib(
             fontsize=12,
         )
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
+        _close_and_collect(fig)
         return
 
-    sns.set_theme(style="whitegrid")
+    # Ensure numeric dtype for heatmap rendering
+    ratio_data = ratio_data.apply(pd.to_numeric, errors="coerce")
 
     # Determine figure size based on data dimensions
     n_samples, n_plasmids = ratio_data.shape
@@ -217,7 +220,7 @@ def generate_heatmap_matplotlib(
 
     plt.tight_layout()
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _close_and_collect(fig)
     logger.info(f"Saved heatmap to {output_path}")
 
 
@@ -235,10 +238,6 @@ def generate_summary_boxplot_matplotlib(
         log_offset: Offset for log10 transformation to handle zeros (default: 0.001)
         marker_style: Marker style for outliers (kept for API consistency)
     """
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import seaborn as sns
-
     if boxplot_data.empty:
         logger.warning("Empty DataFrame provided to generate_summary_boxplot_matplotlib")
         fig, ax = plt.subplots(figsize=(10, 8))
@@ -251,13 +250,12 @@ def generate_summary_boxplot_matplotlib(
             fontsize=12,
         )
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
+        _close_and_collect(fig)
         return
-
-    sns.set_theme(style="whitegrid")
 
     # Melt the data for boxplot
     melted = boxplot_data.melt(var_name="Plasmid", value_name="Ratio")
+    melted["Ratio"] = pd.to_numeric(melted["Ratio"], errors="coerce")
 
     # Apply log10 transformation
     melted["LogRatio"] = np.log10(melted["Ratio"] + log_offset)
@@ -288,5 +286,134 @@ def generate_summary_boxplot_matplotlib(
 
     plt.tight_layout()
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _close_and_collect(fig)
     logger.info(f"Saved summary boxplot to {output_path}")
+
+
+def generate_metric_heatmap_matplotlib(
+    metric_data: pd.DataFrame,
+    output_path: Path | str,
+    metric_name: str,
+    vmax: float | None = None,
+) -> None:
+    """Generate heatmap for any metric using matplotlib.
+
+    Args:
+        metric_data: Pivoted DataFrame (Sample x Plasmid) with metric values
+        output_path: Output PNG file path
+        metric_name: Display name for the metric (e.g., "Mean Depth Insert")
+        vmax: Optional maximum value for color scale (data will be clipped)
+    """
+    if metric_data.empty:
+        logger.warning(
+            f"Empty DataFrame provided to generate_metric_heatmap_matplotlib for {metric_name}"
+        )
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.text(
+            0.5,
+            0.5,
+            "No data available",
+            ha="center",
+            va="center",
+            fontsize=12,
+        )
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        _close_and_collect(fig)
+        return
+
+    # Ensure numeric dtype for heatmap rendering
+    metric_data = metric_data.apply(pd.to_numeric, errors="coerce")
+
+    # Clip data if vmax provided
+    plot_data = metric_data.clip(upper=vmax) if vmax is not None else metric_data
+
+    # Create custom colormap from lightblue to red
+    cmap = LinearSegmentedColormap.from_list("coverage", ["lightblue", "red"], N=100)
+
+    # Determine figure size based on data dimensions
+    n_samples, n_plasmids = metric_data.shape
+    figwidth = max(10, n_plasmids * 0.8)
+    figheight = max(6, n_samples * 0.4)
+
+    fig, ax = plt.subplots(figsize=(figwidth, figheight))
+
+    # Generate heatmap
+    sns.heatmap(
+        plot_data,
+        annot=False,
+        cbar=False,
+        cmap=cmap,
+        vmin=0,
+        vmax=vmax,
+        mask=metric_data.isna(),
+        ax=ax,
+    )
+
+    ax.set_xlabel("Plasmid")
+    ax.set_ylabel("Sample")
+    ax.set_title(metric_name)
+
+    # Rotate x labels
+    plt.xticks(rotation=45, ha="right")
+
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    _close_and_collect(fig)
+    logger.info(f"Saved metric heatmap to {output_path}")
+
+
+def generate_coverage_boxplot_matplotlib(
+    boxplot_data: pd.DataFrame,
+    output_path: Path | str,
+) -> None:
+    """Generate boxplot for CoverageOutsideINSERT distribution using matplotlib.
+
+    Args:
+        boxplot_data: Pivoted DataFrame (Sample x Plasmid) with coverage values
+        output_path: Output PNG file path
+    """
+    if boxplot_data.empty:
+        logger.warning("Empty DataFrame provided to generate_coverage_boxplot_matplotlib")
+        fig, ax = plt.subplots(figsize=(10, 8))
+        ax.text(
+            0.5,
+            0.5,
+            "No data available",
+            ha="center",
+            va="center",
+            fontsize=12,
+        )
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        _close_and_collect(fig)
+        return
+
+    # Melt the data for boxplot
+    melted = boxplot_data.melt(var_name="Plasmid", value_name="Value")
+    melted["Value"] = pd.to_numeric(melted["Value"], errors="coerce")
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Create boxplot grouped by Plasmid
+    boxplot_data_grouped = melted.groupby("Plasmid")["Value"].apply(list)
+    plasmid_labels = list(boxplot_data_grouped.index)
+    boxplot_values = [list(vals) for vals in boxplot_data_grouped.values]
+
+    ax.boxplot(
+        boxplot_values,
+        patch_artist=True,
+    )
+
+    ax.set_xlabel("Plasmid")
+    ax.set_ylabel("Coverage Outside Insert")
+    ax.set_title("CoverageOutsideINSERT Distribution by Plasmid")
+
+    # Set x-axis labels
+    ax.set_xticklabels(plasmid_labels)
+
+    # Rotate x labels if many plasmids
+    if len(plasmid_labels) > 5:
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    _close_and_collect(fig)
+    logger.info(f"Saved coverage boxplot to {output_path}")
