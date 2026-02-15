@@ -512,6 +512,7 @@ def run_pipeline(
         for plasmid_file in plan.plasmid_files:
             # Auto-detect plasmid file format from magic bytes and content
             from .format_detection import detect_format
+
             plasmid_file_type: str = detect_format(plasmid_file)
             logging.info(f"Processing plasmid file: {plasmid_file}")
 
