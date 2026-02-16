@@ -771,9 +771,7 @@ def aggregate_verdicts(
     full_verdict_df["VerdictShort"] = full_verdict_df["VerdictShort"].fillna("No Result")
 
     # Aggregate by plasmid
-    by_plasmid = (
-        full_verdict_df.groupby(["Plasmid", "VerdictShort"]).size().unstack(fill_value=0)
-    )
+    by_plasmid = full_verdict_df.groupby(["Plasmid", "VerdictShort"]).size().unstack(fill_value=0)
 
     # Aggregate by sample
     by_sample = full_verdict_df.groupby(["Sample", "VerdictShort"]).size().unstack(fill_value=0)

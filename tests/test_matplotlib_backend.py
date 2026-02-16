@@ -284,9 +284,7 @@ def test_generate_verdict_bar_matplotlib_creates_png(tmp_path: Path) -> None:
 
     output_path = tmp_path / "verdict_bar.png"
 
-    generate_verdict_bar_matplotlib(
-        aggregated_df, output_path, "Verdicts by Plasmid", "Plasmid"
-    )
+    generate_verdict_bar_matplotlib(aggregated_df, output_path, "Verdicts by Plasmid", "Plasmid")
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
