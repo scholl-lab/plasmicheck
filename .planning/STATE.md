@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 ## Current Position
 
 **Phase:** 14 of 16 (Cache Infrastructure)
-**Plan:** 1 of 3 complete
+**Plan:** 2 of 3 complete
 **Status:** Phase 14 in progress
-**Progress:** █████░░░░░ 50% (5/10 plans in v0.34.0)
+**Progress:** ██████░░░░ 60% (6/10 plans in v0.34.0)
 
-Last activity: 2026-02-16 — Completed 14-01-PLAN.md
+Last activity: 2026-02-16 — Completed 14-02-PLAN.md
 
 ## Milestones
 
@@ -31,7 +31,7 @@ Last activity: 2026-02-16 — Completed 14-01-PLAN.md
 |-------|------|--------------|-------|--------|
 | 12 | Format Hardening | FMT-01..04 (4) | 2/2 | Complete |
 | 13 | Output Restructuring | OUT-01..04 (4) | 2/2 | Complete |
-| 14 | Cache Infrastructure | CACHE-01..06 (6) | 1/3 | In progress |
+| 14 | Cache Infrastructure | CACHE-01..06 (6) | 2/3 | In progress |
 | 15 | Splice Junction Metadata | SJ-01..02 (2) | 0/1 | Not started |
 | 16 | Summary Visualization | VIS-01..04 (4) | 0/2 | Not started |
 
@@ -42,6 +42,11 @@ Last activity: 2026-02-16 — Completed 14-01-PLAN.md
 ### Key Outcomes
 
 **From v0.34.0 (Phase 14 - In Progress):**
+- Pipeline integration with --cache-dir and --no-cache CLI flags
+- Index caching for plasmid FASTAs with within-run deduplication
+- Spliced alignment caching (BAM, FASTA, cDNA positions) integrated
+- Cache hits restore both .mmi and .fai files via shutil.copy2
+- Graceful degradation on cache errors (log warning, continue without cache)
 - CacheManager class with content-addressed storage for pipeline artifacts
 - Index cache stores both .mmi and .fai files together (prevents partial index state)
 - Spliced alignment cache stores BAM, FASTA, and cDNA positions
@@ -49,7 +54,7 @@ Last activity: 2026-02-16 — Completed 14-01-PLAN.md
 - Atomic writes with tempfile + os.replace (prevents corruption)
 - LRU eviction with OrderedDict (O(1) operations)
 - Graceful manifest corruption handling
-- 373 unit tests passing (up from 353 at Phase 13)
+- 379 unit tests passing (up from 353 at Phase 13)
 
 **From v0.34.0 (Phase 13 - Complete):**
 - OutputPaths frozen dataclass centralizes all output path construction
@@ -109,6 +114,11 @@ Last activity: 2026-02-16 — Completed 14-01-PLAN.md
 | CACHE-D04 | 14-01 | Atomic writes | tempfile in same directory + os.replace | Same filesystem ensures atomic rename, prevents corruption |
 | CACHE-D05 | 14-01 | Manifest corruption | Log warning and recreate empty | Cache is optimization, not critical path |
 | CACHE-D06 | 14-01 | LRU eviction | OrderedDict with move_to_end() | O(1) operations, stdlib-based, simpler than custom linked list |
+| CACHE-D07 | 14-02 | Cache initialization location | After plan build but before dry-run check | Cache path needs to be determined, but dry-run shouldn't initialize cache |
+| CACHE-D08 | 14-02 | Within-run deduplication | Via cache mechanism | First combo builds and caches, subsequent combos get cache hits |
+| CACHE-D09 | 14-02 | Spliced FASTA indexing | NOT cached separately | Fast operation (~1s), not worth caching complexity |
+| CACHE-D10 | 14-02 | Cache error handling | Wrap in try/except (OSError, PermissionError) | Cache errors should never fail pipeline, only degrade performance |
+| CACHE-D11 | 14-02 | Cache hit restoration | Use shutil.copy2 instead of symlinks | Ensures files exist at expected paths, no symlink complexity |
 
 ### Open Blockers
 
@@ -117,9 +127,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-16
-**Stopped at:** Completed 14-01-PLAN.md (CacheManager core implementation)
+**Stopped at:** Completed 14-02-PLAN.md (Pipeline cache integration)
 **Resume file:** None
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-16 after completing 14-01-PLAN.md*
+*Last updated: 2026-02-16 after completing 14-02-PLAN.md*
