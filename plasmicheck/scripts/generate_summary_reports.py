@@ -692,6 +692,310 @@ def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(table_rows)
 
 
+def _format_verdict_hover(
+    verdict: str, count: int, name_list: list[str], max_display: int = 10
+) -> str:
+    """Build hover HTML string with verdict, count, and truncated name list.
+
+    Args:
+        verdict: Verdict category (e.g., "Clean", "Contaminated")
+        count: Number of items in this category
+        name_list: List of sample or plasmid names
+        max_display: Maximum names to display before truncating
+
+    Returns:
+        HTML-formatted string for hover display
+    """
+    lines = [f"<b>{verdict}</b>", f"Count: {count}"]
+
+    if name_list:
+        if len(name_list) <= max_display:
+            lines.extend(name_list)
+        else:
+            lines.extend(name_list[:max_display])
+            lines.append(f"...and {len(name_list) - max_display} more")
+
+    return "<br>".join(lines)
+
+
+def aggregate_verdicts(
+    summary_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Aggregate verdict data by plasmid and by sample with No Result detection.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+
+    Returns:
+        Tuple of (full_verdict_df, by_plasmid_counts, by_sample_counts):
+        - full_verdict_df: DataFrame with [Sample, Plasmid, VerdictShort] including No Result
+        - by_plasmid_counts: Plasmids as index, verdict categories as columns
+        - by_sample_counts: Samples as index, verdict categories as columns
+    """
+    import pandas as pd
+
+    # Map full verdict strings to short labels
+    verdict_map = {
+        "Sample is contaminated with plasmid DNA": "Contaminated",
+        "Sample contamination status is unclear": "Unclear",
+        "Sample is not contaminated with plasmid DNA": "Clean",
+    }
+
+    # Extract verdict rows
+    verdict_rows = summary_df[summary_df["Category"] == "Verdict"].copy()
+
+    if verdict_rows.empty:
+        # Return empty DataFrames with correct structure
+        empty_df = pd.DataFrame(columns=["Sample", "Plasmid", "VerdictShort"])
+        empty_counts = pd.DataFrame(columns=["Clean", "Unclear", "Contaminated", "No Result"])
+        return empty_df, empty_counts, empty_counts
+
+    # Map to short labels
+    verdict_rows["VerdictShort"] = verdict_rows["Value"].map(verdict_map)
+
+    # Build cross-product of all unique samples x plasmids from FULL summary_df
+    all_samples = summary_df["Sample"].unique()
+    all_plasmids = summary_df["Plasmid"].unique()
+
+    # Create full cross-product
+    full_cross = pd.DataFrame(
+        [(s, p) for s in all_samples for p in all_plasmids], columns=["Sample", "Plasmid"]
+    )
+
+    # Left join verdict data
+    full_verdict_df = full_cross.merge(
+        verdict_rows[["Sample", "Plasmid", "VerdictShort"]], on=["Sample", "Plasmid"], how="left"
+    )
+
+    # Fill missing with "No Result"
+    full_verdict_df["VerdictShort"] = full_verdict_df["VerdictShort"].fillna("No Result")
+
+    # Aggregate by plasmid
+    by_plasmid = (
+        full_verdict_df.groupby(["Plasmid", "VerdictShort"]).size().unstack(fill_value=0)
+    )
+
+    # Aggregate by sample
+    by_sample = full_verdict_df.groupby(["Sample", "VerdictShort"]).size().unstack(fill_value=0)
+
+    # Ensure column order
+    verdict_order = ["Clean", "Unclear", "Contaminated", "No Result"]
+    by_plasmid_counts = by_plasmid.reindex(columns=verdict_order, fill_value=0)
+    by_sample_counts = by_sample.reindex(columns=verdict_order, fill_value=0)
+
+    return full_verdict_df, by_plasmid_counts, by_sample_counts
+
+
+def plot_verdict_bar_by_plasmid(
+    summary_df: pd.DataFrame,
+    output_dir: str,
+    static_report: bool = False,
+    plot_backend: str = "plotly",
+) -> tuple[str, str | None]:
+    """Generate stacked bar chart of verdicts grouped by plasmid.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+        output_dir: Output directory for plots
+        static_report: If True, also generate PNG via matplotlib
+        plot_backend: Backend for static plots ("plotly" or "matplotlib")
+
+    Returns:
+        Tuple of (html_path, png_path_or_None)
+    """
+    import plotly.graph_objects as go
+
+    from .plotting.colors import VERDICT_COLORS
+
+    logging.info("Generating verdict bar chart by plasmid.")
+
+    # Get aggregated data
+    full_verdict_df, by_plasmid_counts, _ = aggregate_verdicts(summary_df)
+
+    if full_verdict_df.empty:
+        logging.warning("No verdict data available for plotting.")
+        return "", None
+
+    # Build hover data: verdict -> plasmid -> list of sample names
+    hover_data: dict[str, dict[str, list[str]]] = {
+        verdict: {} for verdict in ["Clean", "Unclear", "Contaminated", "No Result"]
+    }
+
+    for _, row in full_verdict_df.iterrows():
+        verdict = row["VerdictShort"]
+        plasmid = row["Plasmid"]
+        sample = row["Sample"]
+
+        if plasmid not in hover_data[verdict]:
+            hover_data[verdict][plasmid] = []
+        hover_data[verdict][plasmid].append(sample)
+
+    # Create traces
+    fig = go.Figure()
+    verdict_order = ["Clean", "Unclear", "Contaminated", "No Result"]
+
+    for verdict in verdict_order:
+        if verdict not in by_plasmid_counts.columns:
+            continue
+
+        counts = by_plasmid_counts[verdict].values
+        plasmids = by_plasmid_counts.index.tolist()
+
+        # Build customdata for hover
+        customdata = [
+            _format_verdict_hover(verdict, int(counts[i]), hover_data[verdict].get(plasmids[i], []))
+            for i in range(len(plasmids))
+        ]
+
+        fig.add_trace(
+            go.Bar(
+                x=plasmids,
+                y=counts,
+                name=verdict,
+                marker_color=VERDICT_COLORS[verdict],
+                customdata=customdata,
+                hovertemplate="%{customdata}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        title="Verdicts by Plasmid",
+        xaxis_title="Plasmid",
+        yaxis_title="Count",
+        xaxis={"tickangle": 45},
+        height=600,
+    )
+
+    # Write HTML
+    plots_dir: str = os.path.join(output_dir, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+
+    html_path: str = os.path.join(plots_dir, "verdict_bar_by_plasmid.html")
+    fig.write_html(html_path, include_plotlyjs=False, full_html=False)
+
+    # Generate PNG if requested
+    png_path: str | None = None
+    if static_report:
+        png_path = os.path.join(plots_dir, "verdict_bar_by_plasmid.png")
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import generate_verdict_bar_matplotlib
+
+            generate_verdict_bar_matplotlib(
+                by_plasmid_counts, png_path, "Verdicts by Plasmid", "Plasmid"
+            )
+        else:
+            # Fallback to plotly kaleido
+            fig.write_image(png_path, width=1200, height=600)
+
+    return html_path, png_path
+
+
+def plot_verdict_bar_by_sample(
+    summary_df: pd.DataFrame,
+    output_dir: str,
+    static_report: bool = False,
+    plot_backend: str = "plotly",
+) -> tuple[str, str | None]:
+    """Generate stacked bar chart of verdicts grouped by sample.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+        output_dir: Output directory for plots
+        static_report: If True, also generate PNG via matplotlib
+        plot_backend: Backend for static plots ("plotly" or "matplotlib")
+
+    Returns:
+        Tuple of (html_path, png_path_or_None)
+    """
+    import plotly.graph_objects as go
+
+    from .plotting.colors import VERDICT_COLORS
+
+    logging.info("Generating verdict bar chart by sample.")
+
+    # Get aggregated data
+    full_verdict_df, _, by_sample_counts = aggregate_verdicts(summary_df)
+
+    if full_verdict_df.empty:
+        logging.warning("No verdict data available for plotting.")
+        return "", None
+
+    # Build hover data: verdict -> sample -> list of plasmid names
+    hover_data: dict[str, dict[str, list[str]]] = {
+        verdict: {} for verdict in ["Clean", "Unclear", "Contaminated", "No Result"]
+    }
+
+    for _, row in full_verdict_df.iterrows():
+        verdict = row["VerdictShort"]
+        sample = row["Sample"]
+        plasmid = row["Plasmid"]
+
+        if sample not in hover_data[verdict]:
+            hover_data[verdict][sample] = []
+        hover_data[verdict][sample].append(plasmid)
+
+    # Create traces
+    fig = go.Figure()
+    verdict_order = ["Clean", "Unclear", "Contaminated", "No Result"]
+
+    for verdict in verdict_order:
+        if verdict not in by_sample_counts.columns:
+            continue
+
+        counts = by_sample_counts[verdict].values
+        samples = by_sample_counts.index.tolist()
+
+        # Build customdata for hover
+        customdata = [
+            _format_verdict_hover(verdict, int(counts[i]), hover_data[verdict].get(samples[i], []))
+            for i in range(len(samples))
+        ]
+
+        fig.add_trace(
+            go.Bar(
+                x=samples,
+                y=counts,
+                name=verdict,
+                marker_color=VERDICT_COLORS[verdict],
+                customdata=customdata,
+                hovertemplate="%{customdata}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        title="Verdicts by Sample",
+        xaxis_title="Sample",
+        yaxis_title="Count",
+        xaxis={"tickangle": 45},
+        height=600,
+    )
+
+    # Write HTML
+    plots_dir: str = os.path.join(output_dir, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+
+    html_path: str = os.path.join(plots_dir, "verdict_bar_by_sample.html")
+    fig.write_html(html_path, include_plotlyjs=False, full_html=False)
+
+    # Generate PNG if requested
+    png_path: str | None = None
+    if static_report:
+        png_path = os.path.join(plots_dir, "verdict_bar_by_sample.png")
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import generate_verdict_bar_matplotlib
+
+            generate_verdict_bar_matplotlib(
+                by_sample_counts, png_path, "Verdicts by Sample", "Sample"
+            )
+        else:
+            # Fallback to plotly kaleido
+            fig.write_image(png_path, width=1200, height=600)
+
+    return html_path, png_path
+
+
 # Report Generation Functions
 def generate_report(
     combined_df: pd.DataFrame,

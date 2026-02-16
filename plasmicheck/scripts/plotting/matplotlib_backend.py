@@ -417,3 +417,88 @@ def generate_coverage_boxplot_matplotlib(
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     _close_and_collect(fig)
     logger.info(f"Saved coverage boxplot to {output_path}")
+
+
+def generate_verdict_bar_matplotlib(
+    aggregated_df: pd.DataFrame,
+    output_path: Path | str,
+    title: str,
+    xlabel: str,
+) -> None:
+    """Generate stacked bar chart for verdict categories using matplotlib.
+
+    Args:
+        aggregated_df: DataFrame with verdict categories as columns, grouped items as index
+        output_path: Output PNG file path
+        title: Plot title
+        xlabel: X-axis label (e.g., "Plasmid" or "Sample")
+    """
+    from .colors import VERDICT_COLORS
+
+    if aggregated_df.empty:
+        logger.warning("Empty DataFrame provided to generate_verdict_bar_matplotlib")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.text(
+            0.5,
+            0.5,
+            "No data available",
+            ha="center",
+            va="center",
+            fontsize=12,
+        )
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        _close_and_collect(fig)
+        return
+
+    # Define verdict categories in display order
+    verdict_categories = ["Clean", "Unclear", "Contaminated", "No Result"]
+
+    # Filter to only categories present in the data
+    available_categories = [cat for cat in verdict_categories if cat in aggregated_df.columns]
+
+    # Determine figure width based on number of bars
+    figwidth = max(10, len(aggregated_df) * 0.5)
+    fig, ax = plt.subplots(figsize=(figwidth, 6))
+
+    # Get x positions for bars
+    x_positions = np.arange(len(aggregated_df))
+    bar_width = 0.8
+
+    # Iteratively stack bars
+    bottom = np.zeros(len(aggregated_df))
+
+    for category in available_categories:
+        counts = aggregated_df[category].to_numpy()
+        color = VERDICT_COLORS[category]
+
+        ax.bar(
+            x_positions,
+            counts,
+            bar_width,
+            bottom=bottom,
+            label=category,
+            color=color,
+            alpha=0.9,
+        )
+
+        # Update bottom for next stack layer
+        bottom = bottom + counts
+
+    # Set labels and title
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Count")
+    ax.set_title(title)
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(aggregated_df.index)
+
+    # Rotate x-axis labels if more than 5 bars
+    if len(aggregated_df) > 5:
+        plt.xticks(rotation=45, ha="right")
+
+    # Add legend
+    ax.legend()
+
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    _close_and_collect(fig)
+    logger.info(f"Saved verdict bar chart to {output_path}")
