@@ -112,9 +112,43 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
     cdna_start: int | None = None
     cdna_end: int | None = None
 
+    # Junction metadata (extracted from primary alignment only)
+    junction_count: int | None = None
+    exon_count: int | None = None
+    exon_lengths: list[int] | None = None
+    intron_lengths: list[int] | None = None
+    strand: str | None = None
+    chromosome: str | None = None
+    genomic_start: int | None = None
+    genomic_end: int | None = None
+
+    primary_processed = False
+
     for read in bamfile.fetch():
         if read.is_unmapped:
             continue
+
+        # Extract junction metadata from the primary alignment only
+        if not primary_processed and not read.is_secondary and not read.is_supplementary:
+            primary_processed = True
+            if read.cigartuples is not None:
+                # Count N operations (junctions)
+                junction_count = sum(1 for op, _ in read.cigartuples if op == 3)
+                exon_count = junction_count + 1
+
+                # Collect M operation lengths (exons)
+                exon_lengths = [length for op, length in read.cigartuples if op == 0]
+
+                # Collect N operation lengths (introns)
+                intron_lengths = [length for op, length in read.cigartuples if op == 3]
+
+                # Strand
+                strand = "-" if read.is_reverse else "+"
+
+                # Genomic coordinates
+                chromosome = read.reference_name
+                genomic_start = read.reference_start  # 0-based
+                genomic_end = read.reference_end  # exclusive
 
         # Initialize position on the read
         pos_on_read: int = 0  # Position on the read (plasmid-derived)
@@ -143,19 +177,37 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
 
     bamfile.close()
 
-    if cdna_start is None or cdna_end is None:
-        logging.error("Failed to identify cDNA start and end positions.")
-        raise ValueError("Could not determine cDNA start and end positions in the plasmid.")
-
-    logging.debug(f"cDNA start: {cdna_start}, cDNA end: {cdna_end}")
-
-    # Compute the INSERT_REGION dynamically
-    insert_region: tuple[int, int] = (cdna_start, cdna_end)
-
+    # Write the output file with all fields (use NA for missing values)
     with open(output_file, "w") as f:
-        f.write(f"cDNA start position in plasmid: {cdna_start}\n")
-        f.write(f"cDNA end position in plasmid: {cdna_end}\n")
-        f.write(f"INSERT_REGION: {insert_region}\n")
+        if cdna_start is not None and cdna_end is not None:
+            insert_region: tuple[int, int] = (cdna_start, cdna_end)
+            f.write(f"cDNA start position in plasmid: {cdna_start}\n")
+            f.write(f"cDNA end position in plasmid: {cdna_end}\n")
+            f.write(f"INSERT_REGION: {insert_region}\n")
+        else:
+            logging.warning("No alignments found. Writing NA values for cDNA positions.")
+            f.write("cDNA start position in plasmid: NA\n")
+            f.write("cDNA end position in plasmid: NA\n")
+            f.write("INSERT_REGION: NA\n")
+
+        # Write junction metadata fields
+        f.write(f"SpliceJunctionCount: {junction_count if junction_count is not None else 'NA'}\n")
+        f.write(f"ExonCount: {exon_count if exon_count is not None else 'NA'}\n")
+
+        if exon_lengths is not None and len(exon_lengths) > 0:
+            f.write(f"ExonLengths: {','.join(map(str, exon_lengths))}\n")
+        else:
+            f.write("ExonLengths: NA\n")
+
+        if intron_lengths is not None and len(intron_lengths) > 0:
+            f.write(f"IntronLengths: {','.join(map(str, intron_lengths))}\n")
+        else:
+            f.write("IntronLengths: NA\n")
+
+        f.write(f"Strand: {strand if strand is not None else 'NA'}\n")
+        f.write(f"Chromosome: {chromosome if chromosome is not None else 'NA'}\n")
+        f.write(f"GenomicStart: {genomic_start if genomic_start is not None else 'NA'}\n")
+        f.write(f"GenomicEnd: {genomic_end if genomic_end is not None else 'NA'}\n")
 
     logging.info(f"cDNA positions and INSERT_REGION saved to {output_file}")
 
