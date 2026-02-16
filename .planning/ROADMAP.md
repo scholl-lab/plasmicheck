@@ -111,10 +111,11 @@ Plans:
   1. cDNA_positions.txt contains SpliceJunctionCount and ExonCount fields
   2. summary.tsv exports include SpliceJunctionCount and ExonCount columns
   3. Splice junction count accurately reflects N operations in spliced alignment CIGAR string
-**Plans:** 1 plan (estimated)
+**Plans:** 2 plans
 
 Plans:
-- [ ] 15-01: CIGAR parsing and metadata storage
+- [ ] 15-01-PLAN.md — Junction metadata extraction, cDNA_positions.txt extension, InsertRegionData dataclass, summary.tsv fields
+- [ ] 15-02-PLAN.md — Per-sample and multi-sample report display, HTML truncation, TSV/Excel exports
 
 #### Phase 16: Summary Visualization
 **Goal:** Multi-sample summary reports include verdict bar charts grouped by plasmid and by sample
@@ -145,11 +146,11 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 | 12. Format Hardening | v0.34.0 | 2/2 | Complete | 2026-02-15 |
 | 13. Output Restructuring | v0.34.0 | 2/2 | Complete | 2026-02-15 |
 | 14. Cache Infrastructure | v0.34.0 | 3/3 | Complete | 2026-02-16 |
-| 15. Splice Junction Metadata | v0.34.0 | 0/1 | Not started | - |
+| 15. Splice Junction Metadata | v0.34.0 | 0/2 | Not started | - |
 | 16. Summary Visualization | v0.34.0 | 0/2 | Not started | - |
 
-**v0.34.0 Progress:** 7/10 plans complete
+**v0.34.0 Progress:** 7/11 plans complete
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-16 after Phase 14 execution*
+*Last updated: 2026-02-16 after Phase 15 planning*
