@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 
 ## Current Position
 
-**Phase:** 14 of 16 (Cache Infrastructure)
-**Plan:** 3 of 3 complete
-**Status:** Phase 14 complete
-**Progress:** ███████░░░ 70% (7/10 plans in v0.34.0)
+**Phase:** 15 of 16 (Splice Junction Metadata)
+**Plan:** 1 of 1 complete
+**Status:** Phase 15 complete
+**Progress:** ████████░░ 80% (8/10 plans in v0.34.0)
 
-Last activity: 2026-02-16 — Completed 14-03-PLAN.md
+Last activity: 2026-02-16 — Completed 15-01-PLAN.md
 
 ## Milestones
 
@@ -32,7 +32,7 @@ Last activity: 2026-02-16 — Completed 14-03-PLAN.md
 | 12 | Format Hardening | FMT-01..04 (4) | 2/2 | Complete |
 | 13 | Output Restructuring | OUT-01..04 (4) | 2/2 | Complete |
 | 14 | Cache Infrastructure | CACHE-01..06 (6) | 3/3 | Complete |
-| 15 | Splice Junction Metadata | SJ-01..02 (2) | 0/1 | Not started |
+| 15 | Splice Junction Metadata | SJ-01..02 (2) | 1/1 | Complete |
 | 16 | Summary Visualization | VIS-01..04 (4) | 0/2 | Not started |
 
 **Total v0.34.0:** 20 requirements, 10 plans (estimated)
@@ -40,6 +40,16 @@ Last activity: 2026-02-16 — Completed 14-03-PLAN.md
 ## Accumulated Context
 
 ### Key Outcomes
+
+**From v0.34.0 (Phase 15 - Complete):**
+- Extended cDNA_positions.txt from 3 to 11 lines with junction metadata
+- InsertRegionData dataclass with backward-compatible tuple unpacking (__iter__, __getitem__)
+- Junction metadata extraction from primary alignment CIGAR only (skips secondary/supplementary)
+- Summary.tsv includes SpliceJunctionCount, ExonCount, ExonLengths, IntronLengths rows
+- Key-based field parsing (not line-number based) for forward compatibility
+- Graceful handling of unmapped plasmids (all-NA values, no ValueError)
+- Backward compatibility: old 3-line cDNA_positions.txt files parse with None defaults
+- 397 unit tests passing (up from 384 at Phase 14)
 
 **From v0.34.0 (Phase 14 - Complete):**
 - Pipeline integration with --cache-dir and --no-cache CLI flags
@@ -122,6 +132,11 @@ Last activity: 2026-02-16 — Completed 14-03-PLAN.md
 | CACHE-D10 | 14-02 | Cache error handling | Wrap in try/except (OSError, PermissionError) | Cache errors should never fail pipeline, only degrade performance |
 | CACHE-D11 | 14-02 | Cache hit restoration | Use shutil.copy2 instead of symlinks | Ensures files exist at expected paths, no symlink complexity |
 | CACHE-D12 | 14-03 | Cache CLI tool requirements | Skip check_requirements() for cache command | Cache commands don't need minimap2/samtools, improves portability |
+| SJ-D01 | 15-01 | Junction metadata source | Extract from primary alignment only | Primary = canonical mapping, secondary/supplementary are alternatives |
+| SJ-D02 | 15-01 | Unmapped plasmid handling | Write all-NA cDNA_positions.txt instead of raising | Graceful degradation, consistent with Phase 13 fallback behavior |
+| SJ-D03 | 15-01 | Backward compatibility | InsertRegionData with __iter__ and __getitem__ | Mimics tuple for unpacking/subscripting, no breaking changes |
+| SJ-D04 | 15-01 | Field parsing approach | Parse by prefix, not line number | Forward-compatible if we add more fields, handles missing fields gracefully |
+| SJ-D05 | 15-01 | NA value mapping | start/end→0, junction fields→None | start/end=0 maintains existing logic, None signals "not available" for junction metadata |
 
 ### Open Blockers
 
@@ -130,9 +145,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-16
-**Stopped at:** Completed 14-03-PLAN.md (Cache CLI management)
+**Stopped at:** Completed 15-01-PLAN.md (Splice junction metadata data layer)
 **Resume file:** None
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-16 after completing 14-03-PLAN.md — Phase 14 complete*
+*Last updated: 2026-02-16 after completing 15-01-PLAN.md — Phase 15 complete*
