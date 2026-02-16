@@ -127,9 +127,29 @@ Each task was committed atomically:
 
 None - plan executed exactly as written.
 
+## Post-Execution Visual Testing
+
+Visual testing via Playwright screenshots after plan execution:
+
+1. **Synthetic data (0 junctions):** Ran pipeline on synthetic test data. Per-sample report correctly showed Splice Junction Count: 0, Exon Count: 1, Exon Lengths: 500. Intron Lengths row correctly hidden (N/A).
+
+2. **Real data — CACNA1H (33 junctions, 34 exons):** Ran pipeline on real contaminated sample with pCMV6_CACNA1H_MycDDK.gb. Report correctly displayed:
+   - Splice Junction Count: 33, Exon Count: 34
+   - Exon Lengths truncated to "299,112,134,98,160,..." (5 items + "...")
+   - Intron Lengths truncated to "40935,348,360,2591,1481,..." (5 items + "...")
+   - Genomic coordinates: chr16:1153737-1220991, Strand: +
+
+3. **Multi-sample summary report:** Splice Junction Table section rendered with both samples in DataTable format.
+
+4. **Bug found and fixed:** `_get_metric()` returned `"nan"` for IntronLengths (pandas reads "NA" from TSV as NaN, `str(NaN)` → `"nan"`). Fixed with NaN self-inequality check (`value != value`). Commit: `019d967`.
+
 ## Issues Encountered
 
-None
+**pandas NaN handling in _get_metric (found during visual testing)**
+- **Issue:** IntronLengths showed "nan" in per-sample report instead of being hidden
+- **Cause:** `pd.read_csv` interprets "NA" string in TSV as NaN. `str(NaN)` produces `"nan"`, not `"N/A"`. Template condition `!= 'N/A'` didn't match `"nan"`.
+- **Resolution:** Added NaN check in `_get_metric()` using `value != value` (NaN self-inequality). Returns default when value is NaN.
+- **Commit:** `019d967` fix(15-02): handle pandas NaN in _get_metric for junction fields
 
 ## User Setup Required
 
