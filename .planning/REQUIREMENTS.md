@@ -39,8 +39,8 @@ Requirements for v0.34.0: Robustness & Infrastructure. Each maps to roadmap phas
 
 ### Splice Junction Metadata (#68)
 
-- [ ] **SJ-01**: Extract splice junction count and exon count from spliced alignment BAM CIGAR
-- [ ] **SJ-02**: Store `SpliceJunctionCount` and `ExonCount` in `cDNA_positions.txt` and `summary.tsv`
+- [x] **SJ-01**: Extract splice junction count and exon count from spliced alignment BAM CIGAR
+- [x] **SJ-02**: Store `SpliceJunctionCount` and `ExonCount` in `cDNA_positions.txt` and `summary.tsv`
 
 ## Future Requirements
 
@@ -95,8 +95,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CACHE-04 | Phase 14 | Complete |
 | CACHE-05 | Phase 14 | Complete |
 | CACHE-06 | Phase 14 | Complete |
-| SJ-01 | Phase 15 | Pending |
-| SJ-02 | Phase 15 | Pending |
+| SJ-01 | Phase 15 | Complete |
+| SJ-02 | Phase 15 | Complete |
 | VIS-01 | Phase 16 | Pending |
 | VIS-02 | Phase 16 | Pending |
 | VIS-03 | Phase 16 | Pending |
@@ -111,4 +111,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-15*
-*Last updated: 2026-02-16 after Phase 14 completion (CACHE-01..06 complete)*
+*Last updated: 2026-02-16 after Phase 15 completion (SJ-01..02 complete)*
