@@ -126,11 +126,11 @@ Plans:
   2. Summary report HTML displays verdict bar chart grouped by sample
   3. Matplotlib fallback PNGs generated for both new verdict bar charts
   4. Exported summary report packages include both new plots
-**Plans:** 2 plans (estimated)
+**Plans:** 2 plans
 
 Plans:
-- [ ] 16-01: Verdict bar chart plotting functions (Plotly + Matplotlib)
-- [ ] 16-02: Template integration and export inclusion
+- [ ] 16-01-PLAN.md — Verdict bar chart plotting functions (Plotly + Matplotlib), unit tests
+- [ ] 16-02-PLAN.md — Template integration, generate_report/main wiring, export inclusion
 
 ## Progress
 
@@ -153,4 +153,4 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-16 after Phase 15 planning*
+*Last updated: 2026-02-16 after Phase 16 planning*
