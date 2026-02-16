@@ -129,8 +129,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 16-01-PLAN.md — Verdict bar chart plotting functions (Plotly + Matplotlib), unit tests
-- [ ] 16-02-PLAN.md — Template integration, generate_report/main wiring, export inclusion
+- [x] 16-01-PLAN.md — Verdict bar chart plotting functions (Plotly + Matplotlib), unit tests
+- [x] 16-02-PLAN.md — Template integration, generate_report/main wiring, export inclusion
 
 ## Progress
 
@@ -147,10 +147,10 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 | 13. Output Restructuring | v0.34.0 | 2/2 | Complete | 2026-02-15 |
 | 14. Cache Infrastructure | v0.34.0 | 3/3 | Complete | 2026-02-16 |
 | 15. Splice Junction Metadata | v0.34.0 | 2/2 | Complete | 2026-02-16 |
-| 16. Summary Visualization | v0.34.0 | 0/2 | Not started | - |
+| 16. Summary Visualization | v0.34.0 | 2/2 | Complete | 2026-02-16 |
 
-**v0.34.0 Progress:** 9/11 plans complete
+**v0.34.0 Progress:** 11/11 plans complete
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-16 after Phase 15 completion*
+*Last updated: 2026-02-16 after Phase 16 completion*

@@ -16,10 +16,10 @@ Requirements for v0.34.0: Robustness & Infrastructure. Each maps to roadmap phas
 
 ### Summary Visualization (#51)
 
-- [ ] **VIS-01**: Verdict bar chart grouped by plasmid in summary reports
-- [ ] **VIS-02**: Verdict bar chart grouped by sample in summary reports
-- [ ] **VIS-03**: Matplotlib fallback for both new verdict bar charts
-- [ ] **VIS-04**: New plots integrated in summary HTML template and exports
+- [x] **VIS-01**: Verdict bar chart grouped by plasmid in summary reports
+- [x] **VIS-02**: Verdict bar chart grouped by sample in summary reports
+- [x] **VIS-03**: Matplotlib fallback for both new verdict bar charts
+- [x] **VIS-04**: New plots integrated in summary HTML template and exports
 
 ### Index & Spliced Caching (#39, #43)
 
@@ -97,10 +97,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CACHE-06 | Phase 14 | Complete |
 | SJ-01 | Phase 15 | Complete |
 | SJ-02 | Phase 15 | Complete |
-| VIS-01 | Phase 16 | Pending |
-| VIS-02 | Phase 16 | Pending |
-| VIS-03 | Phase 16 | Pending |
-| VIS-04 | Phase 16 | Pending |
+| VIS-01 | Phase 16 | Complete |
+| VIS-02 | Phase 16 | Complete |
+| VIS-03 | Phase 16 | Complete |
+| VIS-04 | Phase 16 | Complete |
 
 **Coverage:**
 - v0.34.0 requirements: 20 total
@@ -111,4 +111,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-15*
-*Last updated: 2026-02-16 after Phase 15 completion (SJ-01..02 complete)*
+*Last updated: 2026-02-16 after Phase 16 completion (VIS-01..04 complete)*
