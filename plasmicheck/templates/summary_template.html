@@ -204,6 +204,27 @@
     </div>
     {% endif %}
 
+    <!-- Section 6: Splice Junction Metadata -->
+    {% if junction_table %}
+    <div class="card mb-3">
+        <div class="card-header" id="headingJunction">
+            <h5 class="mb-0">
+                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseJunction" aria-expanded="true">
+                    Splice Junction Metadata
+                </button>
+            </h5>
+        </div>
+        <div id="collapseJunction" class="collapse show" aria-labelledby="headingJunction">
+            <div class="card-body">
+                <h3>Splice Junction Table</h3>
+                <div class="table-container">
+                    {{ junction_table|safe }}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="details">
         <p><span>Threshold for Contamination:</span> {{ threshold }}</p>
         <p><span>Unclear Range:</span> {{ unclear_range.lower_bound }} - {{ unclear_range.upper_bound }}</p>

@@ -156,6 +156,16 @@ def _sanitize_for_excel(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _truncate_list_for_html(value: str, max_items: int = 5) -> str:
+    """Truncate comma-separated list for HTML table display."""
+    if not value or value in ("N/A", "NA", "nan"):
+        return "N/A"
+    items = value.split(",")
+    if len(items) <= max_items:
+        return value
+    return ",".join(items[:max_items]) + ",..."
+
+
 def save_tables_as_tsv_and_excel(
     combined_df: pd.DataFrame,
     verdict_df: pd.DataFrame,
@@ -164,6 +174,7 @@ def save_tables_as_tsv_and_excel(
     output_dir: str,
     extended_metrics_df: pd.DataFrame | None = None,
     resistance_gene_df: pd.DataFrame | None = None,
+    junction_df: pd.DataFrame | None = None,
 ) -> None:
     """Save the combined, verdict, ratio, and p-value dataframes as TSV and Excel files."""
     import pandas as pd
@@ -195,6 +206,12 @@ def save_tables_as_tsv_and_excel(
             os.path.join(data_dir, "resistance_genes_table.tsv"), sep="\t", index=False
         )
 
+    # Save junction metadata TSV if provided
+    if junction_df is not None and not junction_df.empty:
+        junction_df.to_csv(
+            os.path.join(data_dir, "junction_metadata_table.tsv"), sep="\t", index=False
+        )
+
     # Save Excel file with multiple sheets
     excel_file: str = os.path.join(data_dir, "summary_report_tables.xlsx")
     with pd.ExcelWriter(excel_file, engine="xlsxwriter") as writer:
@@ -213,6 +230,12 @@ def save_tables_as_tsv_and_excel(
         if resistance_gene_df is not None and not resistance_gene_df.empty:
             _sanitize_for_excel(resistance_gene_df).to_excel(
                 writer, sheet_name="Resistance Genes", index=False
+            )
+
+        # Add junction metadata sheet if provided
+        if junction_df is not None and not junction_df.empty:
+            _sanitize_for_excel(junction_df).to_excel(
+                writer, sheet_name="Junction Metadata", index=False
             )
 
     logging.info("TSV and Excel files have been saved.")
@@ -699,6 +722,7 @@ def generate_report(
     breadth_heatmap_interactive: str = "",
     breadth_heatmap_png: str | None = None,
     resistance_gene_df: pd.DataFrame | None = None,
+    junction_df: pd.DataFrame | None = None,
 ) -> None:
     import pandas as pd
     from jinja2 import Environment, FileSystemLoader
@@ -790,6 +814,20 @@ def generate_report(
             classes="table table-striped table-bordered", index=False
         )
 
+    # Convert junction metadata DataFrame to HTML with truncation
+    junction_table_html = ""
+    if junction_df is not None and not junction_df.empty:
+        # Truncate long comma-separated values for HTML display
+        display_df = junction_df.copy()
+        for col in ["ExonLengths", "IntronLengths"]:
+            if col in display_df.columns:
+                display_df[col] = display_df[col].apply(
+                    lambda v: _truncate_list_for_html(str(v)) if pd.notna(v) else "N/A"
+                )
+        junction_table_html = display_df.to_html(
+            classes="table table-striped table-bordered", index=False
+        )
+
     # Encode the logo
     logo_base64 = encode_image_to_base64(str(get_resource_path(LOGO_PATH)))
 
@@ -807,6 +845,7 @@ def generate_report(
         depth_heatmap_content=depth_heatmap_html,
         breadth_heatmap_content=breadth_heatmap_html,
         resistance_gene_table=resistance_gene_html,
+        junction_table=junction_table_html,
         logo_base64=logo_base64,
         threshold=threshold,
         unclear_range=unclear_range,
@@ -840,6 +879,7 @@ def generate_report(
             depth_heatmap_content=depth_heatmap_png_base64,
             breadth_heatmap_content=breadth_heatmap_png_base64,
             resistance_gene_table=resistance_gene_html,
+            junction_table=junction_table_html,
             logo_base64=logo_base64,
             threshold=threshold,
             unclear_range=unclear_range,
@@ -977,12 +1017,34 @@ def main(
     # --- New: Resistance Gene Table (REPT-08) ---
     resistance_gene_df = create_resistance_gene_table(summary_df)
 
+    # --- New: Splice Junction Metadata Table (SJ-02) ---
+    junction_categories = ["SpliceJunctionCount", "ExonCount", "ExonLengths", "IntronLengths"]
+    junction_df = summary_df[summary_df["Category"].isin(junction_categories)]
+
+    junction_table_df = None
+    if not junction_df.empty:
+        junction_pivot = junction_df.pivot_table(
+            index=["Sample", "Plasmid"],
+            columns="Category",
+            values="Value",
+            aggfunc="first",
+        ).reset_index()
+        # Reorder columns
+        col_order = ["Sample", "Plasmid"] + [
+            c for c in junction_categories if c in junction_pivot.columns
+        ]
+        junction_table_df = junction_pivot[col_order]
+
     # --- Build extended metrics DataFrame for export (REPT-10) ---
     extended_categories = [
         "CoverageOutsideINSERT",
         "MismatchesNearINSERT",
         "MeanDepthBackbone",
         "BreadthBackbone",
+        "SpliceJunctionCount",
+        "ExonCount",
+        "ExonLengths",
+        "IntronLengths",
     ]
     extended_metrics_df = summary_df[summary_df["Category"].isin(extended_categories)]
 
@@ -995,6 +1057,7 @@ def main(
         output_dir,
         extended_metrics_df=extended_metrics_df,
         resistance_gene_df=resistance_gene_df,
+        junction_df=junction_table_df,
     )
 
     # Generate report
@@ -1027,6 +1090,7 @@ def main(
         breadth_heatmap_interactive=breadth_heatmap_interactive,
         breadth_heatmap_png=breadth_heatmap_png,
         resistance_gene_df=resistance_gene_df,
+        junction_df=junction_table_df,
     )
 
 
