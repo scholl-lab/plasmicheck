@@ -34,6 +34,43 @@
     <img src="{{ logo_base64 }}" alt="plasmicheck Logo" class="logo">
     <h1>plasmicheck Summary Report</h1>
 
+    <!-- Section 0: Verdict Overview -->
+    <div class="card mb-3">
+        <div class="card-header" id="headingVerdictOverview">
+            <h5 class="mb-0">
+                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseVerdictOverview" aria-expanded="true">
+                    Verdict Overview
+                </button>
+            </h5>
+        </div>
+        <div id="collapseVerdictOverview" class="collapse show" aria-labelledby="headingVerdictOverview">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h3>Verdicts by Plasmid</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ verdict_by_plasmid_content|safe }}
+                            {% else %}
+                                <img src="{{ verdict_by_plasmid_content }}" alt="Verdicts by Plasmid">
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h3>Verdicts by Sample</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ verdict_by_sample_content|safe }}
+                            {% else %}
+                                <img src="{{ verdict_by_sample_content }}" alt="Verdicts by Sample">
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Section 1: Contamination Analysis -->
     <div class="card mb-3">
         <div class="card-header" id="headingContamination">

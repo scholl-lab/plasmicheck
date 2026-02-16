@@ -1025,6 +1025,10 @@ def generate_report(
     breadth_heatmap_png: str | None = None,
     resistance_gene_df: pd.DataFrame | None = None,
     junction_df: pd.DataFrame | None = None,
+    verdict_by_plasmid_interactive: str = "",
+    verdict_by_plasmid_png: str | None = None,
+    verdict_by_sample_interactive: str = "",
+    verdict_by_sample_png: str | None = None,
 ) -> None:
     import pandas as pd
     from jinja2 import Environment, FileSystemLoader
@@ -1074,6 +1078,16 @@ def generate_report(
         with open(breadth_heatmap_interactive) as f:
             breadth_heatmap_html = f.read()
 
+    verdict_by_plasmid_html = ""
+    if verdict_by_plasmid_interactive:
+        with open(verdict_by_plasmid_interactive) as f:
+            verdict_by_plasmid_html = f.read()
+
+    verdict_by_sample_html = ""
+    if verdict_by_sample_interactive:
+        with open(verdict_by_sample_interactive) as f:
+            verdict_by_sample_html = f.read()
+
     # Read the PNG files as base64 for non-interactive report (only if static_report=True)
     heatmap_png_base64 = ""
     boxplot_png_base64 = ""
@@ -1087,6 +1101,8 @@ def generate_report(
     mismatches_heatmap_png_base64 = ""
     depth_heatmap_png_base64 = ""
     breadth_heatmap_png_base64 = ""
+    verdict_by_plasmid_png_base64 = ""
+    verdict_by_sample_png_base64 = ""
     if static_report:
         if coverage_outside_heatmap_png:
             coverage_outside_heatmap_png_base64 = encode_image_to_base64(
@@ -1102,6 +1118,10 @@ def generate_report(
             depth_heatmap_png_base64 = encode_image_to_base64(depth_heatmap_png)
         if breadth_heatmap_png:
             breadth_heatmap_png_base64 = encode_image_to_base64(breadth_heatmap_png)
+        if verdict_by_plasmid_png:
+            verdict_by_plasmid_png_base64 = encode_image_to_base64(verdict_by_plasmid_png)
+        if verdict_by_sample_png:
+            verdict_by_sample_png_base64 = encode_image_to_base64(verdict_by_sample_png)
 
     # Convert sorted DataFrames to HTML
     combined_html = combined_df.to_html(classes="table table-striped table-bordered", index=False)
@@ -1148,6 +1168,8 @@ def generate_report(
         breadth_heatmap_content=breadth_heatmap_html,
         resistance_gene_table=resistance_gene_html,
         junction_table=junction_table_html,
+        verdict_by_plasmid_content=verdict_by_plasmid_html,
+        verdict_by_sample_content=verdict_by_sample_html,
         logo_base64=logo_base64,
         threshold=threshold,
         unclear_range=unclear_range,
@@ -1182,6 +1204,8 @@ def generate_report(
             breadth_heatmap_content=breadth_heatmap_png_base64,
             resistance_gene_table=resistance_gene_html,
             junction_table=junction_table_html,
+            verdict_by_plasmid_content=verdict_by_plasmid_png_base64,
+            verdict_by_sample_content=verdict_by_sample_png_base64,
             logo_base64=logo_base64,
             threshold=threshold,
             unclear_range=unclear_range,
@@ -1319,6 +1343,14 @@ def main(
     # --- New: Resistance Gene Table (REPT-08) ---
     resistance_gene_df = create_resistance_gene_table(summary_df)
 
+    # --- New: Verdict Bar Charts (VIS-01, VIS-02) ---
+    verdict_by_plasmid_interactive, verdict_by_plasmid_png = plot_verdict_bar_by_plasmid(
+        summary_df, output_dir, static_report=static_report, plot_backend=plot_backend
+    )
+    verdict_by_sample_interactive, verdict_by_sample_png = plot_verdict_bar_by_sample(
+        summary_df, output_dir, static_report=static_report, plot_backend=plot_backend
+    )
+
     # --- New: Splice Junction Metadata Table (SJ-02) ---
     junction_categories = ["SpliceJunctionCount", "ExonCount", "ExonLengths", "IntronLengths"]
     junction_df = summary_df[summary_df["Category"].isin(junction_categories)]
@@ -1393,6 +1425,10 @@ def main(
         breadth_heatmap_png=breadth_heatmap_png,
         resistance_gene_df=resistance_gene_df,
         junction_df=junction_table_df,
+        verdict_by_plasmid_interactive=verdict_by_plasmid_interactive,
+        verdict_by_plasmid_png=verdict_by_plasmid_png,
+        verdict_by_sample_interactive=verdict_by_sample_interactive,
+        verdict_by_sample_png=verdict_by_sample_png,
     )
 
 
