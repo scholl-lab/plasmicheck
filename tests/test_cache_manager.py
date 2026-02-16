@@ -111,9 +111,7 @@ def test_cache_manager_inaccessible_directory() -> None:
 
 
 @pytest.mark.unit
-def test_get_index_returns_none_on_miss(
-    tmp_path: Path, sample_fasta: Path
-) -> None:
+def test_get_index_returns_none_on_miss(tmp_path: Path, sample_fasta: Path) -> None:
     """Test that get_index returns None on cache miss."""
     cache_root = tmp_path / "cache"
     cache = CacheManager(cache_root)
@@ -177,9 +175,7 @@ def test_index_cache_hit_logs_info(
 
 
 @pytest.mark.unit
-def test_index_cache_miss_logs_info(
-    tmp_path: Path, sample_fasta: Path, caplog
-) -> None:
+def test_index_cache_miss_logs_info(tmp_path: Path, sample_fasta: Path, caplog) -> None:
     """Test that cache miss logs INFO message."""
     cache_root = tmp_path / "cache"
     cache = CacheManager(cache_root)
@@ -235,9 +231,7 @@ def test_index_size_mismatch_returns_none(
 
 
 @pytest.mark.unit
-def test_get_spliced_returns_none_on_miss(
-    tmp_path: Path, sample_fasta: Path
-) -> None:
+def test_get_spliced_returns_none_on_miss(tmp_path: Path, sample_fasta: Path) -> None:
     """Test that get_spliced returns None on cache miss."""
     cache_root = tmp_path / "cache"
     cache = CacheManager(cache_root)
@@ -489,9 +483,7 @@ def test_evicted_files_deleted_from_disk(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_corrupted_manifest_handled_gracefully(
-    tmp_path: Path, caplog
-) -> None:
+def test_corrupted_manifest_handled_gracefully(tmp_path: Path, caplog) -> None:
     """Test that corrupted manifest.json is handled gracefully."""
     cache_root = tmp_path / "cache"
     cache_root.mkdir()
@@ -582,9 +574,7 @@ def test_info_calculates_size_correctly(
 
 
 @pytest.mark.unit
-def test_info_tracks_oldest_and_newest(
-    tmp_path: Path, sample_mmi: Path, sample_fai: Path
-) -> None:
+def test_info_tracks_oldest_and_newest(tmp_path: Path, sample_mmi: Path, sample_fai: Path) -> None:
     """Test that info() tracks oldest and newest entry timestamps."""
     cache_root = tmp_path / "cache"
     cache = CacheManager(cache_root)

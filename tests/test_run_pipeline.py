@@ -703,9 +703,7 @@ class TestPipelineCacheIntegration:
             mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
             mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
             mock.patch("plasmicheck.scripts.run_pipeline.shutil.copy2") as mock_copy,
-            mock.patch(
-                "plasmicheck.scripts.run_pipeline.CacheManager", return_value=mock_cache
-            ),
+            mock.patch("plasmicheck.scripts.run_pipeline.CacheManager", return_value=mock_cache),
         ):
             run_pipeline(
                 human_fasta=str(human_fasta),

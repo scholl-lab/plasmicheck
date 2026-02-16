@@ -68,7 +68,6 @@ def test_subdirectory_properties() -> None:
     assert paths.references_dir == base / "references"
     assert paths.data_dir == base / "data"
     assert paths.reports_dir == base / "reports"
-    assert paths.plots_dir == base / "plots"
 
 
 @pytest.mark.unit
@@ -191,8 +190,6 @@ def test_ensure_directories_creates_all_subdirs(tmp_path: Path) -> None:
     assert not paths.references_dir.exists()
     assert not paths.data_dir.exists()
     assert not paths.reports_dir.exists()
-    assert not paths.plots_dir.exists()
-
     # Create all directories
     paths.ensure_directories()
 
@@ -208,9 +205,6 @@ def test_ensure_directories_creates_all_subdirs(tmp_path: Path) -> None:
 
     assert paths.reports_dir.exists()
     assert paths.reports_dir.is_dir()
-
-    assert paths.plots_dir.exists()
-    assert paths.plots_dir.is_dir()
 
 
 @pytest.mark.unit
@@ -232,7 +226,6 @@ def test_ensure_directories_idempotent(tmp_path: Path) -> None:
     assert paths.references_dir.exists()
     assert paths.data_dir.exists()
     assert paths.reports_dir.exists()
-    assert paths.plots_dir.exists()
 
 
 @pytest.mark.unit
@@ -269,7 +262,6 @@ def test_all_paths_return_path_objects() -> None:
     assert isinstance(paths.references_dir, Path)
     assert isinstance(paths.data_dir, Path)
     assert isinstance(paths.reports_dir, Path)
-    assert isinstance(paths.plots_dir, Path)
 
     # Alignment file properties
     assert isinstance(paths.plasmid_bam, Path)

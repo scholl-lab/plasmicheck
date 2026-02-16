@@ -131,7 +131,15 @@ class TestCLI:
         """Test cache info with empty cache."""
         cache_dir = tmp_path / "cache"
         result = subprocess.run(
-            [sys.executable, "-m", "plasmicheck.cli", "cache", "info", "--cache-dir", str(cache_dir)],
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "info",
+                "--cache-dir",
+                str(cache_dir),
+            ],
             capture_output=True,
             text=True,
             cwd=PROJECT_ROOT,
@@ -162,7 +170,15 @@ class TestCLI:
 
         # Run cache info
         result = subprocess.run(
-            [sys.executable, "-m", "plasmicheck.cli", "cache", "info", "--cache-dir", str(cache_dir)],
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "info",
+                "--cache-dir",
+                str(cache_dir),
+            ],
             capture_output=True,
             text=True,
             cwd=PROJECT_ROOT,
@@ -194,7 +210,16 @@ class TestCLI:
 
         # Run cache clean
         result = subprocess.run(
-            [sys.executable, "-m", "plasmicheck.cli", "cache", "clean", "--all", "--cache-dir", str(cache_dir)],
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "clean",
+                "--all",
+                "--cache-dir",
+                str(cache_dir),
+            ],
             capture_output=True,
             text=True,
             cwd=PROJECT_ROOT,
@@ -204,7 +229,15 @@ class TestCLI:
 
         # Verify cache is now empty
         result = subprocess.run(
-            [sys.executable, "-m", "plasmicheck.cli", "cache", "info", "--cache-dir", str(cache_dir)],
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "info",
+                "--cache-dir",
+                str(cache_dir),
+            ],
             capture_output=True,
             text=True,
             cwd=PROJECT_ROOT,
@@ -226,7 +259,9 @@ class TestCLI:
         assert "clean" in result.stdout
 
     @pytest.mark.unit
-    def test_cache_no_minimap2_required(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cache_no_minimap2_required(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that cache commands work without minimap2 on PATH."""
         import os
 
@@ -237,7 +272,15 @@ class TestCLI:
 
         # cache info should still work
         result = subprocess.run(
-            [sys.executable, "-m", "plasmicheck.cli", "cache", "info", "--cache-dir", str(cache_dir)],
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "info",
+                "--cache-dir",
+                str(cache_dir),
+            ],
             capture_output=True,
             text=True,
             cwd=PROJECT_ROOT,

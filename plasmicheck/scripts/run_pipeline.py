@@ -662,13 +662,19 @@ def run_pipeline(
 
                         # Step 4: cDNA positions (moved here to be in cache miss path)
                         logging.info("Extracting cDNA positions from the spliced alignment...")
-                        extract_plasmid_cdna_positions(plasmid_fasta, spliced_bam, unique_cdna_output)
+                        extract_plasmid_cdna_positions(
+                            plasmid_fasta, spliced_bam, unique_cdna_output
+                        )
 
                         # Store in cache for future hits
                         if cache:
                             try:
                                 cache.put_spliced(
-                                    plasmid_fasta, human_fasta, spliced_bam, spliced_fasta, unique_cdna_output
+                                    plasmid_fasta,
+                                    human_fasta,
+                                    spliced_bam,
+                                    spliced_fasta,
+                                    unique_cdna_output,
                                 )
                             except (OSError, PermissionError) as e:
                                 logging.warning(f"Cache write error: {e}")

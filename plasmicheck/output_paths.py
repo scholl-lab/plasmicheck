@@ -9,8 +9,9 @@ Output structure:
     ├── alignments/          # BAM alignment files
     ├── references/          # FASTA and index files
     ├── data/                # TSV results and positions
-    ├── reports/             # HTML reports
-    ├── plots/               # PNG plots (if static)
+    ├── reports/             # HTML reports, plots, and assets
+    │   ├── assets/          # plotly.min.js
+    │   └── plots/           # Standalone viewable plot HTMLs
     └── md5sum.txt           # Checksums (base level)
 """
 
@@ -65,11 +66,6 @@ class OutputPaths:
     def reports_dir(self) -> Path:
         """HTML reports directory."""
         return self.base / "reports"
-
-    @property
-    def plots_dir(self) -> Path:
-        """Static plots directory."""
-        return self.base / "plots"
 
     # -------------------------------------------------------------------------
     # Alignment file properties
@@ -176,7 +172,7 @@ class OutputPaths:
     def ensure_directories(self) -> None:
         """Create all output subdirectories.
 
-        Creates the 5 subdirectories (alignments, references, data, reports, plots)
+        Creates the 4 subdirectories (alignments, references, data, reports)
         with parents=True and exist_ok=True for idempotent directory creation.
         """
         for directory in [
@@ -184,6 +180,5 @@ class OutputPaths:
             self.references_dir,
             self.data_dir,
             self.reports_dir,
-            self.plots_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
