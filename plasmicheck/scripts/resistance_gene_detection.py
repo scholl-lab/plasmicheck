@@ -11,10 +11,13 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from Bio import SeqIO
 from Bio.SeqFeature import CompoundLocation
+
+if TYPE_CHECKING:
+    from .compare_alignments import InsertRegionData
 
 # ============================================================================
 # Curated Pattern Lists
@@ -177,7 +180,7 @@ def _identify_gene_name(
 
 
 def _gene_overlaps_insert(
-    gene_start: int, gene_end: int, insert_region: tuple[int, int] | None
+    gene_start: int, gene_end: int, insert_region: tuple[int, int] | InsertRegionData | None
 ) -> bool:
     """Check if gene overlaps insert region.
 
@@ -205,7 +208,7 @@ def _gene_overlaps_insert(
 
 def detect_resistance_genes(
     genbank_file: str,
-    insert_region: tuple[int, int] | None = None,
+    insert_region: tuple[int, int] | InsertRegionData | None = None,
     custom_patterns: list[str] | None = None,
 ) -> list[DetectedGene]:
     """Parse GenBank CDS features, match against patterns, exclude insert-overlapping genes.

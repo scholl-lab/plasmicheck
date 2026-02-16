@@ -5,6 +5,7 @@ import logging
 import os
 import subprocess
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import IO, Any
 
 import pysam
@@ -55,8 +56,37 @@ def calculate_alignment_score(read: Any) -> int:
     return score
 
 
-def parse_insert_region(cdna_positions_file: str) -> tuple[int, int]:
-    """Parse the cDNA_positions.txt file to extract the INSERT_REGION."""
+@dataclass
+class InsertRegionData:
+    """Parsed cDNA position and junction metadata."""
+
+    start: int
+    end: int
+    junction_count: int | None = None
+    exon_count: int | None = None
+    exon_lengths: list[int] | None = None
+    intron_lengths: list[int] | None = None
+    strand: str | None = None
+    chromosome: str | None = None
+    genomic_start: int | None = None
+    genomic_end: int | None = None
+
+    def __iter__(self) -> Iterator[int]:
+        """Support tuple unpacking: start, end = parse_insert_region(file)"""
+        return iter((self.start, self.end))
+
+    def __getitem__(self, index: int) -> int:
+        """Support tuple-like subscripting: insert_region[0], insert_region[1]"""
+        if index == 0:
+            return self.start
+        elif index == 1:
+            return self.end
+        else:
+            raise IndexError(f"InsertRegionData index out of range: {index}")
+
+
+def parse_insert_region(cdna_positions_file: str) -> InsertRegionData:
+    """Parse the cDNA_positions.txt file to extract the INSERT_REGION and junction metadata."""
     if not os.path.exists(cdna_positions_file):
         raise FileNotFoundError(
             f"Expected cDNA_positions.txt at {cdna_positions_file} but the file was not found."
@@ -65,14 +95,65 @@ def parse_insert_region(cdna_positions_file: str) -> tuple[int, int]:
     logging.debug(f"Looking for cDNA_positions.txt at: {cdna_positions_file}")
 
     with open(cdna_positions_file) as f:
-        lines = f.readlines()
+        lines = [line.strip() for line in f.readlines()]
 
-    cdna_start = int(lines[0].split(": ")[1])
-    cdna_end = int(lines[1].split(": ")[1])
-    return (cdna_start, cdna_end)
+    def _get_field(prefix: str) -> str | None:
+        """Helper to extract field value by prefix."""
+        for line in lines:
+            if line.startswith(prefix):
+                value = line.split(": ", 1)[1].strip()
+                return None if value == "NA" else value
+        return None
+
+    # Parse cDNA start/end (required fields from lines 0-1)
+    start_str = _get_field("cDNA start position in plasmid:")
+    end_str = _get_field("cDNA end position in plasmid:")
+
+    # Handle NA values for start/end (unmapped case)
+    cdna_start = 0 if start_str is None else int(start_str)
+    cdna_end = 0 if end_str is None else int(end_str)
+
+    # Parse junction metadata (optional fields, may not exist in old files)
+    junction_count_str = _get_field("SpliceJunctionCount:")
+    junction_count = int(junction_count_str) if junction_count_str is not None else None
+
+    exon_count_str = _get_field("ExonCount:")
+    exon_count = int(exon_count_str) if exon_count_str is not None else None
+
+    exon_lengths_str = _get_field("ExonLengths:")
+    exon_lengths = (
+        [int(x) for x in exon_lengths_str.split(",")] if exon_lengths_str is not None else None
+    )
+
+    intron_lengths_str = _get_field("IntronLengths:")
+    intron_lengths = (
+        [int(x) for x in intron_lengths_str.split(",")] if intron_lengths_str is not None else None
+    )
+
+    strand = _get_field("Strand:")
+    chromosome = _get_field("Chromosome:")
+
+    genomic_start_str = _get_field("GenomicStart:")
+    genomic_start = int(genomic_start_str) if genomic_start_str is not None else None
+
+    genomic_end_str = _get_field("GenomicEnd:")
+    genomic_end = int(genomic_end_str) if genomic_end_str is not None else None
+
+    return InsertRegionData(
+        start=cdna_start,
+        end=cdna_end,
+        junction_count=junction_count,
+        exon_count=exon_count,
+        exon_lengths=exon_lengths,
+        intron_lengths=intron_lengths,
+        strand=strand,
+        chromosome=chromosome,
+        genomic_start=genomic_start,
+        genomic_end=genomic_end,
+    )
 
 
-def read_overlaps_insert(read: Any, insert_region: tuple[int, int]) -> bool:
+def read_overlaps_insert(read: Any, insert_region: tuple[int, int] | InsertRegionData) -> bool:
     """Check if read alignment overlaps the insert region.
 
     Uses pysam half-open interval convention:
@@ -91,7 +172,9 @@ def read_overlaps_insert(read: Any, insert_region: tuple[int, int]) -> bool:
     return not (read_end <= insert_region[0] or read_start > insert_region[1])
 
 
-def calculate_coverage_outside_insert(plasmid_bam: str, insert_region: tuple[int, int]) -> float:
+def calculate_coverage_outside_insert(
+    plasmid_bam: str, insert_region: tuple[int, int] | InsertRegionData
+) -> float:
     """Calculate the coverage of reads mapping outside the INSERT_REGION."""
     total_aligned_bases_outside_insert = 0
 
@@ -132,7 +215,7 @@ def calculate_coverage_outside_insert(plasmid_bam: str, insert_region: tuple[int
 
 
 def count_mismatches_near_insert_end(
-    plasmid_bam: str, insert_region: tuple[int, int], window_size: int = 100
+    plasmid_bam: str, insert_region: tuple[int, int] | InsertRegionData, window_size: int = 100
 ) -> dict[str, int]:
     """Count reads with/without mismatches or clipping near the INSERT_REGION boundaries."""
     mismatches_near_insert = {"with_mismatches_or_clipping": 0, "without_mismatches_or_clipping": 0}
@@ -227,7 +310,7 @@ def _assign(
     human_score: int,
     *,
     plasmid_read: Any | None = None,
-    insert_region: tuple[int, int] | None = None,
+    insert_region: tuple[int, int] | InsertRegionData | None = None,
     score_margin: int = 0,
 ) -> str:
     """Assign read to category with optional backbone and margin filtering.
@@ -267,7 +350,7 @@ def _streaming_compare(
     human_ns_bam: str,
     outfile: IO[str],
     *,
-    insert_region: tuple[int, int] | None = None,
+    insert_region: tuple[int, int] | InsertRegionData | None = None,
     score_margin: int = 0,
 ) -> dict[str, int]:
     """Two-pointer merge over name-sorted BAMs.  Returns assigned counts."""
@@ -346,7 +429,7 @@ def compare_alignments(
     if cdna_positions_file is None:
         # Backward compatibility: derive from output_basename directory
         cdna_positions_file = os.path.join(os.path.dirname(output_basename), "cDNA_positions.txt")
-    insert_region: tuple[int, int] | None = None
+    insert_region: InsertRegionData | None = None
     try:
         insert_region = parse_insert_region(cdna_positions_file)
         logging.debug(f"INSERT_REGION extracted from {cdna_positions_file}: {insert_region}")
@@ -524,6 +607,32 @@ def compare_alignments(
                 summary_file.write("ResistanceGenes\tNone\n")
         else:
             summary_file.write("ResistanceGenesAvailable\tfalse\n")
+
+        # Junction metadata (Phase 15)
+        if insert_region is not None:
+            jc = insert_region.junction_count
+            ec = insert_region.exon_count
+            el = insert_region.exon_lengths
+            il = insert_region.intron_lengths
+
+            summary_file.write(f"SpliceJunctionCount\t{jc if jc is not None else 'NA'}\n")
+            summary_file.write(f"ExonCount\t{ec if ec is not None else 'NA'}\n")
+
+            if el is not None and len(el) > 0:
+                summary_file.write(f"ExonLengths\t{','.join(map(str, el))}\n")
+            else:
+                summary_file.write("ExonLengths\tNA\n")
+
+            if il is not None and len(il) > 0:
+                summary_file.write(f"IntronLengths\t{','.join(map(str, il))}\n")
+            else:
+                summary_file.write("IntronLengths\tNA\n")
+        else:
+            # Fallback for missing insert_region
+            summary_file.write("SpliceJunctionCount\tNA\n")
+            summary_file.write("ExonCount\tNA\n")
+            summary_file.write("ExonLengths\tNA\n")
+            summary_file.write("IntronLengths\tNA\n")
 
 
 if __name__ == "__main__":
