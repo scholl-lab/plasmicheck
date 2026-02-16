@@ -9,7 +9,9 @@ import pytest
 
 from plasmicheck.scripts.generate_summary_reports import (
     _extract_sample_plasmid,
+    _format_verdict_hover,
     _sanitize_for_excel,
+    aggregate_verdicts,
     apply_sorting,
     calculate_variations,
     create_metric_heatmap_data,
@@ -17,6 +19,8 @@ from plasmicheck.scripts.generate_summary_reports import (
     find_tsv_files,
     plot_coverage_outside_insert_boxplot,
     plot_metric_heatmap,
+    plot_verdict_bar_by_plasmid,
+    plot_verdict_bar_by_sample,
     read_compare_outputs,
     save_tables_as_tsv_and_excel,
 )
@@ -672,3 +676,258 @@ class TestSaveTablesExtended:
         # New files should NOT exist
         assert not (data_dir / "extended_metrics_table.tsv").exists()
         assert not (data_dir / "resistance_genes_table.tsv").exists()
+
+
+class TestAggregateVerdicts:
+    @pytest.mark.unit
+    def test_maps_verdicts_correctly(self) -> None:
+        """Test verdict string mapping to short labels."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2", "s3"],
+                "Plasmid": ["p1", "p1", "p1"],
+                "Category": ["Verdict", "Verdict", "Verdict"],
+                "Value": [
+                    "Sample is contaminated with plasmid DNA",
+                    "Sample contamination status is unclear",
+                    "Sample is not contaminated with plasmid DNA",
+                ],
+            }
+        )
+
+        full_df, by_plasmid, _by_sample = aggregate_verdicts(df)
+
+        # Check mappings
+        assert set(full_df["VerdictShort"]) == {"Contaminated", "Unclear", "Clean"}
+        assert len(full_df) == 3
+
+        # Check by_plasmid aggregation
+        assert by_plasmid.loc["p1", "Contaminated"] == 1
+        assert by_plasmid.loc["p1", "Unclear"] == 1
+        assert by_plasmid.loc["p1", "Clean"] == 1
+        assert by_plasmid.loc["p1", "No Result"] == 0
+
+    @pytest.mark.unit
+    def test_detects_missing_pairs_as_no_result(self) -> None:
+        """Test No Result detection for missing sample-plasmid combinations."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s1", "s2"],
+                "Plasmid": ["p1", "p2", "p1"],
+                "Category": ["Verdict", "Verdict", "Verdict"],
+                "Value": [
+                    "Sample is contaminated with plasmid DNA",
+                    "Sample is not contaminated with plasmid DNA",
+                    "Sample is not contaminated with plasmid DNA",
+                ],
+            }
+        )
+
+        full_df, _by_plasmid, _by_sample = aggregate_verdicts(df)
+
+        # s2 x p2 should be missing -> No Result
+        assert len(full_df) == 4  # 2 samples x 2 plasmids
+        no_result_rows = full_df[full_df["VerdictShort"] == "No Result"]
+        assert len(no_result_rows) == 1
+        assert no_result_rows.iloc[0]["Sample"] == "s2"
+        assert no_result_rows.iloc[0]["Plasmid"] == "p2"
+
+    @pytest.mark.unit
+    def test_column_order_preserved(self) -> None:
+        """Test that verdict columns are in correct order."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "Category": ["Verdict", "Verdict"],
+                "Value": [
+                    "Sample is contaminated with plasmid DNA",
+                    "Sample is not contaminated with plasmid DNA",
+                ],
+            }
+        )
+
+        _, by_plasmid, by_sample = aggregate_verdicts(df)
+
+        expected_order = ["Clean", "Unclear", "Contaminated", "No Result"]
+        assert list(by_plasmid.columns) == expected_order
+        assert list(by_sample.columns) == expected_order
+
+    @pytest.mark.unit
+    def test_empty_verdict_data_returns_empty(self) -> None:
+        """Test that empty verdict data returns empty DataFrames."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["SomeOtherCategory"],
+                "Value": ["123"],
+            }
+        )
+
+        full_df, by_plasmid, by_sample = aggregate_verdicts(df)
+
+        assert full_df.empty
+        assert by_plasmid.empty
+        assert by_sample.empty
+
+
+class TestFormatVerdictHover:
+    @pytest.mark.unit
+    def test_small_list_shows_all(self) -> None:
+        """Test hover with <= 10 names shows all names."""
+        names = ["sample1", "sample2", "sample3"]
+        result = _format_verdict_hover("Clean", 3, names)
+        assert "Clean" in result
+        assert "Count: 3" in result
+        assert "sample1" in result
+        assert "sample2" in result
+        assert "sample3" in result
+        assert "...and" not in result
+
+    @pytest.mark.unit
+    def test_large_list_truncated(self) -> None:
+        """Test hover with > 10 names shows first 10 + truncation."""
+        names = [f"sample{i}" for i in range(15)]
+        result = _format_verdict_hover("Contaminated", 15, names, max_display=10)
+        assert "Contaminated" in result
+        assert "Count: 15" in result
+        assert "sample0" in result
+        assert "sample9" in result
+        assert "...and 5 more" in result
+        assert "sample14" not in result
+
+    @pytest.mark.unit
+    def test_empty_list_shows_only_verdict_and_count(self) -> None:
+        """Test hover with empty name list shows verdict and count only."""
+        result = _format_verdict_hover("Unclear", 0, [])
+        assert "Unclear" in result
+        assert "Count: 0" in result
+        # Should not have extra lines
+        assert result.count("<br>") == 1  # Only one <br> between verdict and count
+
+
+class TestPlotVerdictBarByPlasmid:
+    @pytest.mark.unit
+    def test_creates_html_file(self, tmp_path: Path) -> None:
+        """Test plot_verdict_bar_by_plasmid creates HTML output."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2", "s3"],
+                "Plasmid": ["p1", "p1", "p1"],
+                "Category": ["Verdict", "Verdict", "Verdict"],
+                "Value": [
+                    "Sample is contaminated with plasmid DNA",
+                    "Sample contamination status is unclear",
+                    "Sample is not contaminated with plasmid DNA",
+                ],
+            }
+        )
+
+        html_file, png_file = plot_verdict_bar_by_plasmid(df, str(tmp_path), static_report=False)
+
+        assert Path(html_file).exists()
+        assert png_file is None
+
+    @pytest.mark.unit
+    def test_empty_verdict_data_returns_empty_string(self, tmp_path: Path) -> None:
+        """Test empty verdict data returns empty paths."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["SomeOther"],
+                "Value": ["123"],
+            }
+        )
+
+        html_file, png_file = plot_verdict_bar_by_plasmid(df, str(tmp_path), static_report=False)
+
+        assert html_file == ""
+        assert png_file is None
+
+    @pytest.mark.unit
+    def test_static_report_triggers_matplotlib(self, tmp_path: Path) -> None:
+        """Test static_report=True with matplotlib backend creates PNG."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "Category": ["Verdict", "Verdict"],
+                "Value": [
+                    "Sample is contaminated with plasmid DNA",
+                    "Sample is not contaminated with plasmid DNA",
+                ],
+            }
+        )
+
+        html_file, png_file = plot_verdict_bar_by_plasmid(
+            df, str(tmp_path), static_report=True, plot_backend="matplotlib"
+        )
+
+        assert Path(html_file).exists()
+        assert png_file is not None
+        assert Path(png_file).exists()
+
+
+class TestPlotVerdictBarBySample:
+    @pytest.mark.unit
+    def test_creates_html_file(self, tmp_path: Path) -> None:
+        """Test plot_verdict_bar_by_sample creates HTML output."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s1", "s1"],
+                "Plasmid": ["p1", "p2", "p3"],
+                "Category": ["Verdict", "Verdict", "Verdict"],
+                "Value": [
+                    "Sample is contaminated with plasmid DNA",
+                    "Sample contamination status is unclear",
+                    "Sample is not contaminated with plasmid DNA",
+                ],
+            }
+        )
+
+        html_file, png_file = plot_verdict_bar_by_sample(df, str(tmp_path), static_report=False)
+
+        assert Path(html_file).exists()
+        assert png_file is None
+
+    @pytest.mark.unit
+    def test_empty_verdict_data_returns_empty_string(self, tmp_path: Path) -> None:
+        """Test empty verdict data returns empty paths."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1"],
+                "Plasmid": ["p1"],
+                "Category": ["SomeOther"],
+                "Value": ["123"],
+            }
+        )
+
+        html_file, png_file = plot_verdict_bar_by_sample(df, str(tmp_path), static_report=False)
+
+        assert html_file == ""
+        assert png_file is None
+
+    @pytest.mark.unit
+    def test_static_report_triggers_matplotlib(self, tmp_path: Path) -> None:
+        """Test static_report=True with matplotlib backend creates PNG."""
+        df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "Category": ["Verdict", "Verdict"],
+                "Value": [
+                    "Sample is contaminated with plasmid DNA",
+                    "Sample is not contaminated with plasmid DNA",
+                ],
+            }
+        )
+
+        html_file, png_file = plot_verdict_bar_by_sample(
+            df, str(tmp_path), static_report=True, plot_backend="matplotlib"
+        )
+
+        assert Path(html_file).exists()
+        assert png_file is not None
+        assert Path(png_file).exists()
