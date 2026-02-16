@@ -66,7 +66,7 @@ def sample_cdna_positions(tmp_path: Path) -> Path:
 def test_cache_manager_creates_directories(tmp_path: Path) -> None:
     """Test that CacheManager creates cache directory structure."""
     cache_root = tmp_path / "cache"
-    cache = CacheManager(cache_root)
+    _cache = CacheManager(cache_root)
 
     assert cache_root.exists()
     assert (cache_root / "indexes").exists()
@@ -81,7 +81,7 @@ def test_cache_manager_handles_existing_directory(tmp_path: Path) -> None:
     cache_root.mkdir(parents=True)
 
     # Should not raise
-    cache = CacheManager(cache_root)
+    _cache = CacheManager(cache_root)
     assert cache_root.exists()
 
 
@@ -439,7 +439,7 @@ def test_multiple_entries_evicted_if_needed(tmp_path: Path) -> None:
         time.sleep(0.01)
 
     # Put all entries
-    for fasta, mmi, fai in zip(fastas, mmis, fais):
+    for fasta, mmi, fai in zip(fastas, mmis, fais, strict=True):
         cache.put_index(str(fasta), str(mmi), str(fai))
 
     # Due to tiny limit, only the last entry should remain

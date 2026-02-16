@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..cache_manager import CacheManager
 from ..config import get_config
 from ..output_paths import OutputPaths
 from ..thread_config import allocate_threads, detect_cpu_count
@@ -437,6 +438,8 @@ def run_pipeline(
     plotly_mode: str = "directory",
     plot_backend: str = "plotly",
     threads: int | None = None,
+    cache_dir: str | None = None,
+    no_cache: bool = False,
 ) -> None:
     if sequencing_files_r1 is None:
         raise ValueError("-sf1 (sequencing_files_r1) is required.")
@@ -451,6 +454,17 @@ def run_pipeline(
         sequencing_files_r2=sequencing_files_r2,
         cdna_output=cdna_output,
     )
+
+    # Initialize cache
+    cache: CacheManager | None = None
+    if not no_cache:
+        try:
+            cache_path = Path(cache_dir) if cache_dir else Path.home() / ".plasmicheck" / "cache"
+            cache = CacheManager(cache_path)
+            logging.info(f"Cache initialized at {cache_path}")
+        except (OSError, PermissionError) as e:
+            logging.warning(f"Cache directory inaccessible: {e}. Disabling cache for this run.")
+            cache = None
 
     if dry_run:
         print_plan(plan)
@@ -583,8 +597,33 @@ def run_pipeline(
                         # Defensive: should not happen after upfront phase
                         create_indexes(human_fasta, overwrite)
                         plan.built_indexes.add(human_index)
-                    # Always create plasmid index (per-combination, no dedup)
-                    create_indexes(plasmid_fasta, overwrite)
+
+                    # Check cache for plasmid index (provides within-run AND cross-run dedup)
+                    cached_index = None
+                    if cache:
+                        try:
+                            cached_index = cache.get_index(plasmid_fasta)
+                        except (OSError, PermissionError) as e:
+                            logging.warning(f"Cache read error: {e}")
+
+                    if cached_index:
+                        # Cache HIT: restore both .mmi and .fai to expected paths
+                        shutil.copy2(str(cached_index["mmi"]), plasmid_index)
+                        fai_target = f"{plasmid_fasta}.fai"
+                        shutil.copy2(str(cached_index["fai"]), fai_target)
+                        # No need to call create_indexes — both files now exist
+                    else:
+                        # Cache MISS: build indexes normally
+                        create_indexes(plasmid_fasta, overwrite)
+                        # Store in cache for future hits (within this run and across runs)
+                        if cache:
+                            plasmid_mmi = str(paths.plasmid_index)  # {base}.mmi
+                            plasmid_fai = f"{plasmid_fasta}.fai"
+                            try:
+                                cache.put_index(plasmid_fasta, plasmid_mmi, plasmid_fai)
+                            except (OSError, PermissionError) as e:
+                                logging.warning(f"Cache write error: {e}")
+
                     if md5_level in ["all", "intermediate"]:
                         write_md5sum(plasmid_index, "intermediate", output_subfolder)
                     if md5_level in ["all"]:
@@ -594,30 +633,60 @@ def run_pipeline(
                     # Step 3: Spliced alignment
                     spliced_bam = str(paths.spliced_bam)
                     spliced_fasta = str(paths.spliced_fasta)
-                    logging.info(
-                        f"Performing spliced alignment for {sequencing_file} and {plasmid_file}..."
-                    )
-                    spanned_regions = spliced_alignment(
-                        human_index, plasmid_fasta, spliced_bam, padding
-                    )
-                    logging.info("Extracting human reference regions...")
-                    extract_human_reference(human_fasta, spanned_regions, spliced_fasta)
+                    unique_cdna_output = cdna_output or str(paths.cdna_positions)
+
+                    # Check cache for spliced alignment artifacts
+                    cached_spliced = None
+                    if cache:
+                        try:
+                            cached_spliced = cache.get_spliced(plasmid_fasta, human_fasta)
+                        except (OSError, PermissionError) as e:
+                            logging.warning(f"Cache read error: {e}")
+
+                    if cached_spliced:
+                        # Cache HIT: restore all three files to expected paths
+                        shutil.copy2(str(cached_spliced["bam"]), spliced_bam)
+                        shutil.copy2(str(cached_spliced["fasta"]), spliced_fasta)
+                        shutil.copy2(str(cached_spliced["cdna_positions"]), unique_cdna_output)
+                        # Skip spliced alignment, extract_human_reference, and extract_plasmid_cdna_positions
+                    else:
+                        # Cache MISS: run spliced alignment as before
+                        logging.info(
+                            f"Performing spliced alignment for {sequencing_file} and {plasmid_file}..."
+                        )
+                        spanned_regions = spliced_alignment(
+                            human_index, plasmid_fasta, spliced_bam, padding
+                        )
+                        logging.info("Extracting human reference regions...")
+                        extract_human_reference(human_fasta, spanned_regions, spliced_fasta)
+
+                        # Step 4: cDNA positions (moved here to be in cache miss path)
+                        logging.info("Extracting cDNA positions from the spliced alignment...")
+                        extract_plasmid_cdna_positions(plasmid_fasta, spliced_bam, unique_cdna_output)
+
+                        # Store in cache for future hits
+                        if cache:
+                            try:
+                                cache.put_spliced(
+                                    plasmid_fasta, human_fasta, spliced_bam, spliced_fasta, unique_cdna_output
+                                )
+                            except (OSError, PermissionError) as e:
+                                logging.warning(f"Cache write error: {e}")
+
                     if md5_level in ["all", "intermediate"]:
                         write_md5sum(spliced_bam, "intermediate", output_subfolder)
                         write_md5sum(spliced_fasta, "intermediate", output_subfolder)
 
+                    # Always index the spliced FASTA (fast, not worth caching separately)
                     spliced_index = str(paths.spliced_index)
                     create_indexes(spliced_fasta, overwrite)
                     if md5_level in ["all", "intermediate"]:
                         write_md5sum(spliced_index, "intermediate", output_subfolder)
+                        write_md5sum(unique_cdna_output, "intermediate", output_subfolder)
                     prog.advance()
 
-                    # Step 4: cDNA positions
-                    unique_cdna_output = cdna_output or str(paths.cdna_positions)
-                    logging.info("Extracting cDNA positions from the spliced alignment...")
-                    extract_plasmid_cdna_positions(plasmid_fasta, spliced_bam, unique_cdna_output)
-                    if md5_level in ["all", "intermediate"]:
-                        write_md5sum(unique_cdna_output, "intermediate", output_subfolder)
+                    # Note: Step 4 (cDNA positions) is now integrated into Step 3 above
+                    # to be part of the cache miss path
                     prog.advance()
 
                     # Step 5: Align reads
