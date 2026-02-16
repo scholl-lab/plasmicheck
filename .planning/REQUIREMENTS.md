@@ -23,12 +23,12 @@ Requirements for v0.34.0: Robustness & Infrastructure. Each maps to roadmap phas
 
 ### Index & Spliced Caching (#39, #43)
 
-- [ ] **CACHE-01**: `CacheManager` module with content-addressed cache (`~/.plasmicheck/cache/`)
-- [ ] **CACHE-02**: Within-run plasmid index deduplication (extend `built_indexes` pattern)
-- [ ] **CACHE-03**: Cross-run plasmid index caching with manifest (tool versions, input hashes)
-- [ ] **CACHE-04**: Cross-run spliced alignment caching (BAM, spliced reference, cDNA positions)
-- [ ] **CACHE-05**: CLI flags: `--cache-dir`, `--no-cache`
-- [ ] **CACHE-06**: Cache management subcommand: `plasmicheck cache info|clean`
+- [x] **CACHE-01**: `CacheManager` module with content-addressed cache (`~/.plasmicheck/cache/`)
+- [x] **CACHE-02**: Within-run plasmid index deduplication (extend `built_indexes` pattern)
+- [x] **CACHE-03**: Cross-run plasmid index caching with manifest (tool versions, input hashes)
+- [x] **CACHE-04**: Cross-run spliced alignment caching (BAM, spliced reference, cDNA positions)
+- [x] **CACHE-05**: CLI flags: `--cache-dir`, `--no-cache`
+- [x] **CACHE-06**: Cache management subcommand: `plasmicheck cache info|clean`
 
 ### Output Restructuring (#80)
 
@@ -89,12 +89,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OUT-02 | Phase 13 | Complete |
 | OUT-03 | Phase 13 | Complete |
 | OUT-04 | Phase 13 | Complete |
-| CACHE-01 | Phase 14 | Pending |
-| CACHE-02 | Phase 14 | Pending |
-| CACHE-03 | Phase 14 | Pending |
-| CACHE-04 | Phase 14 | Pending |
-| CACHE-05 | Phase 14 | Pending |
-| CACHE-06 | Phase 14 | Pending |
+| CACHE-01 | Phase 14 | Complete |
+| CACHE-02 | Phase 14 | Complete |
+| CACHE-03 | Phase 14 | Complete |
+| CACHE-04 | Phase 14 | Complete |
+| CACHE-05 | Phase 14 | Complete |
+| CACHE-06 | Phase 14 | Complete |
 | SJ-01 | Phase 15 | Pending |
 | SJ-02 | Phase 15 | Pending |
 | VIS-01 | Phase 16 | Pending |
@@ -111,4 +111,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-15*
-*Last updated: 2026-02-15 after roadmap creation (traceability complete)*
+*Last updated: 2026-02-16 after Phase 14 completion (CACHE-01..06 complete)*

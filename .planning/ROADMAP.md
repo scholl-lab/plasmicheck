@@ -99,9 +99,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 14-01-PLAN.md — CacheManager module with content-addressed storage, manifest, and unit tests
-- [ ] 14-02-PLAN.md — Pipeline integration for index and spliced alignment caching
-- [ ] 14-03-PLAN.md — Cache management CLI subcommand (info, clean)
+- [x] 14-01-PLAN.md — CacheManager module with content-addressed storage, manifest, and unit tests
+- [x] 14-02-PLAN.md — Pipeline integration for index and spliced alignment caching
+- [x] 14-03-PLAN.md — Cache management CLI subcommand (info, clean)
 
 #### Phase 15: Splice Junction Metadata
 **Goal:** Reports display splice junction and exon counts extracted from spliced alignments
@@ -144,12 +144,12 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16
 | 11. Summary Report Integration | v0.33.0 | 2/2 | Complete | 2026-02-15 |
 | 12. Format Hardening | v0.34.0 | 2/2 | Complete | 2026-02-15 |
 | 13. Output Restructuring | v0.34.0 | 2/2 | Complete | 2026-02-15 |
-| 14. Cache Infrastructure | v0.34.0 | 0/3 | Not started | - |
+| 14. Cache Infrastructure | v0.34.0 | 3/3 | Complete | 2026-02-16 |
 | 15. Splice Junction Metadata | v0.34.0 | 0/1 | Not started | - |
 | 16. Summary Visualization | v0.34.0 | 0/2 | Not started | - |
 
-**v0.34.0 Progress:** 4/10 plans complete
+**v0.34.0 Progress:** 7/10 plans complete
 
 ---
 *Roadmap created: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 14 planning*
+*Last updated: 2026-02-16 after Phase 14 execution*
