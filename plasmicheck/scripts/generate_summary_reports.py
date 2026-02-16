@@ -250,8 +250,9 @@ def calculate_variations(ratio_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataF
 
     logging.info("Calculating variations for contamination ratios.")
 
-    # Convert 'Value' to numeric, ensuring all entries are valid numbers
-    ratio_df.loc[:, "Value"] = pd.to_numeric(ratio_df["Value"], errors="coerce")
+    # Convert 'Value' to numeric, ensuring all entries are valid numbers.
+    # Use .assign() to avoid in-place dtype conflict with StringDtype (pandas 2.2+).
+    ratio_df = ratio_df.assign(Value=pd.to_numeric(ratio_df["Value"], errors="coerce"))
     boxplot_data: pd.DataFrame = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value")
 
     # Drop NaNs
@@ -359,8 +360,8 @@ def plot_heatmap(
 
     logging.info("Generating heatmap for contamination ratios.")
 
-    # Use .loc[] to avoid SettingWithCopyWarning
-    ratio_df.loc[:, "Value"] = pd.to_numeric(ratio_df["Value"], errors="coerce")
+    # Use .assign() to avoid dtype conflict with StringDtype (pandas 2.2+)
+    ratio_df = ratio_df.assign(Value=pd.to_numeric(ratio_df["Value"], errors="coerce"))
 
     # Pivot the DataFrame for the heatmap
     ratio_data: pd.DataFrame = ratio_df.pivot(
