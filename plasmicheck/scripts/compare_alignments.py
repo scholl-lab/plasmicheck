@@ -109,9 +109,16 @@ def parse_insert_region(cdna_positions_file: str) -> InsertRegionData:
     start_str = _get_field("cDNA start position in plasmid:")
     end_str = _get_field("cDNA end position in plasmid:")
 
-    # Handle NA values for start/end (unmapped case)
-    cdna_start = 0 if start_str is None else int(start_str)
-    cdna_end = 0 if end_str is None else int(end_str)
+    # NA values mean no spliced alignment was found — insert region is unavailable.
+    # Raise ValueError so callers fall back to no-filtering behavior rather than
+    # using a bogus (0, 0) region that would misclassify reads as Backbone_Only.
+    if start_str is None or end_str is None:
+        raise ValueError(
+            "Insert region unavailable (cDNA start/end are NA). "
+            "Backbone filtering will be disabled."
+        )
+    cdna_start = int(start_str)
+    cdna_end = int(end_str)
 
     # Parse junction metadata (optional fields, may not exist in old files)
     junction_count_str = _get_field("SpliceJunctionCount:")

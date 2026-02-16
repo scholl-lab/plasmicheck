@@ -191,8 +191,8 @@ class TestParseInsertRegion:
         assert result.genomic_end is None
 
     @pytest.mark.unit
-    def test_na_values(self, tmp_path: Path) -> None:
-        """Test handling of NA values (unmapped case)."""
+    def test_na_values_raises_valueerror(self, tmp_path: Path) -> None:
+        """Test that NA cDNA start/end raises ValueError (insert region unavailable)."""
         f = tmp_path / "cDNA_positions.txt"
         f.write_text(
             "cDNA start position in plasmid: NA\n"
@@ -207,20 +207,8 @@ class TestParseInsertRegion:
             "GenomicStart: NA\n"
             "GenomicEnd: NA\n"
         )
-        result = parse_insert_region(str(f))
-        assert isinstance(result, InsertRegionData)
-        # NA values for start/end should become 0
-        assert result.start == 0
-        assert result.end == 0
-        # Other NA values should be None
-        assert result.junction_count is None
-        assert result.exon_count is None
-        assert result.exon_lengths is None
-        assert result.intron_lengths is None
-        assert result.strand is None
-        assert result.chromosome is None
-        assert result.genomic_start is None
-        assert result.genomic_end is None
+        with pytest.raises(ValueError, match="Insert region unavailable"):
+            parse_insert_region(str(f))
 
 
 class TestInsertRegionDataIterator:

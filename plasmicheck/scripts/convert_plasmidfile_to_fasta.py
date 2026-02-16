@@ -62,7 +62,8 @@ def convert_plasmidfile_to_fasta(
     # Determine the sanitized record ID from filename
     sanitized_record_id = sanitize_filename(Path(input_file).stem)
 
-    # Determine the input file type and convert accordingly
+    # Determine the input file type and convert accordingly.
+    # Use try/finally to ensure the sanitized temp copy is always cleaned up.
     try:
         if file_type == "genbank":
             # Parse records, override ID, then write
@@ -106,6 +107,14 @@ def convert_plasmidfile_to_fasta(
                 # Convert snapgene -> genbank
                 SeqIO.write(sg_records, gb_output_file, "genbank")
                 logging.info(f"Preserved GenBank file: {gb_output_file}")
+        elif file_type == "fasta":
+            # Already FASTA — re-write with sanitized record IDs
+            fa_records: Any = list(SeqIO.parse(sanitized_input_file, "fasta"))  # type: ignore[no-untyped-call]
+            for record in fa_records:
+                record.id = sanitized_record_id
+                record.name = sanitized_record_id
+                record.description = "converted_from=fasta"
+            SeqIO.write(fa_records, output_file, "fasta")
         else:
             raise ValueError(
                 f"Unsupported file type: {file_type}. Supported: snapgene, xdna, genbank, fasta"
@@ -127,6 +136,11 @@ def convert_plasmidfile_to_fasta(
                 f"Failed to parse {input_file}. Supported formats: SnapGene (.dna), xDNA (.xdna), GenBank (.gb/.gbk), FASTA (.fasta/.fa). "
                 f"If unsure, export as GenBank from your cloning software."
             ) from e
+    finally:
+        # Always clean up the sanitized temp copy, even on failure
+        if os.path.exists(sanitized_input_file):
+            os.remove(sanitized_input_file)
+            logging.debug(f"Removed sanitized copy: {sanitized_input_file}")
 
     if generate_shifted:
         logging.info(f"Generating shifted reference for {output_file}")
@@ -150,10 +164,6 @@ def convert_plasmidfile_to_fasta(
         except Exception as e:
             logging.error(f"Error generating shifted reference: {e}")
             raise
-
-    # Remove the sanitized copy of the input file
-    os.remove(sanitized_input_file)
-    logging.debug(f"Removed sanitized copy: {sanitized_input_file}")
 
 
 if __name__ == "__main__":
