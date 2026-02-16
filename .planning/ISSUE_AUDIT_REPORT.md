@@ -1,14 +1,14 @@
 # PlasmiCheck Open Issues Audit Report
 
-**Date:** 2026-02-15 (updated after v0.33.0 milestone)
-**Codebase version:** v0.33.0 (branch `main`)
-**Total open issues:** 25 (28 closed total: 6 during audit + 6 in PR #91 + 6 in PR #92 + 0 in v0.32.0 + 4 in PR #93 + 6 pre-existing)
+**Date:** 2026-02-16 (updated after v0.34.0 release)
+**Codebase version:** v0.34.0 (branch `main`)
+**Total open issues:** 16 (37 closed total)
 
 ---
 
 ## Executive Summary
 
-Of the original 53 issues (48 original + 5 added later), **28 have been closed** across 5 milestones. v0.33.0 (Scientific Enhancements, Phases 8-11) closed 4 issues: insert-region filtering (#82), resistance gene detection (#64), coverage metrics in summary (#65), and metrics integration (#58). **25 remain open**. The remaining issues span bugs (2), features (19), and documentation (2), plus 2 partially resolved.
+Of the original 53 issues, **37 have been closed** across 6 milestones plus post-release triage. v0.34.0 (Robustness & Infrastructure, Phases 12-16) closed 6 issues: xDNA format hardening (#75), output restructuring (#80), index caching (#39), spliced alignment caching (#43), additional plasmid formats (#83), and summary visualization plots (#51). Post-release triage closed 3 more: scatter on boxplot (#61, already implemented), custom report template (#26, wontfix), favicon (#53, wontfix). **16 remain open**. The remaining issues span bugs (1), features (11), documentation (2), and partially resolved (2).
 
 ---
 
@@ -25,63 +25,57 @@ These issues were confirmed resolved and closed on 2026-02-13 with comments refe
 | **#28** | Feat: Implement shifted reference to fix MAPQ0 | Pre-existing — `convert_plasmidfile_to_fasta.py:81-102` | **CLOSED** |
 | **#15** | Feat: Add an overwrite argument | Pre-existing — `-w`/`--overwrite` on convert, index, pipeline | **CLOSED** |
 
-> **Note on #15:** Closed with comment that granular overwrite levels (if still desired) should be tracked in a new, more specific issue.
-
 ---
 
 ## 1b. Issues Closed in PR #91 (v0.30.0)
 
-These 6 Tier 2 issues were fixed in [PR #91](https://github.com/scholl-lab/plasmicheck/pull/91), merged on 2026-02-13, tagged `v0.30.0`.
-
 | # | Title | Fix Summary |
 |---|-------|-------------|
 | **#86** | Race condition in create_indexes.py | Added `filelock` dependency; `create_indexes()` uses `FileLock` with fast-path pre-check and partial-index detection |
-| **#63** | MD5sum file duplicates | `write_md5sum()` reads existing entries into a set before appending, preventing duplicates |
-| **#81** | Template files not found correctly | New `plasmicheck/resources.py` uses `importlib.resources` for reliable path resolution; all template/logo refs updated |
+| **#63** | MD5sum file duplicates | `write_md5sum()` reads existing entries into a set before appending |
+| **#81** | Template files not found correctly | `plasmicheck/resources.py` uses `importlib.resources` for reliable path resolution |
 | **#79** | "wahr" in Excel output | `_sanitize_for_excel()` converts boolean columns to strings before Excel export |
-| **#87** | Singleton pattern for config management | New `plasmicheck/config.py` lazy-loads `config.json` once; replaced duplicated `json.load()` in 10 source files |
-| **#88** | Centralize common CLI arguments | Parent parsers `_logging_parser` / `_threshold_parser` in `cli.py`; shared helpers `add_logging_args()` / `configure_logging_from_args()` in `utils.py` |
+| **#87** | Singleton pattern for config management | `plasmicheck/config.py` lazy-loads `config.json` once; replaced duplicated `json.load()` in 10 source files |
+| **#88** | Centralize common CLI arguments | Parent parsers in `cli.py`; shared helpers in `utils.py` |
 
 ---
 
 ## 1c. Issues Closed in PR #92 (v0.31.0 + v0.32.0)
 
-These 6 issues were implemented in Phase 3 (v0.31.0) and closed when [PR #92](https://github.com/scholl-lab/plasmicheck/pull/92) merged to main on 2026-02-14.
-
 | # | Title | Fix Summary |
 |---|-------|-------------|
-| **#89** | Improve paired-end file handling | Replaced comma-separated convention with explicit `-sf1`/`-sf2` arguments. `SequencingInput` dataclass. |
-| **#85** | Optimize memory in compare_alignments.py | Streaming name-sorted BAM merge. Memory O(1) regardless of BAM size. |
-| **#33** | Docker containerization | Multi-stage Dockerfile + `.dockerignore` + CI workflow. Builds minimap2/samtools from source. |
-| **#32** | Dry-run mode | `--dry-run` / `-n` flag. Plan-execute refactor: `build_plan()` + `print_plan()` + execute. |
-| **#29** | Progress bar for long operations | Rich progress bar wrapping pipeline steps. `--no-progress` flag + auto-disable on non-TTY. |
-| **#71** | Test dataset creation | Synthetic FASTA/FASTQ/GenBank test data (~50 KB). Integration tests. 125 → 170 tests. |
+| **#89** | Improve paired-end file handling | Explicit `-sf1`/`-sf2` arguments. `SequencingInput` dataclass. |
+| **#85** | Optimize memory in compare_alignments.py | Streaming name-sorted BAM merge. Memory O(1). |
+| **#33** | Docker containerization | Multi-stage Dockerfile + `.dockerignore` + CI workflow. |
+| **#32** | Dry-run mode | `--dry-run` / `-n` flag. Plan-execute refactor. |
+| **#29** | Progress bar for long operations | Rich progress bar. `--no-progress` flag + auto-disable on non-TTY. |
+| **#71** | Test dataset creation | Synthetic FASTA/FASTQ/GenBank test data (~50 KB). Integration tests. |
 
 ---
 
-## 1d. v0.32.0 Performance Optimization (Phases 4-7)
-
-v0.32.0 did not close any GitHub issues (performance goals were tracked internally as requirements, not as issues). Key deliverables that affect future issue work:
-
-| Improvement | Relevant Issues |
-|-------------|-----------------|
-| `PipelinePlan.built_indexes` — within-run index dedup | Partially addresses **#39** (cross-run md5sum caching still open) |
-| `scripts/benchmark.py` — per-step timing tool | Partially addresses **#72** (standardized benchmark dataset still needed) |
-| `--plot-backend matplotlib` — Kaleido-free PNG | Resolves Kaleido dependency concern (not a tracked issue) |
-| Lazy imports, opt-in static reports | Performance improvements (not tracked issues) |
-
----
-
-## 1e. Issues Closed in PR #93 (v0.33.0)
-
-These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://github.com/scholl-lab/plasmicheck/pull/93) merged to main on 2026-02-15.
+## 1d. Issues Closed in PR #93 (v0.33.0)
 
 | # | Title | Fix Summary |
 |---|-------|-------------|
-| **#82** | Filter ambiguous reads / backbone-only reads | Phase 8: Insert-region-aware filtering. Reads mapping only to backbone classified as `Backbone_Only`, excluded from contamination ratio. |
-| **#64** | Coverage on antibiotic resistance genes | Phase 10: Resistance gene detection. Extracts genes from GenBank annotations, reports per-gene depth/breadth. |
-| **#58** | Integrate CoverageOutsideINSERT and MismatchesNearINSERT in summary report | Phase 9+11: Full coverage metrics (depth, breadth, CV) integrated into summary with heatmaps, boxplots, TSV/Excel export. |
-| **#65** | Add coverage to summary report | Phase 9+11: Coverage for insert and backbone regions in single-sample and summary reports. |
+| **#82** | Filter ambiguous reads / backbone-only reads | Insert-region-aware filtering. Reads mapping only to backbone classified as `Backbone_Only`. |
+| **#64** | Coverage on antibiotic resistance genes | Resistance gene detection from GenBank annotations, per-gene depth/breadth. |
+| **#58** | Integrate CoverageOutsideINSERT and MismatchesNearINSERT in summary report | Full coverage metrics integrated into summary with heatmaps, boxplots, TSV/Excel. |
+| **#65** | Add coverage to summary report | Coverage for insert and backbone regions in single-sample and summary reports. |
+
+---
+
+## 1e. Issues Closed in PR #94 (v0.34.0)
+
+These 6 issues were resolved in Phases 12-16 and closed when [PR #94](https://github.com/scholl-lab/plasmicheck/pull/94) merged to main on 2026-02-16, tagged `v0.34.0`.
+
+| # | Title | Fix Summary |
+|---|-------|-------------|
+| **#75** | Bug: some xDNA files don't work | Phase 12: Magic byte format detection, sanitized filename as record ID, actionable error messages for unsupported xDNA versions |
+| **#80** | Structure output folders with subfolders | Phase 13: `OutputPaths` frozen dataclass, subfolder layout (`alignments/`, `references/`, `data/`, `reports/`, `plots/`), depth-agnostic summary reader |
+| **#39** | Reuse indices based on md5sum | Phase 14: Content-addressed `CacheManager` at `~/.plasmicheck/cache/`, cross-run index caching with manifest, CLI flags `--cache-dir`/`--no-cache`, `plasmicheck cache info\|clean` subcommand |
+| **#43** | Reuse spliced alignment based on md5sum | Phase 14: Cross-run spliced alignment caching (BAM, spliced reference, cDNA positions) in `CacheManager` |
+| **#83** | Other plasmid formats | Phase 12: SnapGene (`.dna`) + FASTA (`.fasta`/`.fa`) support via auto-detection with magic bytes |
+| **#51** | Additional plots for summary report | Phase 16: Verdict bar charts by plasmid and by sample (Plotly + matplotlib). Violin + facet scatter deferred to v0.35.0+ (VIS-05/VIS-06) |
 
 ---
 
@@ -89,18 +83,14 @@ These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://
 
 | # | Title | What's Done | What Remains |
 |---|-------|------------|--------------|
-| **#31** | Feat: Automated versioning with each commit | Manual semver works. Tags v0.28.0 through v0.33.0 exist. GitHub releases created. | No automated bump on commit (no `semantic-release` or CI release workflow). |
-| **#78** | Bug: Jobs not finished in snakemake | Race condition (#86) fixed in v0.30.0. | Re-test with v0.30.0+ to confirm fix. If still failing, investigate other causes. |
+| **#31** | Automated versioning with each commit | Manual semver works. Tags v0.28.0 through v0.34.0. GitHub releases created. | No automated bump (no `semantic-release` or CI release workflow). |
+| **#68** | Normalize by splice junction count | Phase 15: Splice junction count + exon count extracted from CIGAR, stored in cDNA_positions.txt and summary.tsv/reports. | Actual normalization method not implemented. Threshold recalibration needed. Deferred to v0.35.0+. |
+| **#84** | Extract splice positions (exon boundaries) | Phase 15: Junction count + exon count extracted. | Full exon boundary positions (start/end of each exon) not extracted. Needed for IGV screenshot annotations. |
+| **#78** | Snakemake jobs randomly fail | Race condition (#86) fixed in v0.30.0. | Needs re-testing with v0.30.0+ to confirm full resolution. |
 
 ---
 
 ## 3. Active Bugs (Open, Valid, Should Fix)
-
-### HIGH
-
-| # | Title | Impact | Root Cause | Fix Complexity |
-|---|-------|--------|------------|----------------|
-| **#75** | Some xDNA files don't work | Users can't process certain plasmid files | Unknown — needs debugging with specific failing xDNA files | **Unknown** — Needs reproduction data |
 
 ### MEDIUM
 
@@ -108,19 +98,20 @@ These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://
 |---|-------|--------|----------------|
 | **#78** | Snakemake jobs randomly fail | Pipeline unreliable under parallel execution | Race condition (#86) fixed in v0.30.0 — needs re-testing to confirm resolution |
 
+> **Note:** #75 (xDNA files) was the only HIGH bug and is now closed in v0.34.0. No HIGH bugs remain.
+
 ---
 
 ## 4. Feature Requests — Scientific / Analytical
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
-| **#68** | Normalize by splice junction count | **MEDIUM** | Standardize cross-sample comparisons accounting for junction usage differences. | Medium |
+| **#68** | Normalize by splice junction count | **MEDIUM** | Metadata extracted (Phase 15). Normalization method + threshold recalibration still needed. | Medium-High |
 | **#50** | Correct cutoffs for exon count/CDS length | **MEDIUM** | Current thresholds may not be biologically justified. Research needed. | High (research-heavy) |
 | **#22** | Synthetic plasmid standard for p-value | **LOW** | Research/exploration phase. Statistical framework for contamination detection. | High |
 | **#21** | Control samples for p-value | **LOW** | Related to #22. Requires experimental design decisions. | High |
 | **#44** | ML for plasmid/human classification | **LOW** | Exploratory. Current scoring method works. ML may improve edge cases. | Very High |
-| **#84** | Extract splice positions (exon boundaries) | **LOW** | Nice-to-have for visualization. Not blocking core functionality. | Medium |
-| **#83** | Support other plasmid formats | **LOW** | Currently GenBank + xDNA. SnapGene, FASTA, APE formats could be added. | Medium per format |
+| **#84** | Extract splice positions (exon boundaries) | **LOW** | Junction/exon counts extracted in v0.34.0. Full boundary positions needed for IGV. | Medium |
 
 ---
 
@@ -128,11 +119,9 @@ These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
-| **#51** | Additional plots for summary report | **MEDIUM** | 4 new plot types requested (verdict bar by plasmid, by sample, violin, facet scatter) | Medium |
-| **#61** | Scatter plot on top of boxplot | **LOW** | Minor visualization improvement. Plotly supports this natively with `stripmode`. | Low |
-| **#53** | Favicon for HTML output | **LOW** | Cosmetic. One-line `<link>` tag in template. | Trivial |
-| **#6** | Alignment screenshots in report | **LOW** | Would require IGV headless rendering or a custom viz. Complex for small gain. | High |
-| **#26** | Custom report template | **LOW** | Jinja2 already used. Just needs a `--template` CLI arg. | Low |
+| **#6** | Alignment screenshots in report | **LOW** | Would require IGV headless rendering or custom viz. Complex for small gain. | High |
+
+> **Note:** #61 (scatter on boxplot) closed — already implemented via `points="all"`. #53 (favicon) and #26 (custom template) closed as wontfix. Violin + facet scatter plots (from #51) tracked as future VIS-05/VIS-06 requirements.
 
 ---
 
@@ -140,7 +129,7 @@ These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://
 
 | # | Title | Priority | Status | Notes |
 |---|-------|----------|--------|-------|
-| **#31** | Automated versioning with each commit | **LOW** | Open | Manual semver works. Automation (e.g., `python-semantic-release` in CI) is nice-to-have. |
+| **#31** | Automated versioning with each commit | **LOW** | Open | Manual semver works. Automation (`python-semantic-release` in CI) is nice-to-have. |
 
 ---
 
@@ -148,7 +137,6 @@ These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
-| **#80** | Structure output folders with subfolders | **MEDIUM** | Current flat structure in output subfolders mixes BAMs, TSVs, reports, plots. | Low-Medium |
 | **#49** | Generate IGV sessions | **LOW** | Auto-generate IGV XML session files. Nice for power users. | Low |
 | **#25** | Interactive CLI mode | **LOW** | TUI wizard. Nice-to-have, not blocking. | Medium |
 | **#5** | Anonymize BAM outputs | **LOW** | Privacy feature. Read name replacement in output BAMs. | Low |
@@ -164,27 +152,18 @@ These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://
 
 ---
 
-## 9. Feature Requests — Caching & Performance
+## 9. Documentation
 
 | # | Title | Priority | Rationale | Complexity |
 |---|-------|----------|-----------|------------|
-| **#39** | Reuse indices based on md5sum | **MEDIUM** | Avoid redundant index creation across runs. v0.32.0 added within-run dedup (`PipelinePlan.built_indexes`), but cross-run md5sum caching is still needed. | Medium |
-| **#43** | Reuse spliced alignment based on md5sum | **MEDIUM** | Extension of #39 to cache expensive spliced alignment step. Depends on #39. | Medium |
-
----
-
-## 10. Documentation
-
-| # | Title | Priority | Rationale | Complexity |
-|---|-------|----------|-----------|------------|
-| **#35** | Describe tool logic visually with graphs | **MEDIUM** | Pipeline flow diagrams, scoring logic visualizations. Helps new users and reviewers. | Low-Medium |
+| **#35** | Describe tool logic visually with graphs | **MEDIUM** | Pipeline flow diagrams, scoring logic visualizations. | Low-Medium |
 | **#34** | Detailed documentation with examples | **MEDIUM** | Comprehensive usage guide with real-world examples. | Medium |
 
 ---
 
 ## Priority Matrix Summary
 
-### Closed (28 issues total)
+### Closed (34 issues total)
 
 | Tier | Issues | Milestone |
 |------|--------|-----------|
@@ -193,64 +172,46 @@ These 4 issues were implemented in Phases 8-11 and closed when [PR #93](https://
 | Tier 3 — Enhancements & infrastructure | `#89` `#85` `#33` `#32` `#29` `#71` | v0.31.0 |
 | Tier 4 — Performance optimization | (no issues closed, internal requirements) | v0.32.0 |
 | Tier 5 — Scientific & reporting | `#82` `#64` `#58` `#65` | v0.33.0 |
+| Tier 6 — Robustness & infrastructure | `#75` `#80` `#39` `#43` `#83` `#51` | v0.34.0 |
+| Post-release triage | `#61` `#26` `#53` | v0.34.0 (wontfix / already done) |
 
-### Next Up — Tier 6: Suggested for v0.34.0+
+### Remaining Open: 16 issues
+
+| Category | Count | Issues |
+|----------|-------|--------|
+| Bugs | 1 | #78 |
+| Scientific/Analytical | 6 | #68, #50, #22, #21, #44, #84 |
+| Reporting/Visualization | 1 | #6 |
+| Infrastructure/DevOps | 1 | #31 |
+| UX/CLI | 3 | #49, #25, #5 |
+| Testing/Data | 2 | #72, #24 |
+| Documentation | 2 | #35, #34 |
+
+### Suggested for v0.35.0+
 
 | Issue | Type | Effort | Why Next |
 |-------|------|--------|----------|
-| **#75** | Bug: xDNA files don't work | Unknown | Only remaining HIGH bug — needs reproduction data |
-| **#51** | Report: additional summary plots | Medium | Builds on v0.33.0 summary report infrastructure |
-| **#80** | UX: structure output folders | Low-Medium | Quality-of-life improvement |
-| **#68** | Science: normalize by splice junction count | Medium | Cross-sample comparison standardization |
-| **#39** | Perf: reuse indices via md5sum | Medium | Cross-run caching, natural follow-up to v0.32.0 within-run dedup |
+| **#68** | Science: normalize by splice junction count | Medium-High | Phase 1 metadata done in v0.34.0, normalization is natural next step |
+| **#50** | Science: correct cutoffs for exon count/CDS | High | Research-heavy but important for scientific rigor |
+| **#72** | Testing: benchmarking dataset | Medium | Standardized datasets needed for validation |
+| **#24** | Testing: spiked-in validation data | Medium | Ground-truth data, overlaps with #72 |
+| **#34** | Docs: detailed documentation | Medium | Growing user base needs proper docs |
+| **#35** | Docs: visual tool logic | Low-Medium | Helps onboarding and manuscript figures |
 
-### Tier 7 — Nice to Have (remaining 20 issues)
+### Nice to Have (remaining 10 issues)
 
 Everything else — valid but lower priority. See sections above for details.
 
 ---
 
-## Recommended Roadmap
+## Completed Roadmap
 
 ### Phase 1: Bug Fixes & Housekeeping (v0.29.0) ~~done~~
-1. ~~Close 6 resolved issues~~ Done (2026-02-13)
-2. ~~Update #78, #31 with status comments~~ Done (2026-02-13)
-3. ~~Fix #86 (race condition)~~ Done (PR #91)
-4. ~~Fix #63 (MD5 dedup)~~ Done (PR #91)
-5. ~~Fix #81 (template path)~~ Done (PR #91)
-6. ~~Fix #79 ("wahr" locale bug)~~ Done (PR #91)
-
 ### Phase 2: Code Quality (v0.30.0) ~~done~~
-1. ~~Implement #87 (config singleton)~~ Done (PR #91)
-2. ~~Implement #88 (centralize CLI args)~~ Done (PR #91)
-
 ### Phase 3: Enhancements & Infrastructure (v0.31.0) ~~done~~
-1. ~~Implement #71 (synthetic test dataset)~~ Done
-2. ~~Implement #89 (paired-end args)~~ Done
-3. ~~Implement #85 (memory optimization)~~ Done
-4. ~~Implement #32 (dry-run mode)~~ Done
-5. ~~Implement #29 (progress bar)~~ Done
-6. ~~Implement #33 (Docker)~~ Done
-
 ### Phases 4-7: Performance Optimization (v0.32.0) ~~done~~
-1. ~~Regression testing & benchmarking infrastructure~~ Done
-2. ~~Report optimization (opt-in PNG, directory plotly.js, lazy imports)~~ Done
-3. ~~Alignment optimization (auto threads, -m 2G, SLURM/cgroup detection)~~ Done
-4. ~~Comparison & cleanup (index dedup, batch resilience, matplotlib backend)~~ Done
-
 ### Phases 8-11: Scientific Enhancements (v0.33.0) ~~done~~
-1. ~~Implement #82 (insert-region-aware filtering)~~ Done (Phase 8)
-2. ~~Implement #65 (coverage metrics)~~ Done (Phase 9)
-3. ~~Implement #64 (resistance gene detection)~~ Done (Phase 10)
-4. ~~Implement #58 (summary report integration)~~ Done (Phase 11)
-
-### Next: v0.34.0+
-1. Investigate #75 (xDNA bugs — needs reproduction data)
-2. Implement #51 (additional summary plots)
-3. Implement #80 (output folder structure)
-4. Implement #68 (splice junction normalization)
-5. Implement #39 (cross-run index caching)
-6. Remaining feature requests per user priority
+### Phases 12-16: Robustness & Infrastructure (v0.34.0) ~~done~~
 
 ---
 
