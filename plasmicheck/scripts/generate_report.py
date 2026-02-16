@@ -369,6 +369,16 @@ def _parse_mismatches(raw: str) -> tuple[int, int]:
         return 0, 0
 
 
+def _truncate_list_filter(value: str, max_items: int = 5) -> str:
+    """Truncate comma-separated list for display. Full value in title attribute."""
+    if not value or value in ("N/A", "NA"):
+        return value
+    items = value.split(",")
+    if len(items) <= max_items:
+        return value
+    return ",".join(items[:max_items]) + ",..."
+
+
 def generate_report(
     summary_df: pd.DataFrame,
     output_folder: str,
@@ -417,11 +427,13 @@ def generate_report(
     coverage_metrics: dict[str, str] | None = None,
     coverage_fallback: bool = False,
     reports_dir: str | None = None,
+    junction_metrics: dict[str, str] | None = None,
 ) -> None:
     from jinja2 import Environment, FileSystemLoader
 
     logging.info("Generating report")
     env = Environment(loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))))
+    env.filters["truncate_list"] = _truncate_list_filter
     template = env.get_template("report_template.html")
 
     logo_base64 = encode_image_to_base64(str(get_resource_path(LOGO_PATH)))
@@ -481,6 +493,7 @@ def generate_report(
         plasmid_name=plasmid_name,
         coverage_metrics=coverage_metrics or {},
         coverage_fallback=coverage_fallback,
+        junction_metrics=junction_metrics or {},
     )
 
     # Save interactive HTML report
@@ -543,6 +556,7 @@ def generate_report(
             plasmid_name=plasmid_name,
             coverage_metrics=coverage_metrics or {},
             coverage_fallback=coverage_fallback,
+            junction_metrics=junction_metrics or {},
         )
 
         # Save non-interactive HTML report
@@ -627,6 +641,14 @@ def main(
         "breadth_backbone": _get_metric(summary_df, "BreadthBackbone"),
         "breadth_backbone_5x": _get_metric(summary_df, "BreadthBackbone_5x"),
         "cv_backbone": _get_metric(summary_df, "CoverageCV_Backbone"),
+    }
+
+    # Extract junction metrics (Phase 15)
+    junction_metrics = {
+        "splice_junction_count": _get_metric(summary_df, "SpliceJunctionCount", default="N/A"),
+        "exon_count": _get_metric(summary_df, "ExonCount", default="N/A"),
+        "exon_lengths": _get_metric(summary_df, "ExonLengths", default="N/A"),
+        "intron_lengths": _get_metric(summary_df, "IntronLengths", default="N/A"),
     }
 
     # Detect coverage fallback mode
@@ -734,6 +756,7 @@ def main(
         coverage_metrics=coverage_metrics,
         coverage_fallback=coverage_fallback,
         reports_dir=reports_dir,
+        junction_metrics=junction_metrics,
     )
 
 
