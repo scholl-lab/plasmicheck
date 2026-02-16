@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 ## Current Position
 
 **Phase:** 14 of 16 (Cache Infrastructure)
-**Plan:** 2 of 3 complete
-**Status:** Phase 14 in progress
-**Progress:** ██████░░░░ 60% (6/10 plans in v0.34.0)
+**Plan:** 3 of 3 complete
+**Status:** Phase 14 complete
+**Progress:** ███████░░░ 70% (7/10 plans in v0.34.0)
 
-Last activity: 2026-02-16 — Completed 14-02-PLAN.md
+Last activity: 2026-02-16 — Completed 14-03-PLAN.md
 
 ## Milestones
 
@@ -31,7 +31,7 @@ Last activity: 2026-02-16 — Completed 14-02-PLAN.md
 |-------|------|--------------|-------|--------|
 | 12 | Format Hardening | FMT-01..04 (4) | 2/2 | Complete |
 | 13 | Output Restructuring | OUT-01..04 (4) | 2/2 | Complete |
-| 14 | Cache Infrastructure | CACHE-01..06 (6) | 2/3 | In progress |
+| 14 | Cache Infrastructure | CACHE-01..06 (6) | 3/3 | Complete |
 | 15 | Splice Junction Metadata | SJ-01..02 (2) | 0/1 | Not started |
 | 16 | Summary Visualization | VIS-01..04 (4) | 0/2 | Not started |
 
@@ -41,7 +41,7 @@ Last activity: 2026-02-16 — Completed 14-02-PLAN.md
 
 ### Key Outcomes
 
-**From v0.34.0 (Phase 14 - In Progress):**
+**From v0.34.0 (Phase 14 - Complete):**
 - Pipeline integration with --cache-dir and --no-cache CLI flags
 - Index caching for plasmid FASTAs with within-run deduplication
 - Spliced alignment caching (BAM, FASTA, cDNA positions) integrated
@@ -54,7 +54,9 @@ Last activity: 2026-02-16 — Completed 14-02-PLAN.md
 - Atomic writes with tempfile + os.replace (prevents corruption)
 - LRU eviction with OrderedDict (O(1) operations)
 - Graceful manifest corruption handling
-- 379 unit tests passing (up from 353 at Phase 13)
+- Cache CLI with 'plasmicheck cache info' and 'plasmicheck cache clean --all' commands
+- Cache commands work without minimap2/samtools installation (tool check skipped)
+- 384 unit tests passing (up from 353 at Phase 13)
 
 **From v0.34.0 (Phase 13 - Complete):**
 - OutputPaths frozen dataclass centralizes all output path construction
@@ -119,6 +121,7 @@ Last activity: 2026-02-16 — Completed 14-02-PLAN.md
 | CACHE-D09 | 14-02 | Spliced FASTA indexing | NOT cached separately | Fast operation (~1s), not worth caching complexity |
 | CACHE-D10 | 14-02 | Cache error handling | Wrap in try/except (OSError, PermissionError) | Cache errors should never fail pipeline, only degrade performance |
 | CACHE-D11 | 14-02 | Cache hit restoration | Use shutil.copy2 instead of symlinks | Ensures files exist at expected paths, no symlink complexity |
+| CACHE-D12 | 14-03 | Cache CLI tool requirements | Skip check_requirements() for cache command | Cache commands don't need minimap2/samtools, improves portability |
 
 ### Open Blockers
 
@@ -127,9 +130,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-16
-**Stopped at:** Completed 14-02-PLAN.md (Pipeline cache integration)
+**Stopped at:** Completed 14-03-PLAN.md (Cache CLI management)
 **Resume file:** None
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-16 after completing 14-02-PLAN.md*
+*Last updated: 2026-02-16 after completing 14-03-PLAN.md — Phase 14 complete*
