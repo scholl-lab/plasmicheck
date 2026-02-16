@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 
 ## Current Position
 
-**Phase:** 15 of 16 (Splice Junction Metadata)
-**Plan:** 2 of 2 complete
-**Status:** Phase 15 complete
-**Progress:** █████████░ 90% (9/10 plans in v0.34.0)
+**Phase:** 16 of 16 (Summary Visualization)
+**Plan:** 1 of 2 complete
+**Status:** In progress
+**Progress:** █████████░ 90% (10/10 plans in v0.34.0)
 
-Last activity: 2026-02-16 — Completed 15-02-PLAN.md
+Last activity: 2026-02-16 — Completed 16-01-PLAN.md
 
 ## Milestones
 
@@ -33,13 +33,23 @@ Last activity: 2026-02-16 — Completed 15-02-PLAN.md
 | 13 | Output Restructuring | OUT-01..04 (4) | 2/2 | Complete |
 | 14 | Cache Infrastructure | CACHE-01..06 (6) | 3/3 | Complete |
 | 15 | Splice Junction Metadata | SJ-01..02 (2) | 2/2 | Complete |
-| 16 | Summary Visualization | VIS-01..04 (4) | 0/2 | Not started |
+| 16 | Summary Visualization | VIS-01..04 (4) | 1/2 | In progress |
 
 **Total v0.34.0:** 20 requirements, 10 plans (estimated)
 
 ## Accumulated Context
 
 ### Key Outcomes
+
+**From v0.34.0 (Phase 16 - In Progress):**
+- VERDICT_COLORS dict in colors.py with consistent color mapping
+- aggregate_verdicts() detects missing sample-plasmid pairs as "No Result"
+- plot_verdict_bar_by_plasmid() for interactive Plotly stacked bar charts
+- plot_verdict_bar_by_sample() for interactive Plotly stacked bar charts
+- generate_verdict_bar_matplotlib() for static PNG fallback
+- Hover text truncation with "...and N more" for readability (max 10 items)
+- Cross-product left join ensures all combinations represented in bar charts
+- 412 unit tests passing (up from 397 at Phase 15)
 
 **From v0.34.0 (Phase 15 - Complete):**
 - Extended cDNA_positions.txt from 3 to 11 lines with junction metadata
@@ -144,6 +154,9 @@ Last activity: 2026-02-16 — Completed 15-02-PLAN.md
 | SJ-D06 | 15-02 | Junction card display | Hide when SpliceJunctionCount is N/A | Unmapped plasmids have no junction data, avoid showing empty sections |
 | SJ-D07 | 15-02 | List truncation threshold | 5 items in HTML, full in exports | Maintains readability while preserving full data for analysis |
 | SJ-D08 | 15-02 | Junction export structure | Add to extended_categories + dedicated file | Follows resistance genes pattern, easy access |
+| VIS-D01 | 16-01 | Verdict aggregation with missing data | Detect missing sample-plasmid pairs as "No Result" via cross-product left join | Some samples may not have verdict data for all plasmids (e.g., failed alignment), showing "No Result" is more accurate than omitting them |
+| VIS-D02 | 16-01 | Hover text readability | Truncate name lists to 10 items + "...and N more" in hover | Long lists make hover tooltips unwieldy, truncation maintains readability |
+| VIS-D03 | 16-01 | Verdict color scheme | Reuse HEATMAP_COLORS with No Result as lightgray matching Backbone_Only | Consistent color scheme across all verdict visualizations, gray for missing/absent data |
 
 ### Open Blockers
 
@@ -152,9 +165,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-16
-**Stopped at:** Completed 15-02-PLAN.md (Splice junction metadata display layer)
+**Stopped at:** Completed 16-01-PLAN.md (Verdict bar chart plotting functions)
 **Resume file:** None
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-16 after completing 15-02-PLAN.md — Phase 15 complete*
+*Last updated: 2026-02-16 after completing 16-01-PLAN.md — Phase 16 Plan 01 complete*
