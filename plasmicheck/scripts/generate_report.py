@@ -628,7 +628,15 @@ def main(
     # Extract coverage metrics (Phase 9)
     def _get_metric(df: pd.DataFrame, category: str, default: str = "0.00") -> str:
         rows = df[df["Category"] == category]
-        return str(rows["Count"].values[0]) if not rows.empty else default
+        if rows.empty:
+            return default
+        value = rows["Count"].values[0]
+        try:
+            if value != value:  # NaN check (NaN != NaN is True)
+                return default
+        except (TypeError, ValueError):
+            pass
+        return str(value)
 
     coverage_metrics = {
         "mean_depth_insert": _get_metric(summary_df, "MeanDepthInsert"),
