@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 
 ## Current Position
 
-**Phase:** 13 of 16 (Output Restructuring)
-**Plan:** 2 of 2 complete
-**Status:** Phase 13 complete
-**Progress:** ████░░░░░░ 40% (4/10 plans in v0.34.0)
+**Phase:** 14 of 16 (Cache Infrastructure)
+**Plan:** 1 of 3 complete
+**Status:** Phase 14 in progress
+**Progress:** █████░░░░░ 50% (5/10 plans in v0.34.0)
 
-Last activity: 2026-02-15 — Completed 13-02-PLAN.md
+Last activity: 2026-02-16 — Completed 14-01-PLAN.md
 
 ## Milestones
 
@@ -31,7 +31,7 @@ Last activity: 2026-02-15 — Completed 13-02-PLAN.md
 |-------|------|--------------|-------|--------|
 | 12 | Format Hardening | FMT-01..04 (4) | 2/2 | Complete |
 | 13 | Output Restructuring | OUT-01..04 (4) | 2/2 | Complete |
-| 14 | Cache Infrastructure | CACHE-01..06 (6) | 0/3 | Not started |
+| 14 | Cache Infrastructure | CACHE-01..06 (6) | 1/3 | In progress |
 | 15 | Splice Junction Metadata | SJ-01..02 (2) | 0/1 | Not started |
 | 16 | Summary Visualization | VIS-01..04 (4) | 0/2 | Not started |
 
@@ -40,6 +40,16 @@ Last activity: 2026-02-15 — Completed 13-02-PLAN.md
 ## Accumulated Context
 
 ### Key Outcomes
+
+**From v0.34.0 (Phase 14 - In Progress):**
+- CacheManager class with content-addressed storage for pipeline artifacts
+- Index cache stores both .mmi and .fai files together (prevents partial index state)
+- Spliced alignment cache stores BAM, FASTA, and cDNA positions
+- MD5-based content addressing (consistent with existing codebase)
+- Atomic writes with tempfile + os.replace (prevents corruption)
+- LRU eviction with OrderedDict (O(1) operations)
+- Graceful manifest corruption handling
+- 373 unit tests passing (up from 353 at Phase 13)
 
 **From v0.34.0 (Phase 13 - Complete):**
 - OutputPaths frozen dataclass centralizes all output path construction
@@ -93,6 +103,12 @@ Last activity: 2026-02-15 — Completed 13-02-PLAN.md
 | OUT-PATH-05 | 13-01 | md5sum.txt location | Base level | Checksums files across all subdirectories |
 | SUM-COMPAT-01 | 13-02 | Directory depth detection | Check parent name for 'data' | Simple, reliable, robust to arbitrary nesting |
 | SUM-COMPAT-02 | 13-02 | Sample/plasmid extraction | Add _extract_sample_plasmid helper | Centralized logic, eliminates DRY violation, testable |
+| CACHE-D01 | 14-01 | Index cache storage | Store both .mmi and .fai files together | create_indexes rebuilds both if only .mmi exists (partial state) |
+| CACHE-D02 | 14-01 | Content addressing algorithm | Use MD5 for cache keys | Already used in codebase, sufficient for non-adversarial data |
+| CACHE-D03 | 14-01 | Spliced cache key | Combined MD5 of 'plasmid_md5:human_md5' | Depends on both inputs, delimiter prevents collision |
+| CACHE-D04 | 14-01 | Atomic writes | tempfile in same directory + os.replace | Same filesystem ensures atomic rename, prevents corruption |
+| CACHE-D05 | 14-01 | Manifest corruption | Log warning and recreate empty | Cache is optimization, not critical path |
+| CACHE-D06 | 14-01 | LRU eviction | OrderedDict with move_to_end() | O(1) operations, stdlib-based, simpler than custom linked list |
 
 ### Open Blockers
 
@@ -100,10 +116,10 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-15
-**Stopped at:** Completed 13-02-PLAN.md (Phase 13 complete)
+**Last session:** 2026-02-16
+**Stopped at:** Completed 14-01-PLAN.md (CacheManager core implementation)
 **Resume file:** None
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after completing 13-02-PLAN.md*
+*Last updated: 2026-02-16 after completing 14-01-PLAN.md*
