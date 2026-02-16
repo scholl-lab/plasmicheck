@@ -118,16 +118,11 @@ class TestCoverageMetricsInReport:
         # Mock plot generation to avoid plotly/kaleido dependencies
         with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
             mock_plots.return_value = (
-                str(output_folder / "plots" / "box.html"),
+                "<div>box</div>",
                 None,
-                str(output_folder / "plots" / "scatter.html"),
+                "<div>scatter</div>",
                 None,
             )
-            # Create dummy plot files so template can read them
-            plots_dir = output_folder / "plots"
-            plots_dir.mkdir()
-            (plots_dir / "box.html").write_text("<div>box</div>")
-            (plots_dir / "scatter.html").write_text("<div>scatter</div>")
 
             main(
                 str(reads_file),
@@ -166,15 +161,11 @@ class TestCoverageMetricsInReport:
         # Mock plot generation
         with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
             mock_plots.return_value = (
-                str(output_folder / "plots" / "box.html"),
+                "<div>box</div>",
                 None,
-                str(output_folder / "plots" / "scatter.html"),
+                "<div>scatter</div>",
                 None,
             )
-            plots_dir = output_folder / "plots"
-            plots_dir.mkdir()
-            (plots_dir / "box.html").write_text("<div>box</div>")
-            (plots_dir / "scatter.html").write_text("<div>scatter</div>")
 
             main(
                 str(reads_file),
@@ -260,15 +251,11 @@ class TestCoverageMetricsInReport:
         # Mock plot generation
         with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
             mock_plots.return_value = (
-                str(output_folder / "plots" / "box.html"),
+                "<div>box</div>",
                 None,
-                str(output_folder / "plots" / "scatter.html"),
+                "<div>scatter</div>",
                 None,
             )
-            plots_dir = output_folder / "plots"
-            plots_dir.mkdir()
-            (plots_dir / "box.html").write_text("<div>box</div>")
-            (plots_dir / "scatter.html").write_text("<div>scatter</div>")
 
             main(
                 str(reads_file),

@@ -7,13 +7,16 @@ coverage statistics (mean, median, breadth, uniformity) from BAM alignments.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
 import pysam
 
 from plasmicheck.config import get_config
+
+if TYPE_CHECKING:
+    from .compare_alignments import InsertRegionData
 
 _cfg = get_config()
 
@@ -115,7 +118,7 @@ def compute_coverage_stats(
 
 def compute_region_coverage_metrics(
     plasmid_bam: str,
-    insert_region: tuple[int, int] | None,
+    insert_region: tuple[int, int] | InsertRegionData | None,
     breadth_thresholds: list[int],
 ) -> tuple[dict[str, dict[str, float]], bool]:
     """Compute coverage metrics for insert and backbone regions.

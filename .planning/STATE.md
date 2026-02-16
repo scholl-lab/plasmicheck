@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-14)
+See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** Accurately detect plasmid contamination through comparative alignment scoring
-**Current focus:** v0.33.0 -- Scientific & Reporting Enhancements
+**Current focus:** v0.34.0 -- Robustness & Infrastructure
 
 ## Current Position
 
-**Phase:** 11 of 11 (Summary Report Integration) — COMPLETE ✓
-**Plan:** 2 of 2 complete (11-01 ✓, 11-02 ✓)
-**Status:** Phase 11 verified ✓, v0.33.0 milestone ready for audit
-**Progress:** ████████░░ 100% (4/4 phases complete)
+**Phase:** 16 of 16 (Summary Visualization)
+**Plan:** 2 of 2 complete
+**Status:** Phase complete
+**Progress:** ██████████ 100% (11/11 plans in v0.34.0)
 
-Last activity: 2026-02-15 -- Phase 11 verified (9/9 must-haves passed), all 4 phases complete
+Last activity: 2026-02-16 — Completed 16-02-PLAN.md
 
 ## Milestones
 
@@ -22,124 +22,147 @@ Last activity: 2026-02-15 -- Phase 11 verified (9/9 must-haves passed), all 4 ph
 - v0.30.0 Code Quality (Phase 2) -- shipped 2026-02-13
 - v0.31.0 Enhancements & Infrastructure (Phase 3) -- shipped 2026-02-13
 - v0.32.0 Performance Optimization (Phases 4-7) -- shipped 2026-02-14
-- v0.33.0 Scientific & Reporting Enhancements (Phases 8-11) -- **all phases verified**
+- v0.33.0 Scientific & Reporting Enhancements (Phases 8-11) -- shipped 2026-02-15
+- v0.34.0 Robustness & Infrastructure (Phases 12-16) -- **in progress (roadmap defined)**
 
-## Phase Overview (v0.33.0)
+## Phase Overview
 
-| Phase | Name | Requirements | Status |
-|-------|------|--------------|--------|
-| 8 | Insert-Region-Aware Filtering | FILT-01..05 | Complete ✓ |
-| 9 | Coverage Metrics | COV-01..05 | Complete ✓ |
-| 10 | Resistance Gene Detection | RGENE-01..04 | Complete ✓ |
-| 11 | Summary Report Integration | REPT-04..10 | Complete ✓ |
+| Phase | Name | Requirements | Plans | Status |
+|-------|------|--------------|-------|--------|
+| 12 | Format Hardening | FMT-01..04 (4) | 2/2 | Complete |
+| 13 | Output Restructuring | OUT-01..04 (4) | 2/2 | Complete |
+| 14 | Cache Infrastructure | CACHE-01..06 (6) | 3/3 | Complete |
+| 15 | Splice Junction Metadata | SJ-01..02 (2) | 2/2 | Complete |
+| 16 | Summary Visualization | VIS-01..04 (4) | 2/2 | Complete |
+
+**Total v0.34.0:** 20 requirements, 11 plans (actual)
 
 ## Accumulated Context
 
 ### Key Outcomes
 
-**From v0.32.0:**
-- 9.5x faster pipeline for small datasets (5.5s -> 0.577s)
-- 1.97x faster alignment on real datasets (115.2s -> 58.4s)
-- 170 tests passing (up from 125 in v0.31.0)
-- New CLI flags: --static-report, --plotly-mode, --threads, --plot-backend
+**From v0.34.0 (Phase 16 - Complete):**
+- Verdict Overview section in summary report HTML template with side-by-side chart layout
+- Template wiring for interactive and static verdict bar charts (both by-plasmid and by-sample)
+- VERDICT_COLORS dict in colors.py with consistent color mapping
+- aggregate_verdicts() detects missing sample-plasmid pairs as "No Result"
+- plot_verdict_bar_by_plasmid() and plot_verdict_bar_by_sample() for interactive Plotly stacked bar charts
+- generate_verdict_bar_matplotlib() for static PNG fallback
+- Hover text truncation with "...and N more" for readability (max 10 items)
+- Cross-product left join ensures all combinations represented in bar charts
+- Backward compatibility: template renders without verdict data (Jinja2 undefined defaults)
+- Bootstrap col-md-6 side-by-side layout for dual chart display
+- 417 unit tests passing (up from 397 at Phase 15)
 
-**From Phase 8 (08-01, 08-02, report redesign):**
+**From v0.34.0 (Phase 15 - Complete):**
+- Extended cDNA_positions.txt from 3 to 11 lines with junction metadata
+- InsertRegionData dataclass with backward-compatible tuple unpacking (__iter__, __getitem__)
+- Junction metadata extraction from primary alignment CIGAR only (skips secondary/supplementary)
+- Summary.tsv includes SpliceJunctionCount, ExonCount, ExonLengths, IntronLengths rows
+- Junction metadata display in per-sample HTML reports (Splice Junction Metadata card)
+- Junction metadata table in multi-sample summary reports (Sample x Plasmid pivot)
+- List truncation for long comma-separated values (5 items + "..." in HTML, full in TSV/Excel)
+- junction_metadata_table.tsv and Junction Metadata Excel sheet in summary exports
+- Key-based field parsing (not line-number based) for forward compatibility
+- Graceful handling of unmapped plasmids (all-NA values, no ValueError)
+- Backward compatibility: old 3-line cDNA_positions.txt files parse with None defaults
+- 397 unit tests passing (up from 384 at Phase 14)
+
+**From v0.34.0 (Phase 14 - Complete):**
+- Pipeline integration with --cache-dir and --no-cache CLI flags
+- Index caching for plasmid FASTAs with within-run deduplication
+- Spliced alignment caching (BAM, FASTA, cDNA positions) integrated
+- Cache hits restore both .mmi and .fai files via shutil.copy2
+- Graceful degradation on cache errors (log warning, continue without cache)
+- CacheManager class with content-addressed storage for pipeline artifacts
+- Index cache stores both .mmi and .fai files together (prevents partial index state)
+- Spliced alignment cache stores BAM, FASTA, and cDNA positions
+- MD5-based content addressing (consistent with existing codebase)
+- Atomic writes with tempfile + os.replace (prevents corruption)
+- LRU eviction with OrderedDict (O(1) operations)
+- Graceful manifest corruption handling
+- Cache CLI with 'plasmicheck cache info' and 'plasmicheck cache clean --all' commands
+- Cache commands work without minimap2/samtools installation (tool check skipped)
+- 384 unit tests passing (up from 353 at Phase 13)
+
+**From v0.34.0 (Phase 13 - Complete):**
+- OutputPaths frozen dataclass centralizes all output path construction
+- 5-subfolder output layout: alignments/, references/, data/, reports/, plots/
+- Type-safe path management with pathlib.Path properties
+- Backward-compatible optional parameters for downstream modules
+- Depth-agnostic summary report reader supporting both flat and data/ subfolder layouts
+- Backward compatibility for existing flat-structure outputs
+- Forward compatibility for new 5-subfolder structure
+- 353 unit tests passing (up from 321 at Phase 12)
+
+**From v0.34.0 (Phase 12 - Complete):**
+- Magic byte format detection for SnapGene and xDNA binary formats
+- SnapGene .dna file support via BioPython native parser
+- Auto-detection for all plasmid formats (GenBank, xDNA, SnapGene, FASTA)
+- Record IDs now use sanitized filenames (fixes xDNA broken ID issue)
+- Actionable error messages for conversion failures
+- Pipeline auto-detects SnapGene .dna files via -pf flag (no user workaround needed)
+- Comprehensive test suite: 18 format detection tests, 11 conversion tests
+- 321 unit tests passing (up from 297 at v0.33.0)
+
+**From v0.33.0:**
 - 5-category read classification eliminates false positives from backbone contamination
-- HTML reports display all 5 categories with visual distinction for excluded categories
-- 195 tests passing (up from 170)
-- Graceful fallback when cDNA_positions.txt unavailable
-- Backward compatibility via filter_backbone_only config toggle
-- Consistent color mapping across Plotly and matplotlib backends
-- Complete report UI/UX redesign: Bootstrap 5.3 card layout, gradient verdict banner,
-  contamination gauge, responsive Plotly charts (white bg, system fonts, consistent
-  category ordering), sample/plasmid identity bar, comma-formatted numbers,
-  parsed mismatches metrics, collapsible run details, print stylesheet
-
-**From Phase 9 (Coverage Metrics - 09-01, 09-02):**
-- Per-region coverage metrics (mean/median depth, breadth, CV) computed via pysam.count_coverage()
-- 10 new rows in summary.tsv: MeanDepthInsert, MedianDepthInsert, BreadthInsert, BreadthInsert_5x, CoverageCV_Insert, MeanDepthBackbone, MedianDepthBackbone, BreadthBackbone, BreadthBackbone_5x, CoverageCV_Backbone
-- 219 tests passing (up from 195)
-- coverage_metrics.py module separates coverage computation logic
-- breadth_thresholds configurable in config.json (default: [5])
-- Graceful fallback for missing insert region (whole-plasmid metrics)
-- Coverage Analysis card in HTML reports displays depth, breadth, and uniformity metrics for insert and backbone
-- Fallback warning shown when insert region not defined
-- Backward compatible template rendering (missing metrics show 0.00)
-
-**From Phase 10 (Resistance Gene Detection - 10-01, 10-02):**
-- resistance_gene_detection.py module with curated pattern matching for 14 bacterial, 7 mammalian, and 9 reporter gene patterns
-- GenBank CDS feature parsing via Biopython SeqIO with CompoundLocation handling (origin-crossing features)
-- Affinity tag exclusion (His-tag, FLAG, Myc, V5, HA) prevents false positives
-- Conservative insert region overlap exclusion ensures backbone-only gene detection
-- preserve_genbank parameter in convert_plasmidfile_to_fasta retains .gb files for gene detection
-- resistance_gene_patterns extension point in config.json for custom patterns
-- Per-gene coverage metrics in summary.tsv: ResGene_{name}_MeanDepth, Breadth, Start, End, Region
-- ResistanceGenesAvailable flag distinguishes "no GenBank" from "GenBank but no genes"
-- GenBank file preservation enabled by default in pipeline (preserve_genbank=True)
-- 280 tests passing (274 from 10-01 + 6 new integration and recall validation tests)
-- 90% recall validated against real plasmid GenBank files (pWPI-KCNJ5-WT.gb, pCMV6 files)
-- Graceful fallback: gene detection failures don't crash pipeline
-
-### Key Context for v0.33.0
-
-- Phase 8 (filtering) must come first: corrects read assignments that all downstream metrics depend on
-- compare_alignments.py is the core file for Phases 8-10
-- generate_summary_reports.py is the core file for Phase 11
-- insert_region already computed from cDNA_positions.txt in existing pipeline
-- pysam.count_coverage() for coverage metrics (Phases 9-10)
-- Biopython SeqIO for GenBank annotation parsing (Phase 10)
-- Existing matplotlib backend at plasmicheck/scripts/plotting/matplotlib_backend.py
-- Detailed milestone plan: .planning/v0.33.0-MILESTONE-PLAN.md
-
-**Phase 11 outcomes (Plans 01 + 02):**
-- Six new pure functions for summary report plots (4 in generate_summary_reports.py, 2 in matplotlib_backend.py)
-- Generic metric extraction pattern: create_metric_heatmap_data(summary_df, metric_category)
-- Resistance gene table flattening: create_resistance_gene_table() parses ResistanceGenes rows
-- All functions handle empty DataFrames gracefully (backward compatibility with pre-v0.33.0 data)
-- Restructured summary_template.html with 5 collapsible Bootstrap 4 card sections
-- All new plots/tables wired into main() → generate_report() flow
-- Extended TSV/Excel exports with extended_metrics_table.tsv and resistance_genes_table.tsv
-- 297 tests passing (280 from Phase 10 + 17 new unit tests in 11-02)
-
-### Decisions Log
-
-| Phase | Decision | Rationale |
-|-------|----------|-----------|
-| 08-01 | filter_backbone_only defaults to true | New v0.33.0 behavior provides scientific accuracy by default; false restores pre-v0.33.0 |
-| 08-01 | score_margin=0 means disabled | Preserves Tied category; margin > 0 creates Ambiguous category for borderline reads |
-| 08-01 | Exact ties never Ambiguous | Tied (score_diff=0) is distinct from Ambiguous (0 < score_diff < margin) |
-| 08-01 | Graceful fallback for missing insert region | Warning + pre-v0.33.0 behavior instead of crash enables partial functionality |
-| 09-01 | pysam.count_coverage() with quality_threshold=0 | Matches existing alignment behavior (no base quality filtering) |
-| 09-01 | Always compute breadth_1x plus configurable thresholds | Breadth ≥1 read is fundamental; additional thresholds configurable via breadth_thresholds |
-| 09-01 | CV=0.0 for single-element arrays | Avoids NaN propagation from numpy.std(ddof=1) on single elements |
-| 09-01 | CoverageFallback row in summary.tsv | Enables downstream report detection of whole-plasmid fallback mode |
-| 09-02 | Always show Coverage Analysis card | Avoids confusion when metrics exist but card is hidden; users see card structure |
-| 09-02 | Use Jinja2 default() filter for backward compatibility | Old summary.tsv files render 0.00 instead of error |
-| 09-02 | Display fallback warning inline in card | Keeps coverage context together, users immediately understand whole-plasmid metrics |
-| 10-01 | Extended bacterial patterns to include full antibiotic names | Broader coverage of GenBank annotation styles (ampicillin, kanamycin vs AmpR, KanR) |
-| 10-01 | Curated exclusion list for affinity tags | Prevent false positives from His-tag, FLAG, Myc, V5, HA epitope tags |
-| 10-01 | Conservative overlap exclusion for insert region | Any gene overlap (full or partial) with insert is excluded for backbone-only detection |
-| 10-01 | Default preserve_genbank=False | Backward compatibility - no changes to existing convert_plasmidfile_to_fasta callers |
-| 10-01 | GenBank file location priority (output_dir then plasmid_file) | Always finds most relevant .gb file (from conversion or original) |
-| 10-02 | genbank_file parameter optional (None default) | Backward compatibility - existing compare_alignments callers work unchanged |
-| 10-02 | Graceful exception handling for gene detection | Failures log warning, continue without gene data - pipeline never crashes |
-| 10-02 | Per-gene coverage computed before streaming compare | Requires BAM file access - done early in flow |
-| 10-02 | GenBank preservation enabled in pipeline | preserve_genbank=True in run_pipeline - gene detection needs annotations |
-| 10-02 | ResistanceGenesAvailable flag | false = no GenBank file, true = GenBank present (may/may not find genes) |
-| 11-01 | Generic metric heatmap function | Single plot_metric_heatmap() handles all metric types with blue-to-red color scale and optional vmax |
-| 11-01 | depth_heatmap_cap defaults to 100 | Prevents extreme outliers from dominating color scale in depth heatmaps |
-| 11-01 | Graceful degradation for missing metrics | Empty DataFrame returns when metric category not found (pre-v0.33.0 compatibility) |
-| 11-01 | Matplotlib functions follow existing patterns | sns.set_theme, empty-check, 300 dpi, logger.info for consistency |
-| 11-02 | Section ordering: Contamination → Coverage Outside Insert → Coverage Analysis → Mismatch Analysis → Resistance Genes | Per requirement prioritization (REPT-04 to REPT-08) |
-| 11-02 | All sections default to expanded | Users see all data immediately without clicking (class="collapse show") |
-| 11-02 | Bootstrap 4 syntax (data-toggle/data-target) | Matches existing template's Bootstrap 4.5.2, not Bootstrap 5 |
-| 11-02 | Empty plot filenames return '' | Triggers {% if %} guards to skip sections when data unavailable |
-| 11-02 | Extended metrics composition | Combine 4 categories into single DataFrame for export consistency |
+- Per-region coverage metrics (mean/median depth, breadth, CV) via pysam
+- Resistance gene detection from GenBank annotations (14 bacterial, 7 mammalian, 9 reporter patterns)
+- Summary report integration with heatmaps, tables, and extended exports
+- 297 tests passing (up from 170 at v0.32.0)
+- 21/21 requirements complete across 4 phases
 
 ### Known Issues
 
-- #75: Some xDNA files don't work (needs reproduction data)
+- #75: Some xDNA files don't work — **partially addressed in 12-01** (actionable errors, record ID fix)
 - #78: Snakemake jobs randomly fail (may be fixed by race condition fix in v0.30.0)
+- #80: Output directory structure could be more organized (targeted for Phase 13)
+- #39, #43: No caching for indexes and spliced alignments (targeted for Phase 14)
+
+### Key Decisions
+
+| ID | Phase | Context | Decision | Rationale |
+|----|-------|---------|----------|-----------|
+| FMT-D01 | 12-01 | xDNA record IDs unreliable | Override all record.id with sanitize_filename(stem) | Ensures consistent, valid IDs |
+| FMT-D02 | 12-01 | BioPython errors cryptic | Wrap parse calls with actionable messages | Users know what to do on failure |
+| FMT-D03 | 12-01 | sanitize_filename duplicated | Remove local copy, import from utils | Single source of truth |
+| FMT-D04 | 12-01 | --file_type flag required | Add --format flag, auto-detect when omitted | Better UX, backward compatible |
+| FMT-D05 | 12-02 | Pipeline format detection | Use detect_format() via inline import in loop | Follows lazy import pattern |
+| FMT-D06 | 12-02 | Pipeline test mocking | Mock detect_format at module level | Avoids file I/O in unit tests |
+| OUT-PATH-01 | 13-01 | Path construction approach | Frozen dataclass with pathlib.Path properties | Type safety, immutability, single source of truth |
+| OUT-PATH-02 | 13-01 | comparison_prefix type | Returns str instead of Path | API compatibility with compare_alignments prefix usage |
+| OUT-PATH-03 | 13-01 | Backward compatibility | Optional parameters for downstream modules | Zero breaking changes, gradual migration |
+| OUT-PATH-04 | 13-01 | GenBank file location | references/ subdirectory | Reference data, matches FASTA/index location |
+| OUT-PATH-05 | 13-01 | md5sum.txt location | Base level | Checksums files across all subdirectories |
+| SUM-COMPAT-01 | 13-02 | Directory depth detection | Check parent name for 'data' | Simple, reliable, robust to arbitrary nesting |
+| SUM-COMPAT-02 | 13-02 | Sample/plasmid extraction | Add _extract_sample_plasmid helper | Centralized logic, eliminates DRY violation, testable |
+| CACHE-D01 | 14-01 | Index cache storage | Store both .mmi and .fai files together | create_indexes rebuilds both if only .mmi exists (partial state) |
+| CACHE-D02 | 14-01 | Content addressing algorithm | Use MD5 for cache keys | Already used in codebase, sufficient for non-adversarial data |
+| CACHE-D03 | 14-01 | Spliced cache key | Combined MD5 of 'plasmid_md5:human_md5' | Depends on both inputs, delimiter prevents collision |
+| CACHE-D04 | 14-01 | Atomic writes | tempfile in same directory + os.replace | Same filesystem ensures atomic rename, prevents corruption |
+| CACHE-D05 | 14-01 | Manifest corruption | Log warning and recreate empty | Cache is optimization, not critical path |
+| CACHE-D06 | 14-01 | LRU eviction | OrderedDict with move_to_end() | O(1) operations, stdlib-based, simpler than custom linked list |
+| CACHE-D07 | 14-02 | Cache initialization location | After plan build but before dry-run check | Cache path needs to be determined, but dry-run shouldn't initialize cache |
+| CACHE-D08 | 14-02 | Within-run deduplication | Via cache mechanism | First combo builds and caches, subsequent combos get cache hits |
+| CACHE-D09 | 14-02 | Spliced FASTA indexing | NOT cached separately | Fast operation (~1s), not worth caching complexity |
+| CACHE-D10 | 14-02 | Cache error handling | Wrap in try/except (OSError, PermissionError) | Cache errors should never fail pipeline, only degrade performance |
+| CACHE-D11 | 14-02 | Cache hit restoration | Use shutil.copy2 instead of symlinks | Ensures files exist at expected paths, no symlink complexity |
+| CACHE-D12 | 14-03 | Cache CLI tool requirements | Skip check_requirements() for cache command | Cache commands don't need minimap2/samtools, improves portability |
+| SJ-D01 | 15-01 | Junction metadata source | Extract from primary alignment only | Primary = canonical mapping, secondary/supplementary are alternatives |
+| SJ-D02 | 15-01 | Unmapped plasmid handling | Write all-NA cDNA_positions.txt instead of raising | Graceful degradation, consistent with Phase 13 fallback behavior |
+| SJ-D03 | 15-01 | Backward compatibility | InsertRegionData with __iter__ and __getitem__ | Mimics tuple for unpacking/subscripting, no breaking changes |
+| SJ-D04 | 15-01 | Field parsing approach | Parse by prefix, not line number | Forward-compatible if we add more fields, handles missing fields gracefully |
+| SJ-D05 | 15-01 | NA value mapping | start/end→0, junction fields→None | start/end=0 maintains existing logic, None signals "not available" for junction metadata |
+| SJ-D06 | 15-02 | Junction card display | Hide when SpliceJunctionCount is N/A | Unmapped plasmids have no junction data, avoid showing empty sections |
+| SJ-D07 | 15-02 | List truncation threshold | 5 items in HTML, full in exports | Maintains readability while preserving full data for analysis |
+| SJ-D08 | 15-02 | Junction export structure | Add to extended_categories + dedicated file | Follows resistance genes pattern, easy access |
+| VIS-D01 | 16-01 | Verdict aggregation with missing data | Detect missing sample-plasmid pairs as "No Result" via cross-product left join | Some samples may not have verdict data for all plasmids (e.g., failed alignment), showing "No Result" is more accurate than omitting them |
+| VIS-D02 | 16-01 | Hover text readability | Truncate name lists to 10 items + "...and N more" in hover | Long lists make hover tooltips unwieldy, truncation maintains readability |
+| VIS-D03 | 16-01 | Verdict color scheme | Reuse HEATMAP_COLORS with No Result as lightgray matching Backbone_Only | Consistent color scheme across all verdict visualizations, gray for missing/absent data |
+| VIS-RENDER-01 | 16-02 | Verdict Overview section placement | Placed before Contamination Analysis as Section 0 | High-level overview should appear first, provides immediate context |
+| VIS-RENDER-02 | 16-02 | Side-by-side layout | Bootstrap row with two col-md-6 columns | Both charts visible simultaneously without scrolling, easy comparison between plasmid and sample groupings |
+| VIS-RENDER-03 | 16-02 | Backward compatibility | Template renders without error when verdict data missing | Jinja2 undefined defaults to empty strings, section appears but plots are empty - no breaking changes |
 
 ### Open Blockers
 
@@ -147,23 +170,10 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-15
-**Stopped at:** Phase 11 verified, v0.33.0 milestone ready for audit
+**Last session:** 2026-02-16
+**Stopped at:** Completed 16-02-PLAN.md (Verdict chart template wiring) - Phase 16 complete, v0.34.0 ready for release
 **Resume file:** None
-
-**What just happened:**
-- Phase 11 executed (2 plans, 2 waves) and verified (9/9 must-haves passed)
-- Plan 01: 4 new plot/table functions + 2 matplotlib fallbacks (5 min)
-- Plan 02: Template restructured, wired into main(), extended exports, 17 tests (8 min)
-- All 7 summary report requirements (REPT-04 to REPT-10) satisfied
-- 297 tests passing, all ci-check passes
-
-**v0.33.0 milestone status:**
-- All 4 phases complete and verified (Phases 8-11)
-- 21/21 requirements complete
-- 297 tests passing (up from 170 at v0.32.0)
-- Ready for milestone audit
 
 ---
 *State initialized: 2026-02-14*
-*Last updated: 2026-02-15 after Phase 11 verification (v0.33.0 milestone all phases verified)*
+*Last updated: 2026-02-16 after completing 16-02-PLAN.md — Phase 16 complete, v0.34.0 ready for release*

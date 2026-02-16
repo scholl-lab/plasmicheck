@@ -506,3 +506,232 @@ class TestBatchResilience:
                 if "p.gb x sample.bam:" in record.message and "s" in record.message
             ]
             assert len(timing_logs) >= 1, "Expected at least one timing log message"
+
+
+# --- Cache integration tests ---
+
+
+class TestPipelineCacheIntegration:
+    @pytest.mark.unit
+    def test_pipeline_cache_args_passed(self) -> None:
+        """Verify that run_pipeline accepts cache_dir and no_cache parameters."""
+        # This is a signature test - just verify the function accepts the parameters
+        import inspect
+
+        sig = inspect.signature(run_pipeline)
+        assert "cache_dir" in sig.parameters
+        assert "no_cache" in sig.parameters
+
+    @pytest.mark.unit
+    def test_no_cache_flag_skips_initialization(self, tmp_path: Path) -> None:
+        """Verify that no_cache=True prevents CacheManager instantiation."""
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid = tmp_path / "p.gb"
+        plasmid.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq_file = tmp_path / "sample.bam"
+        seq_file.write_text("")
+
+        output = tmp_path / "output"
+
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+            mock.patch("plasmicheck.scripts.run_pipeline.CacheManager") as mock_cache_mgr,
+        ):
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_file),
+                overwrite=False,
+                no_cache=True,
+            )
+
+            # CacheManager should NOT have been instantiated
+            mock_cache_mgr.assert_not_called()
+
+    @pytest.mark.unit
+    def test_cache_dir_override(self, tmp_path: Path) -> None:
+        """Verify that cache_dir parameter overrides default cache location."""
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid = tmp_path / "p.gb"
+        plasmid.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq_file = tmp_path / "sample.bam"
+        seq_file.write_text("")
+
+        output = tmp_path / "output"
+        custom_cache = tmp_path / "custom_cache"
+
+        # Mock CacheManager to return None for cache misses
+        mock_cache = mock.MagicMock()
+        mock_cache.get_index.return_value = None
+        mock_cache.get_spliced.return_value = None
+
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+            mock.patch(
+                "plasmicheck.scripts.run_pipeline.CacheManager", return_value=mock_cache
+            ) as mock_cache_mgr,
+        ):
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_file),
+                overwrite=False,
+                cache_dir=str(custom_cache),
+            )
+
+            # CacheManager should have been called with custom path
+            mock_cache_mgr.assert_called_once()
+            call_args = mock_cache_mgr.call_args
+            assert str(custom_cache) in str(call_args)
+
+    @pytest.mark.unit
+    def test_cache_initialization_failure_continues(self, tmp_path: Path) -> None:
+        """Verify pipeline continues gracefully when cache initialization fails."""
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid = tmp_path / "p.gb"
+        plasmid.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq_file = tmp_path / "sample.bam"
+        seq_file.write_text("")
+
+        output = tmp_path / "output"
+
+        # Make CacheManager.__init__ raise OSError
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+            mock.patch(
+                "plasmicheck.scripts.run_pipeline.CacheManager",
+                side_effect=OSError("Permission denied"),
+            ),
+        ):
+            # Should NOT raise - pipeline continues without cache
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_file),
+                overwrite=False,
+            )
+
+    @pytest.mark.unit
+    def test_cache_within_run_dedup(self, tmp_path: Path) -> None:
+        """Verify within-run deduplication via cache mechanism.
+
+        When the same plasmid appears in multiple combinations:
+        - First combo: cache MISS, build index, store in cache
+        - Second combo: cache HIT, copy from cache, skip build
+        """
+        # Create minimal dummy files
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n")
+
+        plasmid = tmp_path / "p.gb"
+        plasmid.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+        seq1 = tmp_path / "s1.bam"
+        seq2 = tmp_path / "s2.bam"
+        seq1.write_text("")
+        seq2.write_text("")
+
+        seq_list = tmp_path / "seqs.txt"
+        seq_list.write_text(f"{seq1}\n{seq2}\n")
+
+        output = tmp_path / "output"
+
+        # Mock CacheManager to track get_index/put_index calls
+        mock_cache = mock.MagicMock()
+        # First call to get_index returns None (MISS), second returns cached data (HIT)
+        cached_mmi = tmp_path / "cached.mmi"
+        cached_fai = tmp_path / "cached.fai"
+        cached_mmi.write_text("fake mmi")
+        cached_fai.write_text("fake fai")
+
+        mock_cache.get_index.side_effect = [
+            None,  # First combination: MISS
+            {"mmi": cached_mmi, "fai": cached_fai},  # Second combination: HIT
+        ]
+
+        with (
+            mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            mock.patch("plasmicheck.scripts.run_pipeline.create_indexes") as mock_create_idx,
+            mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            mock.patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
+            mock.patch("plasmicheck.scripts.run_pipeline.shutil.copy2") as mock_copy,
+            mock.patch("plasmicheck.scripts.run_pipeline.CacheManager", return_value=mock_cache),
+        ):
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmid),
+                output_folder=str(output),
+                sequencing_files_r1=str(seq_list),
+                overwrite=False,
+            )
+
+            # Verify cache.get_index was called twice (once per combination)
+            assert mock_cache.get_index.call_count == 2
+
+            # Verify cache.put_index was called once (after first build)
+            assert mock_cache.put_index.call_count == 1
+
+            # Verify shutil.copy2 was called on second combination (cache HIT)
+            # Should be 2 calls: one for .mmi, one for .fai
+            copy_calls = [call for call in mock_copy.call_args_list if "cached" in str(call)]
+            assert len(copy_calls) >= 2, "Expected at least 2 copy calls for cache HIT"
+
+            # Count create_indexes calls for plasmid FASTA
+            # First combo builds, second combo skips due to cache hit
+            # Plus spliced FASTA indexes (2x) and human index (1x) = variable count
+            # Key verification: plasmid FASTA indexed only once despite 2 combos
+            plasmid_fasta_idx_calls = [
+                call for call in mock_create_idx.call_args_list if "p.fasta" in str(call)
+            ]
+            # Should be 1 call for plasmid FASTA (first combo only)
+            assert len(plasmid_fasta_idx_calls) == 1, (
+                f"Expected 1 plasmid index build, got {len(plasmid_fasta_idx_calls)}"
+            )

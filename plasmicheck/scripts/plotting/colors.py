@@ -31,3 +31,11 @@ HEATMAP_COLORS: dict[str, str] = {
     "unclear": "orange",
     "contaminated": "red",
 }
+
+# Verdict bar chart colors derived from heatmap colors
+VERDICT_COLORS: dict[str, str] = {
+    "Clean": HEATMAP_COLORS["not_contaminated"],  # lightblue
+    "Unclear": HEATMAP_COLORS["unclear"],  # orange
+    "Contaminated": HEATMAP_COLORS["contaminated"],  # red
+    "No Result": "#D3D3D3",  # lightgray (matches Backbone_Only)
+}

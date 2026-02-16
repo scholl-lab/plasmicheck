@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from plasmicheck.scripts.compare_alignments import (
+    InsertRegionData,
     _assign,
     _best_read,
     _streaming_compare,
@@ -108,7 +109,13 @@ class TestParseInsertRegion:
     @pytest.mark.unit
     def test_valid_file(self, cdna_positions_file: Path) -> None:
         result = parse_insert_region(str(cdna_positions_file))
-        assert result == (100, 500)
+        # Should return InsertRegionData
+        assert isinstance(result, InsertRegionData)
+        assert result.start == 100
+        assert result.end == 500
+        # Tuple unpacking should still work
+        start, end = result
+        assert (start, end) == (100, 500)
 
     @pytest.mark.unit
     def test_missing_file(self, tmp_path: Path) -> None:
@@ -124,7 +131,103 @@ class TestParseInsertRegion:
             f"cDNA end position in plasmid: {end}\n"
             f"INSERT_REGION: ({start}, {end})\n"
         )
-        assert parse_insert_region(str(f)) == (start, end)
+        result = parse_insert_region(str(f))
+        assert isinstance(result, InsertRegionData)
+        # Tuple unpacking should still work
+        s, e = result
+        assert (s, e) == (start, end)
+
+    @pytest.mark.unit
+    def test_new_format_fields(self, tmp_path: Path) -> None:
+        """Test parsing of new 11-line format with junction metadata."""
+        f = tmp_path / "cDNA_positions.txt"
+        f.write_text(
+            "cDNA start position in plasmid: 100\n"
+            "cDNA end position in plasmid: 500\n"
+            "INSERT_REGION: (100, 500)\n"
+            "SpliceJunctionCount: 2\n"
+            "ExonCount: 3\n"
+            "ExonLengths: 50,60,70\n"
+            "IntronLengths: 100,150\n"
+            "Strand: +\n"
+            "Chromosome: chr1\n"
+            "GenomicStart: 1000\n"
+            "GenomicEnd: 1530\n"
+        )
+        result = parse_insert_region(str(f))
+        assert isinstance(result, InsertRegionData)
+        assert result.start == 100
+        assert result.end == 500
+        assert result.junction_count == 2
+        assert result.exon_count == 3
+        assert result.exon_lengths == [50, 60, 70]
+        assert result.intron_lengths == [100, 150]
+        assert result.strand == "+"
+        assert result.chromosome == "chr1"
+        assert result.genomic_start == 1000
+        assert result.genomic_end == 1530
+
+    @pytest.mark.unit
+    def test_old_format_backward_compat(self, tmp_path: Path) -> None:
+        """Test backward compatibility with old 3-line format."""
+        f = tmp_path / "cDNA_positions.txt"
+        f.write_text(
+            "cDNA start position in plasmid: 200\n"
+            "cDNA end position in plasmid: 800\n"
+            "INSERT_REGION: (200, 800)\n"
+        )
+        result = parse_insert_region(str(f))
+        assert isinstance(result, InsertRegionData)
+        assert result.start == 200
+        assert result.end == 800
+        # New fields should be None (not present in old format)
+        assert result.junction_count is None
+        assert result.exon_count is None
+        assert result.exon_lengths is None
+        assert result.intron_lengths is None
+        assert result.strand is None
+        assert result.chromosome is None
+        assert result.genomic_start is None
+        assert result.genomic_end is None
+
+    @pytest.mark.unit
+    def test_na_values_raises_valueerror(self, tmp_path: Path) -> None:
+        """Test that NA cDNA start/end raises ValueError (insert region unavailable)."""
+        f = tmp_path / "cDNA_positions.txt"
+        f.write_text(
+            "cDNA start position in plasmid: NA\n"
+            "cDNA end position in plasmid: NA\n"
+            "INSERT_REGION: NA\n"
+            "SpliceJunctionCount: NA\n"
+            "ExonCount: NA\n"
+            "ExonLengths: NA\n"
+            "IntronLengths: NA\n"
+            "Strand: NA\n"
+            "Chromosome: NA\n"
+            "GenomicStart: NA\n"
+            "GenomicEnd: NA\n"
+        )
+        with pytest.raises(ValueError, match="Insert region unavailable"):
+            parse_insert_region(str(f))
+
+
+class TestInsertRegionDataIterator:
+    """Test InsertRegionData.__iter__ for backward compatibility."""
+
+    @pytest.mark.unit
+    def test_iter_produces_start_end_tuple(self) -> None:
+        """Test that __iter__ returns (start, end) for tuple unpacking."""
+        data = InsertRegionData(start=100, end=500, junction_count=2)
+        result = list(data)
+        assert result == [100, 500]
+
+    @pytest.mark.unit
+    def test_tuple_unpacking(self) -> None:
+        """Test that tuple unpacking works as expected."""
+        data = InsertRegionData(start=100, end=500, junction_count=2)
+        start, end = data
+        assert start == 100
+        assert end == 500
 
 
 class TestAssign:
@@ -764,3 +867,173 @@ class TestResistanceGeneIntegration:
             assert "ResistanceGenesAvailable\ttrue" in content
             assert "ResistanceGenes\tNone" in content
             assert "ResGene_" not in content
+
+
+class TestJunctionMetadataInSummary:
+    """Test junction metadata fields in summary.tsv (Phase 15)."""
+
+    @pytest.mark.unit
+    def test_summary_includes_junction_fields(self, tmp_path: Path) -> None:
+        """Verify summary.tsv includes junction metadata from InsertRegionData."""
+        from unittest.mock import MagicMock
+
+        from plasmicheck.scripts.compare_alignments import compare_alignments
+
+        plasmid_bam = tmp_path / "plasmid.bam"
+        human_bam = tmp_path / "human.bam"
+        output_base = tmp_path / "output"
+        cdna_file = tmp_path / "cDNA_positions.txt"
+
+        # Create new-format cDNA positions file with junction metadata
+        cdna_file.write_text(
+            "cDNA start position in plasmid: 100\n"
+            "cDNA end position in plasmid: 500\n"
+            "INSERT_REGION: (100, 500)\n"
+            "SpliceJunctionCount: 2\n"
+            "ExonCount: 3\n"
+            "ExonLengths: 50,60,70\n"
+            "IntronLengths: 100,150\n"
+            "Strand: +\n"
+            "Chromosome: chr1\n"
+            "GenomicStart: 1000\n"
+            "GenomicEnd: 1530\n"
+        )
+
+        with (
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics"
+            ) as mock_cov,
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch("plasmicheck.scripts.compare_alignments._streaming_compare") as mock_stream,
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("pysam.AlignmentFile") as mock_bam,
+        ):
+            mock_cov.return_value = (
+                {
+                    "insert": {
+                        "mean_depth": 10.0,
+                        "median_depth": 9.0,
+                        "breadth_1x": 0.8,
+                        "breadth_5x": 0.7,
+                        "cv": 0.2,
+                    },
+                    "backbone": {
+                        "mean_depth": 5.0,
+                        "median_depth": 4.0,
+                        "breadth_1x": 0.6,
+                        "breadth_5x": 0.5,
+                        "cv": 0.3,
+                    },
+                },
+                False,
+            )
+            mock_stream.return_value = {
+                "Plasmid": 100,
+                "Human": 10,
+                "Tied": 5,
+                "Backbone_Only": 2,
+                "Ambiguous": 1,
+            }
+
+            mock_bam_instance = MagicMock()
+            mock_bam_instance.lengths = [10000]
+            mock_bam_instance.get_tid.return_value = 0
+            mock_bam.return_value.__enter__.return_value = mock_bam_instance
+
+            compare_alignments(
+                str(plasmid_bam),
+                str(human_bam),
+                str(output_base),
+                genbank_file=None,
+                cdna_positions_file=str(cdna_file),
+            )
+
+            summary_file = output_base.parent / (output_base.name + ".summary.tsv")
+            assert summary_file.exists()
+            content = summary_file.read_text()
+
+            # Verify junction metadata rows
+            assert "SpliceJunctionCount\t2" in content
+            assert "ExonCount\t3" in content
+            assert "ExonLengths\t50,60,70" in content
+            assert "IntronLengths\t100,150" in content
+
+    @pytest.mark.unit
+    def test_summary_junction_fields_na_when_old_format(self, tmp_path: Path) -> None:
+        """Verify junction fields are NA when using old 3-line cDNA_positions.txt."""
+        from unittest.mock import MagicMock
+
+        from plasmicheck.scripts.compare_alignments import compare_alignments
+
+        plasmid_bam = tmp_path / "plasmid.bam"
+        human_bam = tmp_path / "human.bam"
+        output_base = tmp_path / "output"
+        cdna_file = tmp_path / "cDNA_positions.txt"
+
+        # Create old-format cDNA positions file (3 lines only)
+        cdna_file.write_text(
+            "cDNA start position in plasmid: 100\n"
+            "cDNA end position in plasmid: 500\n"
+            "INSERT_REGION: (100, 500)\n"
+        )
+
+        with (
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics"
+            ) as mock_cov,
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch("plasmicheck.scripts.compare_alignments._streaming_compare") as mock_stream,
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("pysam.AlignmentFile") as mock_bam,
+        ):
+            mock_cov.return_value = (
+                {
+                    "insert": {
+                        "mean_depth": 10.0,
+                        "median_depth": 9.0,
+                        "breadth_1x": 0.8,
+                        "breadth_5x": 0.7,
+                        "cv": 0.2,
+                    },
+                    "backbone": {
+                        "mean_depth": 5.0,
+                        "median_depth": 4.0,
+                        "breadth_1x": 0.6,
+                        "breadth_5x": 0.5,
+                        "cv": 0.3,
+                    },
+                },
+                False,
+            )
+            mock_stream.return_value = {
+                "Plasmid": 100,
+                "Human": 10,
+                "Tied": 5,
+                "Backbone_Only": 2,
+                "Ambiguous": 1,
+            }
+
+            mock_bam_instance = MagicMock()
+            mock_bam_instance.lengths = [10000]
+            mock_bam_instance.get_tid.return_value = 0
+            mock_bam.return_value.__enter__.return_value = mock_bam_instance
+
+            compare_alignments(
+                str(plasmid_bam),
+                str(human_bam),
+                str(output_base),
+                genbank_file=None,
+                cdna_positions_file=str(cdna_file),
+            )
+
+            summary_file = output_base.parent / (output_base.name + ".summary.tsv")
+            assert summary_file.exists()
+            content = summary_file.read_text()
+
+            # Verify junction metadata rows are NA (old format)
+            assert "SpliceJunctionCount\tNA" in content
+            assert "ExonCount\tNA" in content
+            assert "ExonLengths\tNA" in content
+            assert "IntronLengths\tNA" in content

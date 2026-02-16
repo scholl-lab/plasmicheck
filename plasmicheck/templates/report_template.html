@@ -647,6 +647,47 @@
         </table>
     </div>
 
+    <!-- ---- Splice Junction Metadata ------------------------------ -->
+    {% if junction_metrics and junction_metrics.splice_junction_count != 'N/A' %}
+    <div class="pc-card">
+        <div class="pc-card-header">Splice Junction Metadata</div>
+        <table class="pc-table">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th class="pc-num">Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Splice Junction Count</td>
+                    <td class="pc-num">{{ junction_metrics.splice_junction_count }}</td>
+                </tr>
+                <tr>
+                    <td>Exon Count</td>
+                    <td class="pc-num">{{ junction_metrics.exon_count }}</td>
+                </tr>
+                {% if junction_metrics.exon_lengths != 'N/A' %}
+                <tr>
+                    <td>Exon Lengths (bp)</td>
+                    <td class="pc-num" title="{{ junction_metrics.exon_lengths }}">
+                        {{ junction_metrics.exon_lengths | truncate_list }}
+                    </td>
+                </tr>
+                {% endif %}
+                {% if junction_metrics.intron_lengths != 'N/A' %}
+                <tr>
+                    <td>Intron Lengths (bp)</td>
+                    <td class="pc-num" title="{{ junction_metrics.intron_lengths }}">
+                        {{ junction_metrics.intron_lengths | truncate_list }}
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     <!-- ---- Run Details (collapsible) --------------------- -->
     <details class="pc-details-toggle">
         <summary>Run Details</summary>

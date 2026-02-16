@@ -19,6 +19,7 @@ SUBCOMMANDS = [
     "pipeline",
     "report",
     "summary_reports",
+    "cache",
 ]
 
 PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -124,3 +125,169 @@ class TestCLI:
         assert result.stdout.strip() == "NONE", (
             f"Heavy modules loaded on import: {result.stdout.strip()}"
         )
+
+    @pytest.mark.unit
+    def test_cache_info_empty(self, tmp_path: Path) -> None:
+        """Test cache info with empty cache."""
+        cache_dir = tmp_path / "cache"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "info",
+                "--cache-dir",
+                str(cache_dir),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        assert result.returncode == 0
+        assert "Total entries:   0" in result.stdout
+        assert "Total size:      0 B" in result.stdout
+        assert f"Cache directory: {cache_dir}" in result.stdout
+
+    @pytest.mark.unit
+    def test_cache_info_with_entries(self, tmp_path: Path) -> None:
+        """Test cache info with cached entries."""
+        from plasmicheck.cache_manager import CacheManager
+
+        cache_dir = tmp_path / "cache"
+        cache = CacheManager(cache_dir)
+
+        # Create dummy index files
+        dummy_fasta = tmp_path / "test.fa"
+        dummy_fasta.write_text(">seq1\nACGT\n")
+        dummy_mmi = tmp_path / "test.mmi"
+        dummy_mmi.write_bytes(b"dummy_mmi_content")
+        dummy_fai = tmp_path / "test.fai"
+        dummy_fai.write_bytes(b"seq1\t4\t6\t4\t5\n")
+
+        # Put entry in cache
+        cache.put_index(str(dummy_fasta), str(dummy_mmi), str(dummy_fai))
+
+        # Run cache info
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "info",
+                "--cache-dir",
+                str(cache_dir),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        assert result.returncode == 0
+        assert "Total entries:   1" in result.stdout
+        assert "Total size:" in result.stdout
+        # Size should be non-zero (check it's not exactly "0 B")
+        assert "Total size:      0 B" not in result.stdout
+
+    @pytest.mark.unit
+    def test_cache_clean_all(self, tmp_path: Path) -> None:
+        """Test cache clean --all removes all entries."""
+        from plasmicheck.cache_manager import CacheManager
+
+        cache_dir = tmp_path / "cache"
+        cache = CacheManager(cache_dir)
+
+        # Create dummy index files
+        dummy_fasta = tmp_path / "test.fa"
+        dummy_fasta.write_text(">seq1\nACGT\n")
+        dummy_mmi = tmp_path / "test.mmi"
+        dummy_mmi.write_bytes(b"dummy_mmi_content")
+        dummy_fai = tmp_path / "test.fai"
+        dummy_fai.write_bytes(b"seq1\t4\t6\t4\t5\n")
+
+        # Put entry in cache
+        cache.put_index(str(dummy_fasta), str(dummy_mmi), str(dummy_fai))
+
+        # Run cache clean
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "clean",
+                "--all",
+                "--cache-dir",
+                str(cache_dir),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        assert result.returncode == 0
+        assert "Removed 1 cache entries" in result.stdout
+
+        # Verify cache is now empty
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "info",
+                "--cache-dir",
+                str(cache_dir),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        assert result.returncode == 0
+        assert "Total entries:   0" in result.stdout
+
+    @pytest.mark.unit
+    def test_cache_help(self) -> None:
+        """Test cache subcommand help."""
+        result = subprocess.run(
+            [sys.executable, "-m", "plasmicheck.cli", "cache", "--help"],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        assert result.returncode == 0
+        assert "info" in result.stdout
+        assert "clean" in result.stdout
+
+    @pytest.mark.unit
+    def test_cache_no_minimap2_required(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that cache commands work without minimap2 on PATH."""
+        import os
+
+        cache_dir = tmp_path / "cache"
+
+        # Remove all directories from PATH to ensure minimap2/samtools can't be found
+        monkeypatch.setenv("PATH", "")
+
+        # cache info should still work
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "plasmicheck.cli",
+                "cache",
+                "info",
+                "--cache-dir",
+                str(cache_dir),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+            env={**os.environ, "PATH": ""},
+        )
+        assert result.returncode == 0
+        assert "Total entries:   0" in result.stdout
+        # Should NOT contain error about missing tools
+        assert "minimap2" not in result.stderr.lower()
+        assert "samtools" not in result.stderr.lower()

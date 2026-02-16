@@ -264,3 +264,41 @@ def test_matplotlib_backend_no_kaleido_import(
             sys.modules["kaleido"] = original_kaleido
         elif "kaleido" in sys.modules:
             del sys.modules["kaleido"]
+
+
+@pytest.mark.unit
+def test_generate_verdict_bar_matplotlib_creates_png(tmp_path: Path) -> None:
+    """Test that generate_verdict_bar_matplotlib creates a PNG file."""
+    from plasmicheck.scripts.plotting.matplotlib_backend import generate_verdict_bar_matplotlib
+
+    # Create aggregated verdict DataFrame (Plasmid x Verdict categories)
+    aggregated_df = pd.DataFrame(
+        {
+            "Clean": [2, 1, 3],
+            "Unclear": [1, 2, 0],
+            "Contaminated": [0, 1, 2],
+            "No Result": [1, 0, 1],
+        },
+        index=["Plasmid1", "Plasmid2", "Plasmid3"],
+    )
+
+    output_path = tmp_path / "verdict_bar.png"
+
+    generate_verdict_bar_matplotlib(aggregated_df, output_path, "Verdicts by Plasmid", "Plasmid")
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
+@pytest.mark.unit
+def test_generate_verdict_bar_matplotlib_empty_dataframe(tmp_path: Path) -> None:
+    """Test that generate_verdict_bar_matplotlib handles empty DataFrame."""
+    from plasmicheck.scripts.plotting.matplotlib_backend import generate_verdict_bar_matplotlib
+
+    empty_df = pd.DataFrame()
+    output_path = tmp_path / "verdict_bar_empty.png"
+
+    generate_verdict_bar_matplotlib(empty_df, output_path, "Empty Verdicts", "Plasmid")
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0

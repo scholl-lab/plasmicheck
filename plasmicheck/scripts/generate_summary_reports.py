@@ -56,6 +56,38 @@ def find_tsv_files(input_dir: str, pattern: str) -> list[str]:
     return tsv_files
 
 
+def _extract_sample_plasmid(file_path: str) -> tuple[str, str]:
+    """Extract sample and plasmid names from a comparison output file path.
+
+    Handles both directory layouts:
+    - Old (flat): output/sample/plasmid/file.tsv
+    - New (subfolder): output/sample/plasmid/data/file.tsv
+
+    Strategy: if the immediate parent directory is named 'data',
+    go one level further up for plasmid and sample names.
+
+    Args:
+        file_path: Path to the comparison file
+
+    Returns:
+        Tuple of (sample_name, plasmid_name)
+    """
+    parent = os.path.dirname(file_path)
+    parent_name = os.path.basename(parent)
+
+    if parent_name == "data":
+        # New subfolder layout: .../sample/plasmid/data/file.tsv
+        plasmid_dir = os.path.dirname(parent)
+        plasmid_name = os.path.basename(plasmid_dir)
+        sample_name = os.path.basename(os.path.dirname(plasmid_dir))
+    else:
+        # Old flat layout: .../sample/plasmid/file.tsv
+        plasmid_name = parent_name
+        sample_name = os.path.basename(os.path.dirname(parent))
+
+    return sample_name, plasmid_name
+
+
 def read_compare_outputs(
     input_dir: str, substring_to_remove: str | None = None
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -71,8 +103,7 @@ def read_compare_outputs(
 
     reads_df_list: list[pd.DataFrame] = []
     for file in reads_assignment_files:
-        sample_name: str = os.path.basename(os.path.dirname(os.path.dirname(file)))
-        plasmid_name: str = os.path.basename(os.path.dirname(file))
+        sample_name, plasmid_name = _extract_sample_plasmid(file)
 
         # Remove the substring from the sample name if provided
         if substring_to_remove:
@@ -87,8 +118,7 @@ def read_compare_outputs(
 
     summary_df_list: list[pd.DataFrame] = []
     for file in summary_files:
-        sample_name = os.path.basename(os.path.dirname(os.path.dirname(file)))
-        plasmid_name = os.path.basename(os.path.dirname(file))
+        sample_name, plasmid_name = _extract_sample_plasmid(file)
 
         # Remove the substring from the sample name if provided
         if substring_to_remove:
@@ -126,6 +156,16 @@ def _sanitize_for_excel(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _truncate_list_for_html(value: str, max_items: int = 5) -> str:
+    """Truncate comma-separated list for HTML table display."""
+    if not value or value in ("N/A", "NA", "nan"):
+        return "N/A"
+    items = value.split(",")
+    if len(items) <= max_items:
+        return value
+    return ",".join(items[:max_items]) + ",..."
+
+
 def save_tables_as_tsv_and_excel(
     combined_df: pd.DataFrame,
     verdict_df: pd.DataFrame,
@@ -134,6 +174,7 @@ def save_tables_as_tsv_and_excel(
     output_dir: str,
     extended_metrics_df: pd.DataFrame | None = None,
     resistance_gene_df: pd.DataFrame | None = None,
+    junction_df: pd.DataFrame | None = None,
 ) -> None:
     """Save the combined, verdict, ratio, and p-value dataframes as TSV and Excel files."""
     import pandas as pd
@@ -165,6 +206,12 @@ def save_tables_as_tsv_and_excel(
             os.path.join(data_dir, "resistance_genes_table.tsv"), sep="\t", index=False
         )
 
+    # Save junction metadata TSV if provided
+    if junction_df is not None and not junction_df.empty:
+        junction_df.to_csv(
+            os.path.join(data_dir, "junction_metadata_table.tsv"), sep="\t", index=False
+        )
+
     # Save Excel file with multiple sheets
     excel_file: str = os.path.join(data_dir, "summary_report_tables.xlsx")
     with pd.ExcelWriter(excel_file, engine="xlsxwriter") as writer:
@@ -185,6 +232,12 @@ def save_tables_as_tsv_and_excel(
                 writer, sheet_name="Resistance Genes", index=False
             )
 
+        # Add junction metadata sheet if provided
+        if junction_df is not None and not junction_df.empty:
+            _sanitize_for_excel(junction_df).to_excel(
+                writer, sheet_name="Junction Metadata", index=False
+            )
+
     logging.info("TSV and Excel files have been saved.")
 
 
@@ -197,8 +250,9 @@ def calculate_variations(ratio_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataF
 
     logging.info("Calculating variations for contamination ratios.")
 
-    # Convert 'Value' to numeric, ensuring all entries are valid numbers
-    ratio_df.loc[:, "Value"] = pd.to_numeric(ratio_df["Value"], errors="coerce")
+    # Convert 'Value' to numeric, ensuring all entries are valid numbers.
+    # Use .assign() to avoid in-place dtype conflict with StringDtype (pandas 2.2+).
+    ratio_df = ratio_df.assign(Value=pd.to_numeric(ratio_df["Value"], errors="coerce"))
     boxplot_data: pd.DataFrame = ratio_df.pivot(index="Sample", columns="Plasmid", values="Value")
 
     # Drop NaNs
@@ -306,8 +360,8 @@ def plot_heatmap(
 
     logging.info("Generating heatmap for contamination ratios.")
 
-    # Use .loc[] to avoid SettingWithCopyWarning
-    ratio_df.loc[:, "Value"] = pd.to_numeric(ratio_df["Value"], errors="coerce")
+    # Use .assign() to avoid dtype conflict with StringDtype (pandas 2.2+)
+    ratio_df = ratio_df.assign(Value=pd.to_numeric(ratio_df["Value"], errors="coerce"))
 
     # Pivot the DataFrame for the heatmap
     ratio_data: pd.DataFrame = ratio_df.pivot(
@@ -639,6 +693,308 @@ def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(table_rows)
 
 
+def _format_verdict_hover(
+    verdict: str, count: int, name_list: list[str], max_display: int = 10
+) -> str:
+    """Build hover HTML string with verdict, count, and truncated name list.
+
+    Args:
+        verdict: Verdict category (e.g., "Clean", "Contaminated")
+        count: Number of items in this category
+        name_list: List of sample or plasmid names
+        max_display: Maximum names to display before truncating
+
+    Returns:
+        HTML-formatted string for hover display
+    """
+    lines = [f"<b>{verdict}</b>", f"Count: {count}"]
+
+    if name_list:
+        if len(name_list) <= max_display:
+            lines.extend(name_list)
+        else:
+            lines.extend(name_list[:max_display])
+            lines.append(f"...and {len(name_list) - max_display} more")
+
+    return "<br>".join(lines)
+
+
+def aggregate_verdicts(
+    summary_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Aggregate verdict data by plasmid and by sample with No Result detection.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+
+    Returns:
+        Tuple of (full_verdict_df, by_plasmid_counts, by_sample_counts):
+        - full_verdict_df: DataFrame with [Sample, Plasmid, VerdictShort] including No Result
+        - by_plasmid_counts: Plasmids as index, verdict categories as columns
+        - by_sample_counts: Samples as index, verdict categories as columns
+    """
+    import pandas as pd
+
+    # Map full verdict strings to short labels
+    verdict_map = {
+        "Sample is contaminated with plasmid DNA": "Contaminated",
+        "Sample contamination status is unclear": "Unclear",
+        "Sample is not contaminated with plasmid DNA": "Clean",
+    }
+
+    # Extract verdict rows
+    verdict_rows = summary_df[summary_df["Category"] == "Verdict"].copy()
+
+    if verdict_rows.empty:
+        # Return empty DataFrames with correct structure
+        empty_df = pd.DataFrame(columns=["Sample", "Plasmid", "VerdictShort"])
+        empty_counts = pd.DataFrame(columns=["Clean", "Unclear", "Contaminated", "No Result"])
+        return empty_df, empty_counts, empty_counts
+
+    # Map to short labels
+    verdict_rows["VerdictShort"] = verdict_rows["Value"].map(verdict_map)
+
+    # Build cross-product of all unique samples x plasmids from FULL summary_df
+    all_samples = summary_df["Sample"].unique()
+    all_plasmids = summary_df["Plasmid"].unique()
+
+    # Create full cross-product
+    full_cross = pd.DataFrame(
+        [(s, p) for s in all_samples for p in all_plasmids], columns=["Sample", "Plasmid"]
+    )
+
+    # Left join verdict data
+    full_verdict_df = full_cross.merge(
+        verdict_rows[["Sample", "Plasmid", "VerdictShort"]], on=["Sample", "Plasmid"], how="left"
+    )
+
+    # Fill missing with "No Result"
+    full_verdict_df["VerdictShort"] = full_verdict_df["VerdictShort"].fillna("No Result")
+
+    # Aggregate by plasmid
+    by_plasmid = full_verdict_df.groupby(["Plasmid", "VerdictShort"]).size().unstack(fill_value=0)
+
+    # Aggregate by sample
+    by_sample = full_verdict_df.groupby(["Sample", "VerdictShort"]).size().unstack(fill_value=0)
+
+    # Ensure column order
+    verdict_order = ["Clean", "Unclear", "Contaminated", "No Result"]
+    by_plasmid_counts = by_plasmid.reindex(columns=verdict_order, fill_value=0)
+    by_sample_counts = by_sample.reindex(columns=verdict_order, fill_value=0)
+
+    return full_verdict_df, by_plasmid_counts, by_sample_counts
+
+
+def plot_verdict_bar_by_plasmid(
+    summary_df: pd.DataFrame,
+    output_dir: str,
+    static_report: bool = False,
+    plot_backend: str = "plotly",
+) -> tuple[str, str | None]:
+    """Generate stacked bar chart of verdicts grouped by plasmid.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+        output_dir: Output directory for plots
+        static_report: If True, also generate PNG via matplotlib
+        plot_backend: Backend for static plots ("plotly" or "matplotlib")
+
+    Returns:
+        Tuple of (html_path, png_path_or_None)
+    """
+    import plotly.graph_objects as go
+
+    from .plotting.colors import VERDICT_COLORS
+
+    logging.info("Generating verdict bar chart by plasmid.")
+
+    # Get aggregated data
+    full_verdict_df, by_plasmid_counts, _ = aggregate_verdicts(summary_df)
+
+    if full_verdict_df.empty:
+        logging.warning("No verdict data available for plotting.")
+        return "", None
+
+    # Build hover data: verdict -> plasmid -> list of sample names
+    hover_data: dict[str, dict[str, list[str]]] = {
+        verdict: {} for verdict in ["Clean", "Unclear", "Contaminated", "No Result"]
+    }
+
+    for _, row in full_verdict_df.iterrows():
+        verdict = row["VerdictShort"]
+        plasmid = row["Plasmid"]
+        sample = row["Sample"]
+
+        if plasmid not in hover_data[verdict]:
+            hover_data[verdict][plasmid] = []
+        hover_data[verdict][plasmid].append(sample)
+
+    # Create traces
+    fig = go.Figure()
+    verdict_order = ["Clean", "Unclear", "Contaminated", "No Result"]
+
+    for verdict in verdict_order:
+        if verdict not in by_plasmid_counts.columns:
+            continue
+
+        counts = by_plasmid_counts[verdict].values
+        plasmids = by_plasmid_counts.index.tolist()
+
+        # Build customdata for hover
+        customdata = [
+            _format_verdict_hover(verdict, int(counts[i]), hover_data[verdict].get(plasmids[i], []))
+            for i in range(len(plasmids))
+        ]
+
+        fig.add_trace(
+            go.Bar(
+                x=plasmids,
+                y=counts,
+                name=verdict,
+                marker_color=VERDICT_COLORS[verdict],
+                customdata=customdata,
+                hovertemplate="%{customdata}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        title="Verdicts by Plasmid",
+        xaxis_title="Plasmid",
+        yaxis_title="Count",
+        xaxis={"tickangle": 45},
+        height=600,
+    )
+
+    # Write HTML
+    plots_dir: str = os.path.join(output_dir, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+
+    html_path: str = os.path.join(plots_dir, "verdict_bar_by_plasmid.html")
+    fig.write_html(html_path, include_plotlyjs=False, full_html=False)
+
+    # Generate PNG if requested
+    png_path: str | None = None
+    if static_report:
+        png_path = os.path.join(plots_dir, "verdict_bar_by_plasmid.png")
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import generate_verdict_bar_matplotlib
+
+            generate_verdict_bar_matplotlib(
+                by_plasmid_counts, png_path, "Verdicts by Plasmid", "Plasmid"
+            )
+        else:
+            # Fallback to plotly kaleido
+            fig.write_image(png_path, width=1200, height=600)
+
+    return html_path, png_path
+
+
+def plot_verdict_bar_by_sample(
+    summary_df: pd.DataFrame,
+    output_dir: str,
+    static_report: bool = False,
+    plot_backend: str = "plotly",
+) -> tuple[str, str | None]:
+    """Generate stacked bar chart of verdicts grouped by sample.
+
+    Args:
+        summary_df: DataFrame with columns Sample, Plasmid, Category, Value
+        output_dir: Output directory for plots
+        static_report: If True, also generate PNG via matplotlib
+        plot_backend: Backend for static plots ("plotly" or "matplotlib")
+
+    Returns:
+        Tuple of (html_path, png_path_or_None)
+    """
+    import plotly.graph_objects as go
+
+    from .plotting.colors import VERDICT_COLORS
+
+    logging.info("Generating verdict bar chart by sample.")
+
+    # Get aggregated data
+    full_verdict_df, _, by_sample_counts = aggregate_verdicts(summary_df)
+
+    if full_verdict_df.empty:
+        logging.warning("No verdict data available for plotting.")
+        return "", None
+
+    # Build hover data: verdict -> sample -> list of plasmid names
+    hover_data: dict[str, dict[str, list[str]]] = {
+        verdict: {} for verdict in ["Clean", "Unclear", "Contaminated", "No Result"]
+    }
+
+    for _, row in full_verdict_df.iterrows():
+        verdict = row["VerdictShort"]
+        sample = row["Sample"]
+        plasmid = row["Plasmid"]
+
+        if sample not in hover_data[verdict]:
+            hover_data[verdict][sample] = []
+        hover_data[verdict][sample].append(plasmid)
+
+    # Create traces
+    fig = go.Figure()
+    verdict_order = ["Clean", "Unclear", "Contaminated", "No Result"]
+
+    for verdict in verdict_order:
+        if verdict not in by_sample_counts.columns:
+            continue
+
+        counts = by_sample_counts[verdict].values
+        samples = by_sample_counts.index.tolist()
+
+        # Build customdata for hover
+        customdata = [
+            _format_verdict_hover(verdict, int(counts[i]), hover_data[verdict].get(samples[i], []))
+            for i in range(len(samples))
+        ]
+
+        fig.add_trace(
+            go.Bar(
+                x=samples,
+                y=counts,
+                name=verdict,
+                marker_color=VERDICT_COLORS[verdict],
+                customdata=customdata,
+                hovertemplate="%{customdata}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        title="Verdicts by Sample",
+        xaxis_title="Sample",
+        yaxis_title="Count",
+        xaxis={"tickangle": 45},
+        height=600,
+    )
+
+    # Write HTML
+    plots_dir: str = os.path.join(output_dir, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+
+    html_path: str = os.path.join(plots_dir, "verdict_bar_by_sample.html")
+    fig.write_html(html_path, include_plotlyjs=False, full_html=False)
+
+    # Generate PNG if requested
+    png_path: str | None = None
+    if static_report:
+        png_path = os.path.join(plots_dir, "verdict_bar_by_sample.png")
+        if plot_backend == "matplotlib":
+            from .plotting.matplotlib_backend import generate_verdict_bar_matplotlib
+
+            generate_verdict_bar_matplotlib(
+                by_sample_counts, png_path, "Verdicts by Sample", "Sample"
+            )
+        else:
+            # Fallback to plotly kaleido
+            fig.write_image(png_path, width=1200, height=600)
+
+    return html_path, png_path
+
+
 # Report Generation Functions
 def generate_report(
     combined_df: pd.DataFrame,
@@ -669,6 +1025,11 @@ def generate_report(
     breadth_heatmap_interactive: str = "",
     breadth_heatmap_png: str | None = None,
     resistance_gene_df: pd.DataFrame | None = None,
+    junction_df: pd.DataFrame | None = None,
+    verdict_by_plasmid_interactive: str = "",
+    verdict_by_plasmid_png: str | None = None,
+    verdict_by_sample_interactive: str = "",
+    verdict_by_sample_png: str | None = None,
 ) -> None:
     import pandas as pd
     from jinja2 import Environment, FileSystemLoader
@@ -718,6 +1079,16 @@ def generate_report(
         with open(breadth_heatmap_interactive) as f:
             breadth_heatmap_html = f.read()
 
+    verdict_by_plasmid_html = ""
+    if verdict_by_plasmid_interactive:
+        with open(verdict_by_plasmid_interactive) as f:
+            verdict_by_plasmid_html = f.read()
+
+    verdict_by_sample_html = ""
+    if verdict_by_sample_interactive:
+        with open(verdict_by_sample_interactive) as f:
+            verdict_by_sample_html = f.read()
+
     # Read the PNG files as base64 for non-interactive report (only if static_report=True)
     heatmap_png_base64 = ""
     boxplot_png_base64 = ""
@@ -731,6 +1102,8 @@ def generate_report(
     mismatches_heatmap_png_base64 = ""
     depth_heatmap_png_base64 = ""
     breadth_heatmap_png_base64 = ""
+    verdict_by_plasmid_png_base64 = ""
+    verdict_by_sample_png_base64 = ""
     if static_report:
         if coverage_outside_heatmap_png:
             coverage_outside_heatmap_png_base64 = encode_image_to_base64(
@@ -746,6 +1119,10 @@ def generate_report(
             depth_heatmap_png_base64 = encode_image_to_base64(depth_heatmap_png)
         if breadth_heatmap_png:
             breadth_heatmap_png_base64 = encode_image_to_base64(breadth_heatmap_png)
+        if verdict_by_plasmid_png:
+            verdict_by_plasmid_png_base64 = encode_image_to_base64(verdict_by_plasmid_png)
+        if verdict_by_sample_png:
+            verdict_by_sample_png_base64 = encode_image_to_base64(verdict_by_sample_png)
 
     # Convert sorted DataFrames to HTML
     combined_html = combined_df.to_html(classes="table table-striped table-bordered", index=False)
@@ -757,6 +1134,20 @@ def generate_report(
     resistance_gene_html = ""
     if resistance_gene_df is not None and not resistance_gene_df.empty:
         resistance_gene_html = resistance_gene_df.to_html(
+            classes="table table-striped table-bordered", index=False
+        )
+
+    # Convert junction metadata DataFrame to HTML with truncation
+    junction_table_html = ""
+    if junction_df is not None and not junction_df.empty:
+        # Truncate long comma-separated values for HTML display
+        display_df = junction_df.copy()
+        for col in ["ExonLengths", "IntronLengths"]:
+            if col in display_df.columns:
+                display_df[col] = display_df[col].apply(
+                    lambda v: _truncate_list_for_html(str(v)) if pd.notna(v) else "N/A"
+                )
+        junction_table_html = display_df.to_html(
             classes="table table-striped table-bordered", index=False
         )
 
@@ -777,6 +1168,9 @@ def generate_report(
         depth_heatmap_content=depth_heatmap_html,
         breadth_heatmap_content=breadth_heatmap_html,
         resistance_gene_table=resistance_gene_html,
+        junction_table=junction_table_html,
+        verdict_by_plasmid_content=verdict_by_plasmid_html,
+        verdict_by_sample_content=verdict_by_sample_html,
         logo_base64=logo_base64,
         threshold=threshold,
         unclear_range=unclear_range,
@@ -810,6 +1204,9 @@ def generate_report(
             depth_heatmap_content=depth_heatmap_png_base64,
             breadth_heatmap_content=breadth_heatmap_png_base64,
             resistance_gene_table=resistance_gene_html,
+            junction_table=junction_table_html,
+            verdict_by_plasmid_content=verdict_by_plasmid_png_base64,
+            verdict_by_sample_content=verdict_by_sample_png_base64,
             logo_base64=logo_base64,
             threshold=threshold,
             unclear_range=unclear_range,
@@ -947,12 +1344,42 @@ def main(
     # --- New: Resistance Gene Table (REPT-08) ---
     resistance_gene_df = create_resistance_gene_table(summary_df)
 
+    # --- New: Verdict Bar Charts (VIS-01, VIS-02) ---
+    verdict_by_plasmid_interactive, verdict_by_plasmid_png = plot_verdict_bar_by_plasmid(
+        summary_df, output_dir, static_report=static_report, plot_backend=plot_backend
+    )
+    verdict_by_sample_interactive, verdict_by_sample_png = plot_verdict_bar_by_sample(
+        summary_df, output_dir, static_report=static_report, plot_backend=plot_backend
+    )
+
+    # --- New: Splice Junction Metadata Table (SJ-02) ---
+    junction_categories = ["SpliceJunctionCount", "ExonCount", "ExonLengths", "IntronLengths"]
+    junction_df = summary_df[summary_df["Category"].isin(junction_categories)]
+
+    junction_table_df = None
+    if not junction_df.empty:
+        junction_pivot = junction_df.pivot_table(
+            index=["Sample", "Plasmid"],
+            columns="Category",
+            values="Value",
+            aggfunc="first",
+        ).reset_index()
+        # Reorder columns
+        col_order = ["Sample", "Plasmid"] + [
+            c for c in junction_categories if c in junction_pivot.columns
+        ]
+        junction_table_df = junction_pivot[col_order]
+
     # --- Build extended metrics DataFrame for export (REPT-10) ---
     extended_categories = [
         "CoverageOutsideINSERT",
         "MismatchesNearINSERT",
         "MeanDepthBackbone",
         "BreadthBackbone",
+        "SpliceJunctionCount",
+        "ExonCount",
+        "ExonLengths",
+        "IntronLengths",
     ]
     extended_metrics_df = summary_df[summary_df["Category"].isin(extended_categories)]
 
@@ -965,6 +1392,7 @@ def main(
         output_dir,
         extended_metrics_df=extended_metrics_df,
         resistance_gene_df=resistance_gene_df,
+        junction_df=junction_table_df,
     )
 
     # Generate report
@@ -997,6 +1425,11 @@ def main(
         breadth_heatmap_interactive=breadth_heatmap_interactive,
         breadth_heatmap_png=breadth_heatmap_png,
         resistance_gene_df=resistance_gene_df,
+        junction_df=junction_table_df,
+        verdict_by_plasmid_interactive=verdict_by_plasmid_interactive,
+        verdict_by_plasmid_png=verdict_by_plasmid_png,
+        verdict_by_sample_interactive=verdict_by_sample_interactive,
+        verdict_by_sample_png=verdict_by_sample_png,
     )
 
 

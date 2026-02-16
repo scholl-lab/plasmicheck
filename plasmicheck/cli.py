@@ -125,11 +125,20 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_convert.add_argument("-i", "--input_file", help="Input plasmid file", required=True)
     parser_convert.add_argument("-o", "--output_file", help="Output FASTA file", required=True)
     parser_convert.add_argument(
+        "-f",
+        "--format",
+        dest="format",
+        choices=["snapgene", "xdna", "genbank", "fasta"],
+        default=None,
+        help="File format (auto-detected from file content if not specified)",
+    )
+    # Deprecated: keep -t/--file_type for backward compatibility
+    parser_convert.add_argument(
         "-t",
         "--file_type",
-        choices=["genbank", "xdna"],
-        help="Type of input file: 'genbank' or 'xdna'",
-        required=True,
+        dest="format",
+        choices=["snapgene", "xdna", "genbank", "fasta"],
+        help=argparse.SUPPRESS,  # Hide from help output
     )
     parser_convert.add_argument(
         "-sb",
@@ -328,6 +337,17 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         default=None,
         help="Total thread count for alignment (default: auto-detect via SLURM/cgroup/os)",
     )
+    parser_pipeline.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Path to cache directory (default: ~/.plasmicheck/cache)",
+    )
+    parser_pipeline.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable caching for this run",
+    )
 
     # Report Command
     parser_report = subparsers.add_parser(
@@ -364,21 +384,70 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         "--substring_to_remove", help="Substring to remove from sample names", default=None
     )
 
+    # Cache Management Command
+    parser_cache = subparsers.add_parser(
+        "cache",
+        help="Manage the pipeline cache (indexes and spliced alignments)",
+        parents=[_logging_parser],
+    )
+    cache_subparsers = parser_cache.add_subparsers(dest="cache_command")
+
+    # cache info
+    parser_cache_info = cache_subparsers.add_parser(
+        "info",
+        help="Show cache summary (entries, size, location)",
+    )
+    parser_cache_info.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Cache directory (default: ~/.plasmicheck/cache)",
+    )
+
+    # cache clean
+    parser_cache_clean = cache_subparsers.add_parser(
+        "clean",
+        help="Clear the cache",
+    )
+    parser_cache_clean.add_argument(
+        "--all",
+        action="store_true",
+        dest="clean_all",
+        required=True,
+        help="Remove all cached entries",
+    )
+    parser_cache_clean.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Cache directory (default: ~/.plasmicheck/cache)",
+    )
+
     args: argparse.Namespace = parser.parse_args()
 
     # Setup logging based on command-line arguments
     log_level: int = getattr(logging, args.log_level.upper(), logging.INFO)
     setup_logging(log_level=log_level, log_file=args.log_file)
 
-    check_requirements()
+    # Skip tool requirements check for cache command (doesn't need minimap2/samtools)
+    if args.command != "cache":
+        check_requirements()
 
     if args.command == "convert":
         from .scripts.convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta
 
+        # Auto-detect format if not specified
+        file_format = args.format
+        if file_format is None:
+            from .scripts.format_detection import detect_format
+
+            file_format = detect_format(args.input_file)
+            logging.info(f"Auto-detected format: {file_format}")
+
         convert_plasmidfile_to_fasta(
             args.input_file,
             args.output_file,
-            args.file_type,
+            file_format,
             args.shift_bases,
             args.generate_shifted,
             args.overwrite,
@@ -450,6 +519,8 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             plotly_mode=args.plotly_mode,
             plot_backend=args.plot_backend,
             threads=args.threads,
+            cache_dir=args.cache_dir,
+            no_cache=args.no_cache,
         )
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
@@ -477,6 +548,56 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             plotly_mode=args.plotly_mode,
             plot_backend=args.plot_backend,
         )
+    elif args.command == "cache":
+        from pathlib import Path
+
+        from .cache_manager import CacheManager
+
+        cache_path = (
+            Path(args.cache_dir)
+            if hasattr(args, "cache_dir") and args.cache_dir
+            else Path.home() / ".plasmicheck" / "cache"
+        )
+
+        if args.cache_command == "info":
+            try:
+                cache = CacheManager(cache_path)
+                info = cache.info()
+                print(f"Cache directory: {info['cache_dir']}")
+                print(f"Total entries:   {info['total_entries']}")
+                # Format size human-readable
+                size_bytes = info["total_size_bytes"]
+                if size_bytes < 1024:
+                    size_str = f"{size_bytes} B"
+                elif size_bytes < 1024**2:
+                    size_str = f"{size_bytes / 1024:.1f} KB"
+                elif size_bytes < 1024**3:
+                    size_str = f"{size_bytes / 1024**2:.1f} MB"
+                else:
+                    size_str = f"{size_bytes / 1024**3:.2f} GB"
+                print(f"Total size:      {size_str}")
+                if info.get("oldest_entry"):
+                    from datetime import datetime, timezone
+
+                    oldest = datetime.fromtimestamp(info["oldest_entry"], tz=timezone.utc)
+                    newest = datetime.fromtimestamp(info["newest_entry"], tz=timezone.utc)
+                    print(f"Oldest entry:    {oldest.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                    print(f"Newest entry:    {newest.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            except (OSError, PermissionError) as e:
+                print(f"Error accessing cache: {e}")
+                sys.exit(1)
+
+        elif args.cache_command == "clean":
+            if args.clean_all:
+                try:
+                    cache = CacheManager(cache_path)
+                    count = cache.clean_all()
+                    print(f"Removed {count} cache entries from {cache_path}")
+                except (OSError, PermissionError) as e:
+                    print(f"Error accessing cache: {e}")
+                    sys.exit(1)
+        else:
+            parser_cache.print_help()
     else:
         parser.print_help()
 

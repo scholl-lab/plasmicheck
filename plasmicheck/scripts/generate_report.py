@@ -113,7 +113,14 @@ def generate_plots(
     output_folder: str,
     static_report: bool = False,
     plot_backend: str = "plotly",
+    reports_dir: str | None = None,
 ) -> tuple[str, str | None, str, str | None]:
+    """Generate interactive and optional static plots.
+
+    Returns (boxplot_div_html, boxplot_png_path, scatter_div_html, scatter_png_path).
+    The div HTML strings are for embedding in the main report template.
+    Standalone viewable plots are written to reports_dir/plots/.
+    """
     import plotly.express as px
 
     logging.info("Generating plots")
@@ -124,8 +131,10 @@ def generate_plots(
     if not isinstance(height, int):
         height = 400
 
-    plots_dir = os.path.join(output_folder, "plots")
-    os.makedirs(plots_dir, exist_ok=True)
+    # Standalone plots go to reports/plots/ subdirectory
+    effective_reports_dir = reports_dir if reports_dir else output_folder
+    standalone_plots_dir = os.path.join(effective_reports_dir, "plots")
+    os.makedirs(standalone_plots_dir, exist_ok=True)
 
     # Consistent category ordering across all plots
     cat_order = {"AssignedTo": _CATEGORY_ORDER}
@@ -152,13 +161,22 @@ def generate_plots(
         line={"width": 1.5},
     )
 
-    boxplot_filename_interactive = os.path.join(
-        plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"].replace(".png", ".html")
-    )
-    fig_box.write_html(
-        boxplot_filename_interactive,
+    # Get div HTML for embedding in main report (no plotly.js, no full HTML)
+    boxplot_div_html: str = fig_box.to_html(
         include_plotlyjs=False,
         full_html=False,
+        config=_PLOTLY_CONFIG,
+    )
+
+    # Write standalone HTML for direct viewing (CDN plotly)
+    boxplot_standalone = os.path.join(
+        standalone_plots_dir,
+        PLOT_SAMPLE_REPORT["output_box_plot_filename"].replace(".png", ".html"),
+    )
+    fig_box.write_html(
+        boxplot_standalone,
+        include_plotlyjs="cdn",
+        full_html=True,
         config=_PLOTLY_CONFIG,
     )
 
@@ -200,13 +218,22 @@ def generate_plots(
         )
     )
 
-    scatter_filename_interactive = os.path.join(
-        plots_dir, PLOT_SAMPLE_REPORT["output_scatter_plot_filename"].replace(".png", ".html")
-    )
-    fig_scatter.write_html(
-        scatter_filename_interactive,
+    # Get div HTML for embedding in main report
+    scatter_div_html: str = fig_scatter.to_html(
         include_plotlyjs=False,
         full_html=False,
+        config=_PLOTLY_CONFIG,
+    )
+
+    # Write standalone HTML for direct viewing (CDN plotly)
+    scatter_standalone = os.path.join(
+        standalone_plots_dir,
+        PLOT_SAMPLE_REPORT["output_scatter_plot_filename"].replace(".png", ".html"),
+    )
+    fig_scatter.write_html(
+        scatter_standalone,
+        include_plotlyjs="cdn",
+        full_html=True,
         config=_PLOTLY_CONFIG,
     )
 
@@ -215,10 +242,10 @@ def generate_plots(
     scatter_filename_png = None
     if static_report:
         boxplot_filename_png = os.path.join(
-            plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"]
+            standalone_plots_dir, PLOT_SAMPLE_REPORT["output_box_plot_filename"]
         )
         scatter_filename_png = os.path.join(
-            plots_dir, PLOT_SAMPLE_REPORT["output_scatter_plot_filename"]
+            standalone_plots_dir, PLOT_SAMPLE_REPORT["output_scatter_plot_filename"]
         )
 
         if plot_backend == "matplotlib":
@@ -251,9 +278,9 @@ def generate_plots(
     logging.info("Plots generated.")
 
     return (
-        boxplot_filename_interactive,
+        boxplot_div_html,
         boxplot_filename_png,
-        scatter_filename_interactive,
+        scatter_div_html,
         scatter_filename_png,
     )
 
@@ -342,6 +369,16 @@ def _parse_mismatches(raw: str) -> tuple[int, int]:
         return 0, 0
 
 
+def _truncate_list_filter(value: str, max_items: int = 5) -> str:
+    """Truncate comma-separated list for display. Full value in title attribute."""
+    if not value or value in ("N/A", "NA"):
+        return value
+    items = value.split(",")
+    if len(items) <= max_items:
+        return value
+    return ",".join(items[:max_items]) + ",..."
+
+
 def generate_report(
     summary_df: pd.DataFrame,
     output_folder: str,
@@ -353,9 +390,9 @@ def generate_report(
     human_fasta: str = "None",
     plasmid_gb: str = "None",
     sequencing_file: str = "None",
-    boxplot_filename_interactive: str = "",
+    boxplot_html: str = "",
     boxplot_filename_png: str | None = None,
-    scatter_filename_interactive: str = "",
+    scatter_html: str = "",
     scatter_filename_png: str | None = None,
     downsampled: bool = False,
     static_report: bool = False,
@@ -389,11 +426,14 @@ def generate_report(
     plasmid_name: str = "",
     coverage_metrics: dict[str, str] | None = None,
     coverage_fallback: bool = False,
+    reports_dir: str | None = None,
+    junction_metrics: dict[str, str] | None = None,
 ) -> None:
     from jinja2 import Environment, FileSystemLoader
 
     logging.info("Generating report")
     env = Environment(loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))))
+    env.filters["truncate_list"] = _truncate_list_filter
     template = env.get_template("report_template.html")
 
     logo_base64 = encode_image_to_base64(str(get_resource_path(LOGO_PATH)))
@@ -406,17 +446,10 @@ def generate_report(
         else ""
     )
 
-    # Read the interactive HTML plot content
-    with open(boxplot_filename_interactive) as f:
-        boxplot_html_content = f.read()
-
-    with open(scatter_filename_interactive) as f:
-        scatter_html_content = f.read()
-
     # Render the interactive HTML report
     html_content_interactive = template.render(
-        box_plot=boxplot_html_content,
-        scatter_plot=scatter_html_content,
+        box_plot=boxplot_html,
+        scatter_plot=scatter_html,
         verdict=verdict,
         verdict_short=verdict_short,
         verdict_class=verdict_class,
@@ -460,10 +493,13 @@ def generate_report(
         plasmid_name=plasmid_name,
         coverage_metrics=coverage_metrics or {},
         coverage_fallback=coverage_fallback,
+        junction_metrics=junction_metrics or {},
     )
 
     # Save interactive HTML report
-    html_report_interactive = os.path.join(output_folder, "report_interactive.html")
+    # Use reports_dir if provided, otherwise output_folder (backward compatibility)
+    report_output_dir = reports_dir if reports_dir is not None else output_folder
+    html_report_interactive = os.path.join(report_output_dir, "report_interactive.html")
     with open(html_report_interactive, "w") as f:
         f.write(html_content_interactive)
 
@@ -520,10 +556,11 @@ def generate_report(
             plasmid_name=plasmid_name,
             coverage_metrics=coverage_metrics or {},
             coverage_fallback=coverage_fallback,
+            junction_metrics=junction_metrics or {},
         )
 
         # Save non-interactive HTML report
-        html_report_non_interactive = os.path.join(output_folder, "report_non_interactive.html")
+        html_report_non_interactive = os.path.join(report_output_dir, "report_non_interactive.html")
         with open(html_report_non_interactive, "w") as f:
             f.write(html_content_non_interactive)
 
@@ -542,20 +579,25 @@ def main(
     plotly_mode: str = "directory",
     plot_backend: str = "plotly",
     output_root: str | None = None,
+    reports_dir: str | None = None,
 ) -> None:
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
 
     # Downsample data if necessary
     reads_df, downsampled = downsample_data(reads_df, DOWNSAMPLE_LIMIT)
 
-    # Generate plots
+    # Generate plots (returns div HTML strings for embedding, writes standalone files)
     (
-        boxplot_filename_interactive,
+        boxplot_div_html,
         boxplot_filename_png,
-        scatter_filename_interactive,
+        scatter_div_html,
         scatter_filename_png,
     ) = generate_plots(
-        reads_df, output_folder, static_report=static_report, plot_backend=plot_backend
+        reads_df,
+        output_folder,
+        static_report=static_report,
+        plot_backend=plot_backend,
+        reports_dir=reports_dir,
     )
 
     # Extract the verdict from the summary file
@@ -586,7 +628,15 @@ def main(
     # Extract coverage metrics (Phase 9)
     def _get_metric(df: pd.DataFrame, category: str, default: str = "0.00") -> str:
         rows = df[df["Category"] == category]
-        return str(rows["Count"].values[0]) if not rows.empty else default
+        if rows.empty:
+            return default
+        value = rows["Count"].values[0]
+        try:
+            if value != value:  # NaN check (NaN != NaN is True)
+                return default
+        except (TypeError, ValueError):
+            pass
+        return str(value)
 
     coverage_metrics = {
         "mean_depth_insert": _get_metric(summary_df, "MeanDepthInsert"),
@@ -599,6 +649,14 @@ def main(
         "breadth_backbone": _get_metric(summary_df, "BreadthBackbone"),
         "breadth_backbone_5x": _get_metric(summary_df, "BreadthBackbone_5x"),
         "cv_backbone": _get_metric(summary_df, "CoverageCV_Backbone"),
+    }
+
+    # Extract junction metrics (Phase 15)
+    junction_metrics = {
+        "splice_junction_count": _get_metric(summary_df, "SpliceJunctionCount", default="N/A"),
+        "exon_count": _get_metric(summary_df, "ExonCount", default="N/A"),
+        "exon_lengths": _get_metric(summary_df, "ExonLengths", default="N/A"),
+        "intron_lengths": _get_metric(summary_df, "IntronLengths", default="N/A"),
     }
 
     # Detect coverage fallback mode
@@ -633,8 +691,9 @@ def main(
         os.path.splitext(os.path.basename(plasmid_gb))[0] if plasmid_gb not in ("None", "") else ""
     )
 
-    # Determine output_root for shared assets
-    effective_root = output_root if output_root else output_folder
+    # Place plotly assets in reports/assets/ so reports dir is self-contained.
+    # Fall back to output_folder/assets/ for backward compatibility.
+    report_html_dir = reports_dir if reports_dir else output_folder
 
     plotly_js_path = ""
     plotly_version = ""
@@ -645,10 +704,8 @@ def main(
 
         plotly_version = plotly.__version__
     if plotly_mode == "directory":
-        _ensure_plotly_assets(effective_root)
-        # Compute relative path from output_folder to assets/plotly.min.js
-        assets_js = os.path.join(effective_root, "assets", "plotly.min.js")
-        plotly_js_path = os.path.relpath(assets_js, output_folder)
+        _ensure_plotly_assets(report_html_dir)
+        plotly_js_path = os.path.join("assets", "plotly.min.js")
     elif plotly_mode == "embedded":
         import plotly as _plotly
 
@@ -670,9 +727,9 @@ def main(
         human_fasta,
         plasmid_gb,
         sequencing_file,
-        boxplot_filename_interactive=boxplot_filename_interactive,
+        boxplot_html=boxplot_div_html,
         boxplot_filename_png=boxplot_filename_png,
-        scatter_filename_interactive=scatter_filename_interactive,
+        scatter_html=scatter_div_html,
         scatter_filename_png=scatter_filename_png,
         downsampled=downsampled,
         static_report=static_report,
@@ -706,6 +763,8 @@ def main(
         plasmid_name=plasmid_name,
         coverage_metrics=coverage_metrics,
         coverage_fallback=coverage_fallback,
+        reports_dir=reports_dir,
+        junction_metrics=junction_metrics,
     )
 
 
