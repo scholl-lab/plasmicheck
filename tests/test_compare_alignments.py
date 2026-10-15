@@ -6,12 +6,13 @@ import io
 import shutil
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pysam
 import pytest
 
 from plasmicheck.scripts.compare_alignments import (
+    DEFAULT_THRESHOLD,
     InsertRegionData,
     _assign,
     _best_read,
@@ -19,9 +20,56 @@ from plasmicheck.scripts.compare_alignments import (
     _streaming_compare,
     _write_assignment,
     calculate_alignment_score,
+    compare_alignments,
     parse_insert_region,
     read_overlaps_insert,
 )
+
+
+@pytest.fixture
+def mock_pysam_read() -> Any:
+    """Factory fixture for creating mock pysam aligned reads with is_paired support."""
+
+    def _make_read(
+        *,
+        is_unmapped: bool = False,
+        mapping_quality: int = 60,
+        cigartuples: list[tuple[int, int]] | None = None,
+        mate_is_unmapped: bool = False,
+        is_paired: bool = True,
+        is_secondary: bool = False,
+        is_supplementary: bool = False,
+        nm_tag: int | None = 0,
+        query_name: str = "test_read",
+        cigarstring: str | None = "100M",
+        reference_start: int | None = 0,
+        reference_end: int | None = 100,
+        query_length: int = 100,
+    ) -> MagicMock:
+        read = MagicMock()
+        read.is_unmapped = is_unmapped
+        read.mapping_quality = mapping_quality
+        read.cigartuples = cigartuples if cigartuples is not None else [(0, 100)]
+        read.mate_is_unmapped = mate_is_unmapped
+        read.is_paired = is_paired
+        read.is_secondary = is_secondary
+        read.is_supplementary = is_supplementary
+        read.query_name = query_name
+        read.cigarstring = cigarstring
+        read.reference_start = reference_start
+        read.reference_end = reference_end
+        read.query_length = query_length
+
+        if nm_tag is not None:
+            read.has_tag.return_value = True
+            read.get_tag.return_value = nm_tag
+        else:
+            read.has_tag.return_value = False
+            read.get_tag.return_value = 0
+
+        return read
+
+    return _make_read
 
 
 class TestNameSortedMerge:
@@ -175,6 +223,18 @@ class TestCalculateAlignmentScore:
             mate_is_unmapped=False,
         )
         assert calculate_alignment_score(read) == 70
+
+    @pytest.mark.unit
+    def test_unpaired_read_no_mate_bonus(self, mock_pysam_read: Any) -> None:
+        # Unpaired read (is_paired=False, mate_is_unmapped=False) does not receive mate bonus
+        read = mock_pysam_read(
+            mapping_quality=60,
+            cigartuples=[(0, 100)],
+            nm_tag=0,
+            is_paired=False,
+            mate_is_unmapped=False,
+        )
+        assert calculate_alignment_score(read) == 60
 
 
 class TestParseInsertRegion:
@@ -437,6 +497,85 @@ class TestStreamingCompare:
             counts = _streaming_compare("p.bam", "h.bam", buf)
             assert counts["Human"] == 1
 
+    @pytest.mark.unit
+    def test_paired_read_group_scores_summed(self, mock_pysam_read: Any) -> None:
+        """Paired read group: both primary mates' scores are summed."""
+        # Plasmid mates: 60 + 10 mate bonus = 70 each -> sum = 140
+        p_r1 = mock_pysam_read(
+            query_name="pair1", mapping_quality=60, is_paired=True, mate_is_unmapped=False
+        )
+        p_r2 = mock_pysam_read(
+            query_name="pair1", mapping_quality=60, is_paired=True, mate_is_unmapped=False
+        )
+        # Human mates: 30 + 10 mate bonus = 40 each -> sum = 80
+        h_r1 = mock_pysam_read(
+            query_name="pair1", mapping_quality=30, is_paired=True, mate_is_unmapped=False
+        )
+        h_r2 = mock_pysam_read(
+            query_name="pair1", mapping_quality=30, is_paired=True, mate_is_unmapped=False
+        )
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("pair1", [p_r1, p_r2])]), iter([("pair1", [h_r1, h_r2])])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+            assert counts["Plasmid"] == 1
+            fields = buf.getvalue().splitlines()[0].split("\t")
+            assert fields[0] == "pair1"
+            assert fields[1] == "Plasmid"
+            assert fields[2] == "140"
+            assert fields[3] == "80"
+
+    @pytest.mark.unit
+    def test_plasmid_only_negative_score_tied(self, mock_pysam_read: Any) -> None:
+        """One-sided plasmid read with negative score becomes Tied, raw score in TSV."""
+        p_read = mock_pysam_read(
+            query_name="r_neg",
+            mapping_quality=0,
+            cigartuples=[(4, 50), (0, 50)],
+            is_paired=False,
+            mate_is_unmapped=True,
+        )
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r_neg", [p_read])]), iter([])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+            assert counts["Tied"] == 1
+            assert counts["Plasmid"] == 0
+            fields = buf.getvalue().splitlines()[0].split("\t")
+            assert fields[1] == "Tied"
+            assert fields[2] == "-50"
+            assert fields[3] == "0"
+
+    @pytest.mark.unit
+    def test_human_only_negative_score_tied(self, mock_pysam_read: Any) -> None:
+        """One-sided human read with negative score becomes Tied, raw score in TSV."""
+        h_read = mock_pysam_read(
+            query_name="r_neg_h",
+            mapping_quality=0,
+            cigartuples=[(4, 63), (0, 37)],
+            is_paired=False,
+            mate_is_unmapped=True,
+        )
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([]), iter([("r_neg_h", [h_read])])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+            assert counts["Tied"] == 1
+            assert counts["Human"] == 0
+            fields = buf.getvalue().splitlines()[0].split("\t")
+            assert fields[1] == "Tied"
+            assert fields[2] == "0"
+            assert fields[3] == "-63"
+
 
 class TestReadOverlapsInsert:
     """Test the read_overlaps_insert() function with boundary cases."""
@@ -497,6 +636,25 @@ class TestReadOverlapsInsert:
     def test_none_reference_positions(self, mock_pysam_read: Any) -> None:
         read = mock_pysam_read(reference_start=None, reference_end=None)
         assert read_overlaps_insert(read, (100, 500)) is False
+
+    @pytest.mark.unit
+    def test_origin_wrapping_insert(self, mock_pysam_read: Any) -> None:
+        """Origin-wrapping insert region (start > end), e.g. (800, 100)."""
+        # Read in first half [850, 950]
+        r1 = mock_pysam_read(reference_start=850, reference_end=950)
+        assert read_overlaps_insert(r1, (800, 100)) is True
+
+        # Read in second half [10, 50]
+        r2 = mock_pysam_read(reference_start=10, reference_end=50)
+        assert read_overlaps_insert(r2, (800, 100)) is True
+
+        # Read overlapping start boundary [750, 850]
+        r3 = mock_pysam_read(reference_start=750, reference_end=850)
+        assert read_overlaps_insert(r3, (800, 100)) is True
+
+        # Read strictly in backbone [200, 300]
+        r_backbone = mock_pysam_read(reference_start=200, reference_end=300)
+        assert read_overlaps_insert(r_backbone, (800, 100)) is False
 
 
 class TestAssignExtended:
@@ -1131,3 +1289,150 @@ class TestJunctionMetadataInSummary:
             assert "ExonCount\tNA" in content
             assert "ExonLengths\tNA" in content
             assert "IntronLengths\tNA" in content
+
+
+class TestVerdictAndRatio:
+    """Test ratio calculation edge cases (0/0) and verdict determination (#100)."""
+
+    @pytest.mark.unit
+    def test_zero_zero_counts_produce_zero_ratio_not_contaminated(self, tmp_path: Path) -> None:
+        """0 plasmid reads and 0 human reads (0/0) produces ratio 0.0 and not contaminated."""
+        output_base = tmp_path / "zero_counts"
+        dummy_metrics = {
+            "insert": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+            "backbone": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+        }
+
+        with (
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                return_value={
+                    "Plasmid": 0,
+                    "Human": 0,
+                    "Tied": 0,
+                    "Backbone_Only": 0,
+                    "Ambiguous": 0,
+                },
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=(dummy_metrics, False),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments("p.bam", "h.bam", str(output_base))
+
+        content = (tmp_path / "zero_counts.summary.tsv").read_text()
+        assert "Verdict\tSample is not contaminated with plasmid DNA" in content
+        assert "Ratio\t0.0" in content
+
+    @pytest.mark.unit
+    def test_backbone_only_with_zero_human_produces_zero_ratio_when_filtered(
+        self, tmp_path: Path
+    ) -> None:
+        """When filter_backbone_only=True, Backbone_Only reads with 0 human produce ratio 0.0."""
+        output_base = tmp_path / "backbone_counts"
+        dummy_metrics = {
+            "insert": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+            "backbone": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+        }
+
+        with (
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                return_value={
+                    "Plasmid": 0,
+                    "Human": 0,
+                    "Tied": 0,
+                    "Backbone_Only": 15,
+                    "Ambiguous": 0,
+                },
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=(dummy_metrics, False),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments("p.bam", "h.bam", str(output_base), filter_backbone_only=True)
+
+        content = (tmp_path / "backbone_counts.summary.tsv").read_text()
+        assert "Verdict\tSample is not contaminated with plasmid DNA" in content
+        assert "Ratio\t0.0" in content
+
+    @pytest.mark.unit
+    def test_ratio_point_nine_default_threshold_unclear(self, tmp_path: Path) -> None:
+        """Ratio = 0.9 with default threshold (0.8) falls in UNCLEAR_RANGE [0.8, 1.2] -> unclear."""
+        output_base = tmp_path / "unclear_counts"
+        dummy_metrics = {
+            "insert": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+            "backbone": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+        }
+
+        with (
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                return_value={
+                    "Plasmid": 70,
+                    "Human": 100,
+                    "Tied": 0,
+                    "Backbone_Only": 0,
+                    "Ambiguous": 0,
+                },
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=(dummy_metrics, False),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments("p.bam", "h.bam", str(output_base), threshold=DEFAULT_THRESHOLD)
+
+        content = (tmp_path / "unclear_counts.summary.tsv").read_text()
+        assert "Verdict\tSample contamination status is unclear" in content
+        assert "Ratio\t0.7" in content

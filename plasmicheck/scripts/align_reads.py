@@ -5,7 +5,7 @@ from shlex import quote
 
 from plasmicheck.config import get_config
 
-from .utils import add_logging_args, configure_logging_from_args, run_command
+from .utils import run_command
 
 
 def align_reads(
@@ -77,34 +77,4 @@ def align_reads(
 
     logging.info(
         f"Alignment completed successfully for {input_file}, output written to {output_bam}"
-    )
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Align reads to a reference genome and generate a BAI index"
-    )
-    parser.add_argument(
-        "-r", "--reference_index", help="Minimap2 index for the reference genome", required=True
-    )
-    parser.add_argument(
-        "-i",
-        "--input_file",
-        help="Input file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)",
-        required=True,
-    )
-    parser.add_argument("-o", "--output_bam", help="Output BAM file for alignment", required=True)
-    parser.add_argument(
-        "-a", "--alignment_type", help="Type of alignment: 'human' or 'plasmid'", required=True
-    )
-    parser.add_argument("--fastq2", help="Second FASTQ file for paired FASTQ input", default=None)
-    add_logging_args(parser)
-    args = parser.parse_args()
-
-    configure_logging_from_args(args)
-
-    align_reads(
-        args.reference_index, args.input_file, args.output_bam, args.alignment_type, args.fastq2
     )

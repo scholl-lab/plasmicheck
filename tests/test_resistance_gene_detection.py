@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 from Bio.Seq import Seq
-from Bio.SeqFeature import FeatureLocation, SeqFeature
+from Bio.SeqFeature import CompoundLocation, FeatureLocation, SeqFeature
 from Bio.SeqRecord import SeqRecord
 
 from plasmicheck.scripts.resistance_gene_detection import (
@@ -535,39 +534,114 @@ def test_identify_gene_name_checks_gene_qualifier(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_detect_genes_real_pwpi_kcnj5() -> None:
-    """Test detection against real pWPI-KCNJ5-WT.gb file."""
-    gb_file = "reference/plasmid/pWPI-KCNJ5-WT.gb"
+def test_bacterial_resistance_patterns_match_amp_alone() -> None:
+    """Test that Amp alone matches bacterial resistance patterns."""
+    assert _matches_resistance_gene("Amp", BACTERIAL_RESISTANCE_PATTERNS, EXCLUDE_PATTERNS)
 
-    if not os.path.exists(gb_file):
-        pytest.skip(f"Real GenBank file not found: {gb_file}")
+
+@pytest.mark.unit
+def test_detect_resistance_genes_fasta_returns_empty(tmp_path: Path) -> None:
+    """Test that fasta file type returns empty list immediately."""
+    fa = tmp_path / "test.fasta"
+    fa.write_text(">seq\nATCG")
+    assert detect_resistance_genes(str(fa), file_type="fasta") == []
+    assert detect_resistance_genes(str(fa)) == []
+
+
+@pytest.mark.unit
+def test_origin_wrapping_insert_region_overlap() -> None:
+    """Test _overlaps_insert when insert region wraps circular origin (start > end)."""
+    # Insert wraps across origin: 8000..end and 0..2000
+    insert = (8000, 2000)
+    # Feature in high part [8500..9000] -> overlaps
+    assert _gene_overlaps_insert(8500, 9000, insert) is True
+    # Feature in low part [1000..1500] -> overlaps
+    assert _gene_overlaps_insert(1000, 1500, insert) is True
+    # Feature in backbone [3000..4000] -> does not overlap
+    assert _gene_overlaps_insert(3000, 4000, insert) is False
+
+
+@pytest.mark.unit
+def test_compound_location_origin_wrapping_detection(tmp_path: Path) -> None:
+    """Test CompoundLocation wrapping origin produces 1-based start > end coordinates."""
+    from Bio import SeqIO
+
+    record = SeqRecord(Seq("A" * 10000), id="origin_plasmid", name="origin_plasmid")
+    record.annotations["molecule_type"] = "DNA"
+
+    # Origin wrapping feature: 8500..10000 and 0..300
+    loc = CompoundLocation([FeatureLocation(8500, 10000), FeatureLocation(0, 300)])
+    feat = SeqFeature(loc, type="CDS", qualifiers={"label": ["AmpR"]})
+    record.features.append(feat)
+
+    gb_file = tmp_path / "origin_comp.gb"
+    SeqIO.write(record, str(gb_file), "genbank")  # type: ignore[no-untyped-call]
+
+    # Non-overlapping insert region: 2000..4000
+    genes = detect_resistance_genes(str(gb_file), insert_region=(2000, 4000))
+    assert len(genes) == 1
+    assert genes[0].name == "AmpR"
+    assert genes[0].start == 8500
+    assert genes[0].end == 299
+
+    # Overlapping insert region: 100..500 (overlaps low part 0..300)
+    genes_excluded = detect_resistance_genes(str(gb_file), insert_region=(100, 500))
+    assert len(genes_excluded) == 0
+
+
+@pytest.mark.unit
+def test_xdna_parse_error_returns_empty(tmp_path: Path) -> None:
+    """When parsing xDNA raises ValueError, detect_resistance_genes logs warning and returns []."""
+    test_file = tmp_path / "broken.xdna"
+    test_file.write_bytes(b"\x00" * 112)
+
+    from unittest.mock import patch
+
+    with patch(
+        "Bio.SeqIO.parse", side_effect=ValueError("End location must be greater than start")
+    ):
+        genes = detect_resistance_genes(str(test_file), file_type="xdna")
+        assert genes == []
+
+
+# ============================================================================
+# Tests with Synthetic GenBank Files (replacing external references)
+# ============================================================================
+
+
+@pytest.mark.unit
+def test_detect_genes_real_pwpi_kcnj5(tmp_path: Path) -> None:
+    """Test detection against synthetic pWPI-like plasmid with AmpR and EGFP."""
+    gb_file = create_test_genbank(
+        tmp_path,
+        [
+            {"type": "CDS", "label": "AmpR", "start": 100, "end": 900},
+            {"type": "CDS", "label": "EGFP", "start": 1200, "end": 1900},
+        ],
+    )
 
     genes = detect_resistance_genes(gb_file)
 
-    # Should detect AmpR and EGFP
     gene_names = [g.name for g in genes]
     assert "AmpR" in gene_names, f"AmpR not detected. Found: {gene_names}"
     assert "EGFP" in gene_names, f"EGFP not detected. Found: {gene_names}"
 
 
 @pytest.mark.unit
-def test_detect_genes_real_pcmv6_gfp_puro() -> None:
-    """Test detection against real pCMV6-AC-IRES-GFP-Puro file.
-
-    Note: Despite the filename, this file contains AmpR and lacZ, not GFP/Puro in CDS features.
-    The test validates basic gene detection works on real files.
-    """
-    gb_file = "reference/plasmid/pCMV6-AC-IRES-GFP-Puro_CACNA1H.gb"
-
-    if not os.path.exists(gb_file):
-        pytest.skip(f"Real GenBank file not found: {gb_file}")
+def test_detect_genes_real_pcmv6_gfp_puro(tmp_path: Path) -> None:
+    """Test detection against synthetic plasmid with AmpR and lacZ."""
+    gb_file = create_test_genbank(
+        tmp_path,
+        [
+            {"type": "CDS", "label": "AmpR", "start": 500, "end": 1200},
+            {"type": "CDS", "label": "lacZ", "start": 1500, "end": 2000},
+        ],
+    )
 
     genes = detect_resistance_genes(gb_file)
 
-    # Should detect at least AmpR and lacZ (actual CDS features in file)
     gene_names = [g.name for g in genes]
     assert len(genes) >= 1, f"Expected at least 1 gene, found: {gene_names}"
-    # Verify AmpR is detected
     assert "AmpR" in gene_names, f"AmpR not detected. Found: {gene_names}"
 
 
@@ -592,75 +666,40 @@ def test_detect_genes_sorted_by_start(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_recall_against_existing_genbank_files() -> None:
-    """Validate recall against all GenBank files in reference/plasmid/."""
-    from pathlib import Path
-
-    gb_files = list(Path("reference/plasmid/").glob("*.gb")) + list(
-        Path("reference/plasmid/").glob("*.gbk")
+def test_recall_against_existing_genbank_files(tmp_path: Path) -> None:
+    """Validate recall against synthetic plasmid.gb and created test plasmids."""
+    gb1 = create_test_genbank(
+        tmp_path, [{"type": "CDS", "label": "AmpR", "start": 100, "end": 900}]
     )
 
-    if not gb_files:
-        pytest.skip("No GenBank files found in reference/plasmid/")
-
-    total_detected = 0
-    detection_details = []
-
-    for gb_file in gb_files:
-        genes = detect_resistance_genes(str(gb_file))
-        total_detected += len(genes)
-        if genes:
-            detection_details.append(
-                f"{gb_file.name}: {len(genes)} genes ({[g.name for g in genes]})"
-            )
-
-    # At minimum, we expect AmpR from pWPI-KCNJ5-WT.gb (from Plan 01 validation)
-    assert total_detected >= 1, (
-        f"Should detect at least 1 resistance gene across all GenBank files. "
-        f"Found {total_detected}. Details: {detection_details}"
-    )
+    genes = detect_resistance_genes(str(gb1))
+    assert len(genes) >= 1
+    assert any("ampr" in g.name.lower() for g in genes)
 
 
 @pytest.mark.unit
-def test_pwpi_kcnj5_wt_detects_ampr() -> None:
-    """Targeted test for pWPI-KCNJ5-WT.gb expecting AmpR detection."""
-    from pathlib import Path
-
-    gb_file = Path("reference/plasmid/pWPI-KCNJ5-WT.gb")
-    if not gb_file.exists():
-        pytest.skip("pWPI-KCNJ5-WT.gb not found in reference/plasmid/")
+def test_pwpi_kcnj5_wt_detects_ampr(tmp_path: Path) -> None:
+    """Targeted test expecting AmpR detection from synthetic plasmid."""
+    gb_file = create_test_genbank(
+        tmp_path, [{"type": "CDS", "label": "AmpR", "start": 200, "end": 1000}]
+    )
 
     genes = detect_resistance_genes(str(gb_file))
-
-    # Should detect at least one resistance gene (AmpR or beta-lactamase)
-    assert len(genes) >= 1, f"Expected resistance gene in {gb_file.name}, found none"
-
-    # Check that at least one gene name matches ampicillin/AmpR/bla patterns
+    assert len(genes) >= 1
     gene_names = [g.name.lower() for g in genes]
-    assert any("amp" in name or "bla" in name for name in gene_names), (
-        f"Expected AmpR-related gene, found: {[g.name for g in genes]}"
-    )
+    assert any("amp" in name or "bla" in name for name in gene_names)
 
 
 @pytest.mark.unit
-def test_pcmv6_ac_ires_gfp_puro_detects_markers() -> None:
-    """Targeted test for pCMV6-AC-IRES-GFP-Puro file."""
-    from pathlib import Path
-
-    # Target the specific file
-    gb_file = Path("reference/plasmid/pCMV6-AC-IRES-GFP-Puro_CACNA1H.gb")
-
-    if not gb_file.exists():
-        # Try alternative naming
-        alt_files = list(Path("reference/plasmid/").glob("pCMV6*GFP*Puro*.gb"))
-        if not alt_files:
-            pytest.skip("pCMV6-AC-IRES-GFP-Puro GenBank file not found in reference/plasmid/")
-        gb_file = alt_files[0]
+def test_pcmv6_ac_ires_gfp_puro_detects_markers(tmp_path: Path) -> None:
+    """Targeted test for backbone markers in synthetic plasmid."""
+    gb_file = create_test_genbank(
+        tmp_path,
+        [
+            {"type": "CDS", "label": "AmpR", "start": 300, "end": 1100},
+            {"type": "CDS", "label": "lacZ", "start": 1300, "end": 1800},
+        ],
+    )
 
     genes = detect_resistance_genes(str(gb_file))
-
-    # This file should have at least bacterial resistance genes in backbone (AmpR, LacZ)
-    # GFP and Puro might be in the insert region and excluded by design
-    assert len(genes) >= 1, (
-        f"Expected backbone markers in {gb_file.name}, found: {[g.name for g in genes]}"
-    )
+    assert len(genes) >= 1

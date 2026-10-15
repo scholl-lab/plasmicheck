@@ -270,6 +270,50 @@ def test_compute_region_coverage_metrics_fallback_no_insert() -> None:
 
 
 @pytest.mark.unit
+def test_compute_region_coverage_metrics_fallback_includes_breadth_1x() -> None:
+    """Fallback mode when insert_region is None must include breadth_1x even if not in thresholds."""
+    mock_ctx, _mock_bam = _mock_alignment_file("plasmid", 1000)
+
+    with (
+        patch("plasmicheck.scripts.coverage_metrics.pysam.AlignmentFile", return_value=mock_ctx),
+        patch("plasmicheck.scripts.coverage_metrics.get_depth_array") as mock_get_depth,
+    ):
+        mock_get_depth.return_value = np.array([15] * 1000)
+        # Pass only threshold 5 (1 is not in list)
+        metrics, fallback = compute_region_coverage_metrics("/path/to/bam.bam", None, [5])
+
+    assert fallback is True
+    assert "breadth_1x" in metrics["insert"]
+    assert "breadth_1x" in metrics["backbone"]
+    assert metrics["backbone"]["breadth_1x"] == 0.0
+    assert metrics["backbone"]["breadth_5x"] == 0.0
+
+
+@pytest.mark.unit
+def test_compute_region_coverage_metrics_origin_wrapping() -> None:
+    """Test origin-wrapping insert region (start > end) slices depth array properly."""
+    mock_ctx, _mock_bam = _mock_alignment_file("plasmid", 1000)
+    # 1000 bp plasmid:
+    # positions 0..100 (101 bp): depth 5 (insert part 2)
+    # positions 101..799 (699 bp): depth 10 (backbone)
+    # positions 800..999 (200 bp): depth 5 (insert part 1)
+    # Insert: 301 bp, all depth 5. Mean depth should be 5.0
+    # Backbone: 699 bp, all depth 10. Mean depth should be 10.0
+    depths = np.array([5] * 101 + [10] * 699 + [5] * 200)
+
+    with patch("plasmicheck.scripts.coverage_metrics.pysam.AlignmentFile", return_value=mock_ctx):
+        metrics, fallback = compute_region_coverage_metrics(
+            "/path/to/bam.bam", (800, 100), [1], plasmid_depths=depths
+        )
+
+    assert not fallback
+    assert metrics["insert"]["mean_depth"] == 5.0
+    assert metrics["insert"]["breadth_1x"] == 1.0
+    assert metrics["backbone"]["mean_depth"] == 10.0
+    assert metrics["backbone"]["breadth_1x"] == 1.0
+
+
+@pytest.mark.unit
 def test_compute_region_coverage_metrics_insert_at_start() -> None:
     """Test insert at start of plasmid (backbone only after insert)."""
     mock_ctx, _mock_bam = _mock_alignment_file("plasmid", 1000)
