@@ -23,6 +23,12 @@ except ImportError:
     sys.modules["pysam"] = MagicMock()
 
 
+@pytest.fixture(autouse=True)
+def isolate_home_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Isolate HOME directory so tests never touch ~/.plasmicheck/cache."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+
 @pytest.fixture
 def sample_config() -> dict[str, Any]:
     """Load the project config.json via the singleton."""

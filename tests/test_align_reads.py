@@ -72,11 +72,16 @@ def test_spliced_alignment_preserves_shell_metacharacters(command_log: Path) -> 
     reference = f"human{suffix}.mmi"
     plasmid = f"plasmid{suffix}.fasta"
     output = f"spliced{suffix}.bam"
-    with pysam.AlignmentFile(output, "wb", header={"SQ": [{"SN": "ref", "LN": 1000}]}):
-        pass
+    with pysam.AlignmentFile(output, "wb", header={"SQ": [{"SN": "ref", "LN": 2000}]}) as bam:
+        seg = pysam.AlignedSegment()
+        seg.query_name = "plasmid"
+        seg.reference_id = 0
+        seg.reference_start = 100
+        seg.cigartuples = [(0, 50)]
+        bam.write(seg)
     pysam.index(output)
 
-    assert spliced_alignment(reference, plasmid, output) == []
+    assert spliced_alignment(reference, plasmid, output) == [("ref", 0, 1150)]
 
     assert (command_log / "minimap2").read_text().splitlines()[-2:] == [reference, plasmid]
     assert (command_log / "samtools-sort").read_text().splitlines()[-2:] == ["-o", output]

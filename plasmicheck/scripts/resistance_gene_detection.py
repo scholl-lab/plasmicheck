@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 # Bacterial resistance genes (antibiotics)
 BACTERIAL_RESISTANCE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bAmpR\b", re.IGNORECASE),
+    re.compile(r"\bAmp\b", re.IGNORECASE),
     re.compile(r"\bampicillin\b", re.IGNORECASE),
     re.compile(r"\bbla\b", re.IGNORECASE),
     re.compile(r"\bKanR\b", re.IGNORECASE),
@@ -82,10 +83,11 @@ EXCLUDE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bHA\b", re.IGNORECASE),
 ]
 
-# Combined default patterns
-DEFAULT_PATTERNS: list[re.Pattern[str]] = (
-    BACTERIAL_RESISTANCE_PATTERNS + MAMMALIAN_RESISTANCE_PATTERNS + REPORTER_PATTERNS
+# Combined resistance and default patterns
+RESISTANCE_PATTERNS: list[re.Pattern[str]] = (
+    BACTERIAL_RESISTANCE_PATTERNS + MAMMALIAN_RESISTANCE_PATTERNS
 )
+DEFAULT_PATTERNS: list[re.Pattern[str]] = RESISTANCE_PATTERNS + REPORTER_PATTERNS
 
 
 # ============================================================================
@@ -99,8 +101,8 @@ class DetectedGene:
 
     name: str  # Verbatim GenBank label (display name)
     sanitized_name: str  # For TSV row keys (spaces/special -> underscores)
-    start: int  # 0-based inclusive
-    end: int  # 0-based inclusive
+    start: int  # 0-based inclusive (or origin-wrapping 1-based start if start > end)
+    end: int  # 0-based inclusive (or origin-wrapping 1-based end if start > end)
     region: str  # "backbone" or "insert" (or "unknown" if no insert region)
     qualifier_source: str  # Which qualifier matched ("label", "product", "gene")
 
@@ -179,26 +181,33 @@ def _identify_gene_name(
     return None
 
 
-def _gene_overlaps_insert(
-    gene_start: int, gene_end: int, insert_region: tuple[int, int] | InsertRegionData | None
+def _overlaps_insert(
+    feat_start: int, feat_end: int, insert_region: tuple[int, int] | InsertRegionData | None
 ) -> bool:
-    """Check if gene overlaps insert region.
+    """Check if feature overlaps insert region, supporting origin-wrapping insert regions.
 
     Args:
-        gene_start: Gene start position (0-based inclusive)
-        gene_end: Gene end position (0-based inclusive)
+        feat_start: Feature start position (0-based inclusive)
+        feat_end: Feature end position (0-based inclusive)
         insert_region: (start, end) inclusive boundaries from cDNA_positions.txt, or None
 
     Returns:
-        True if gene overlaps insert region, False if no overlap or insert_region is None
+        True if feature overlaps insert region, False if no overlap or insert_region is None
     """
     if insert_region is None:
         return False
 
-    insert_start, insert_end = insert_region
+    i_start, i_end = insert_region[0], insert_region[1]
 
-    # Check for any overlap (conservative: partial overlap = excluded)
-    return not (gene_end < insert_start or gene_start > insert_end)
+    if i_start <= i_end:
+        # Standard contiguous insert region
+        return not (feat_end < i_start or feat_start > i_end)
+    else:
+        # Origin-wrapping insert region [i_start..end_of_plasmid] + [0..i_end]
+        return feat_end >= i_start or feat_start <= i_end
+
+
+_gene_overlaps_insert = _overlaps_insert
 
 
 # ============================================================================
@@ -210,20 +219,36 @@ def detect_resistance_genes(
     genbank_file: str,
     insert_region: tuple[int, int] | InsertRegionData | None = None,
     custom_patterns: list[str] | None = None,
+    file_type: str | None = None,
 ) -> list[DetectedGene]:
-    """Parse GenBank CDS features, match against patterns, exclude insert-overlapping genes.
+    """Parse plasmid CDS features, match against patterns, exclude insert-overlapping genes.
 
     Args:
-        genbank_file: Path to .gb/.gbk file
+        genbank_file: Path to plasmid file (.gb/.gbk, .xdna, .dna, or .fasta)
         insert_region: (start, end) inclusive boundaries from cDNA_positions.txt, or None
         custom_patterns: Additional regex patterns from config.json (appended to defaults)
+        file_type: File format ('genbank', 'xdna', 'snapgene', 'fasta'). If None, detected from file.
 
     Returns:
         List of DetectedGene objects for matched genes outside the insert region.
         Empty list if no genes match or file cannot be parsed.
     """
+    if file_type is None:
+        ext = os.path.splitext(genbank_file)[1].lower()
+        if ext in (".fasta", ".fa", ".fna", ".fsa", ".ffn"):
+            file_type = "fasta"
+        elif ext in (".xdna",):
+            file_type = "xdna"
+        elif ext in (".dna",):
+            file_type = "snapgene"
+        else:
+            file_type = "genbank"
+
+    if file_type == "fasta":
+        return []
+
     if not os.path.exists(genbank_file):
-        logging.warning(f"GenBank file not found: {genbank_file}")
+        logging.warning(f"Plasmid file not found: {genbank_file}")
         return []
 
     # Combine default patterns with custom patterns
@@ -234,8 +259,8 @@ def detect_resistance_genes(
     detected_genes: list[DetectedGene] = []
 
     try:
-        # Parse GenBank file
-        for record in SeqIO.parse(genbank_file, "genbank"):  # type: ignore[no-untyped-call]
+        # Parse plasmid file
+        for record in SeqIO.parse(genbank_file, file_type):  # type: ignore[no-untyped-call]
             # Process each CDS feature
             for feature in record.features:
                 if feature.type != "CDS":
@@ -254,21 +279,44 @@ def detect_resistance_genes(
                 # Extract coordinates
                 # Handle CompoundLocation (origin-crossing features)
                 if isinstance(feature.location, CompoundLocation):
-                    # Take min start and max end across all parts
                     parts = feature.location.parts
-                    gene_start = min(int(part.start) for part in parts)
-                    gene_end = max(int(part.end) - 1 for part in parts)  # Convert to inclusive
+                    if (
+                        len(parts) == 2
+                        and min(int(p.start) for p in parts) == 0
+                        and max(int(p.end) for p in parts) == len(record)
+                    ):
+                        # Origin-wrapping CompoundLocation
+                        p1_overlaps = _overlaps_insert(
+                            int(parts[0].start), int(parts[0].end) - 1, insert_region
+                        )
+                        p2_overlaps = _overlaps_insert(
+                            int(parts[1].start), int(parts[1].end) - 1, insert_region
+                        )
+                        if p1_overlaps or p2_overlaps:
+                            logging.debug(
+                                f"Excluding gene '{gene_name}' (origin-wrapping part overlaps insert region)"
+                            )
+                            continue
+                        low_part = parts[0] if int(parts[0].start) == 0 else parts[1]
+                        high_part = parts[1] if low_part is parts[0] else parts[0]
+                        gene_start = int(high_part.start)
+                        gene_end = int(low_part.end) - 1
+                    else:
+                        gene_start = min(int(part.start) for part in parts)
+                        gene_end = max(int(part.end) - 1 for part in parts)  # Convert to inclusive
+                        if _overlaps_insert(gene_start, gene_end, insert_region):
+                            logging.debug(
+                                f"Excluding gene '{gene_name}' (overlaps insert region): {gene_start}-{gene_end}"
+                            )
+                            continue
                 else:
                     gene_start = int(feature.location.start)  # 0-based
                     gene_end = int(feature.location.end) - 1  # Convert to 0-based inclusive
-
-                # Check if gene overlaps insert region
-                if _gene_overlaps_insert(gene_start, gene_end, insert_region):
-                    logging.debug(
-                        f"Excluding gene '{gene_name}' (overlaps insert region): "
-                        f"{gene_start}-{gene_end}"
-                    )
-                    continue
+                    if _overlaps_insert(gene_start, gene_end, insert_region):
+                        logging.debug(
+                            f"Excluding gene '{gene_name}' (overlaps insert region): {gene_start}-{gene_end}"
+                        )
+                        continue
 
                 # Classify region
                 region = "unknown" if insert_region is None else "backbone"
@@ -290,7 +338,7 @@ def detect_resistance_genes(
         logging.info(f"Detected {len(detected_genes)} resistance/reporter genes in {genbank_file}")
 
     except Exception as e:
-        logging.warning(f"Error parsing GenBank file {genbank_file}: {e}")
+        logging.warning(f"Error parsing {file_type} file {genbank_file}: {e}")
         return []
 
     return detected_genes

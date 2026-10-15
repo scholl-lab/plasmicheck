@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import IO, Any
 
+import numpy as np
 import pysam
 
 from plasmicheck.config import get_config
@@ -18,7 +19,6 @@ from .coverage_metrics import (
     get_depth_array,
 )
 from .resistance_gene_detection import DetectedGene, detect_resistance_genes, locate_genbank_file
-from .utils import add_logging_args, configure_logging_from_args
 
 _cfg = get_config()
 MATE_BONUS: int = _cfg["scoring"]["mate_bonus"]
@@ -50,7 +50,7 @@ def calculate_alignment_score(read: Any) -> int:
     score -= mismatches * MISMATCH_PENALTY
 
     # Bonus if mate is mapped
-    if not read.mate_is_unmapped:
+    if read.is_paired and not read.mate_is_unmapped:
         score += MATE_BONUS
 
     return score
@@ -175,6 +175,8 @@ def read_overlaps_insert(read: Any, insert_region: tuple[int, int] | InsertRegio
     read_end = read.reference_end
     if read_start is None or read_end is None:
         return False
+    if insert_region[0] > insert_region[1]:
+        return bool(read_end - 1 >= insert_region[0] or read_start <= insert_region[1])
     # No overlap: read ends before insert starts, or read starts after insert ends
     return not (read_end <= insert_region[0] or read_start > insert_region[1])
 
@@ -188,9 +190,12 @@ def calculate_coverage_outside_insert(
     with pysam.AlignmentFile(plasmid_bam, "rb") as bamfile:
         plasmid_length = bamfile.lengths[bamfile.get_tid(bamfile.get_reference_name(0))]
 
-        total_reference_bases_outside_insert = plasmid_length - (
-            insert_region[1] - insert_region[0] + 1
-        )
+        insert_start, insert_end = insert_region[0], insert_region[1]
+        is_wrapped = insert_start > insert_end
+        if is_wrapped:
+            total_reference_bases_outside_insert = insert_start - insert_end - 1
+        else:
+            total_reference_bases_outside_insert = plasmid_length - (insert_end - insert_start + 1)
         if total_reference_bases_outside_insert <= 0:
             raise ValueError("The INSERT_REGION covers the entire reference sequence.")
 
@@ -203,17 +208,26 @@ def calculate_coverage_outside_insert(
             if read_start is None or read_end is None:
                 continue
 
-            if read_end < insert_region[0] or read_start > insert_region[1]:
-                total_aligned_bases_outside_insert += read.query_length
+            if is_wrapped:
+                bb_start = insert_end + 1
+                bb_end = insert_start - 1
+                if read_start >= bb_start and read_end <= bb_end + 1:
+                    total_aligned_bases_outside_insert += read.query_length
+                else:
+                    overlap = max(0, min(read_end, bb_end + 1) - max(read_start, bb_start))
+                    total_aligned_bases_outside_insert += overlap
             else:
-                if read_start < insert_region[0]:
-                    outside_start = read_start
-                    outside_end = min(read_end, insert_region[0] - 1)
-                    total_aligned_bases_outside_insert += outside_end - outside_start + 1
-                if read_end > insert_region[1]:
-                    outside_start = max(read_start, insert_region[1] + 1)
-                    outside_end = read_end
-                    total_aligned_bases_outside_insert += outside_end - outside_start + 1
+                if read_end < insert_start or read_start > insert_end:
+                    total_aligned_bases_outside_insert += read.query_length
+                else:
+                    if read_start < insert_start:
+                        outside_start = read_start
+                        outside_end = min(read_end, insert_start - 1)
+                        total_aligned_bases_outside_insert += outside_end - outside_start + 1
+                    if read_end > insert_end:
+                        outside_start = max(read_start, insert_end + 1)
+                        outside_end = read_end
+                        total_aligned_bases_outside_insert += outside_end - outside_start + 1
 
     coverage_outside_insert: float = (
         total_aligned_bases_outside_insert / total_reference_bases_outside_insert
@@ -228,6 +242,14 @@ def count_mismatches_near_insert_end(
     mismatches_near_insert = {"with_mismatches_or_clipping": 0, "without_mismatches_or_clipping": 0}
 
     with pysam.AlignmentFile(plasmid_bam, "rb") as bamfile:
+        plasmid_length = 0
+        if (
+            hasattr(bamfile, "lengths")
+            and isinstance(bamfile.lengths, (list, tuple))
+            and len(bamfile.lengths) > 0
+        ):
+            plasmid_length = bamfile.lengths[0]
+
         for read in bamfile.fetch():
             if read.is_unmapped:
                 continue
@@ -237,14 +259,20 @@ def count_mismatches_near_insert_end(
             if read_start is None or read_end is None:
                 continue
 
-            near_insert_start = (
-                read_end >= insert_region[0] - window_size
-                and read_end <= insert_region[0] + window_size
-            )
-            near_insert_end = (
-                read_start >= insert_region[1] - window_size
-                and read_start <= insert_region[1] + window_size
-            )
+            if plasmid_length > 0:
+                d_start = abs(read_end - insert_region[0]) % plasmid_length
+                near_insert_start = min(d_start, plasmid_length - d_start) <= window_size
+                d_end = abs(read_start - insert_region[1]) % plasmid_length
+                near_insert_end = min(d_end, plasmid_length - d_end) <= window_size
+            else:
+                near_insert_start = (
+                    read_end >= insert_region[0] - window_size
+                    and read_end <= insert_region[0] + window_size
+                )
+                near_insert_end = (
+                    read_start >= insert_region[1] - window_size
+                    and read_start <= insert_region[1] + window_size
+                )
 
             if near_insert_start or near_insert_end:
                 has_mismatches_or_clipping = False
@@ -270,10 +298,10 @@ def count_mismatches_near_insert_end(
 # ---------------------------------------------------------------------------
 
 
-def _namesort_bam(input_bam: str, output_bam: str) -> None:
+def _namesort_bam(input_bam: str, output_bam: str, threads: int = SAMTOOLS_THREADS) -> None:
     """Sort names lexicographically to match the streaming merge comparison."""
     subprocess.run(
-        ["samtools", "sort", "-N", "-@", str(SAMTOOLS_THREADS), "-o", output_bam, input_bam],
+        ["samtools", "sort", "-N", "-@", str(threads), "-o", output_bam, input_bam],
         check=True,
     )
 
@@ -285,12 +313,14 @@ def _iter_reads_by_name(bam_path: str) -> Iterator[tuple[str, list[Any]]]:
             yield name, list(group)
 
 
+def _primary_reads(reads: list[Any]) -> list[Any]:
+    """Return primary (non-secondary, non-supplementary) records, or the first record as fallback."""
+    return [r for r in reads if not r.is_secondary and not r.is_supplementary] or reads[:1]
+
+
 def _best_read(reads: list[Any]) -> Any:
     """Pick the primary alignment (or first) from a group of reads with the same name."""
-    for r in reads:
-        if not r.is_secondary and not r.is_supplementary:
-            return r
-    return reads[0]
+    return _primary_reads(reads)[0]
 
 
 def _write_assignment(
@@ -383,12 +413,26 @@ def _streaming_compare(
             # Both BAMs have this read — compare scores
             assert p_item is not None
             assert h_item is not None
-            p_read = _best_read(p_item[1])
-            h_read = _best_read(h_item[1])
-            ps = calculate_alignment_score(p_read)
-            hs = calculate_alignment_score(h_read)
+            p_reads = _primary_reads(p_item[1])
+            h_reads = _primary_reads(h_item[1])
+            p_read = p_reads[0]
+            h_read = h_reads[0]
+            ps = sum(map(calculate_alignment_score, p_reads))
+            hs = sum(map(calculate_alignment_score, h_reads))
+            rep_p_read = next(
+                (
+                    r
+                    for r in p_reads
+                    if insert_region is not None and read_overlaps_insert(r, insert_region)
+                ),
+                p_read,
+            )
             assigned = _assign(
-                ps, hs, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin
+                ps,
+                hs,
+                score_margin=score_margin,
+                plasmid_read=rep_p_read,
+                insert_region=insert_region,
             )
             assigned_counts[assigned] += 1
             _write_assignment(outfile, p_name, assigned, ps, hs, p_read, h_read)
@@ -399,10 +443,23 @@ def _streaming_compare(
             # Plasmid-only read
             assert p_item is not None
             assert p_name is not None
-            p_read = _best_read(p_item[1])
-            ps = calculate_alignment_score(p_read)
+            p_reads = _primary_reads(p_item[1])
+            p_read = p_reads[0]
+            ps = sum(map(calculate_alignment_score, p_reads))
+            rep_p_read = next(
+                (
+                    r
+                    for r in p_reads
+                    if insert_region is not None and read_overlaps_insert(r, insert_region)
+                ),
+                p_read,
+            )
             assigned = _assign(
-                ps, 0, plasmid_read=p_read, insert_region=insert_region, score_margin=score_margin
+                max(ps, 0),
+                0,
+                score_margin=score_margin,
+                plasmid_read=rep_p_read,
+                insert_region=insert_region,
             )
             assigned_counts[assigned] += 1
             _write_assignment(outfile, p_name, assigned, ps, 0, p_read, None)
@@ -411,9 +468,10 @@ def _streaming_compare(
         else:
             # Human-only read
             assert h_item is not None
-            h_read = _best_read(h_item[1])
-            hs = calculate_alignment_score(h_read)
-            assigned = _assign(0, hs, score_margin=score_margin)
+            h_reads = _primary_reads(h_item[1])
+            h_read = h_reads[0]
+            hs = sum(map(calculate_alignment_score, h_reads))
+            assigned = _assign(0, max(hs, 0), score_margin=score_margin)
             assigned_counts[assigned] += 1
             _write_assignment(outfile, h_name, assigned, 0, hs, None, h_read)
             h_item = next(human_iter, None)
@@ -428,6 +486,8 @@ def compare_alignments(
     threshold: float = DEFAULT_THRESHOLD,
     genbank_file: str | None = None,
     cdna_positions_file: str | None = None,
+    filter_backbone_only: bool = FILTER_BACKBONE_ONLY,
+    threads: int = SAMTOOLS_THREADS,
 ) -> None:
     logging.info("Starting comparison of alignments")
     logging.debug(f"Processing BAM files: {plasmid_bam} (plasmid), {human_bam} (human)")
@@ -459,9 +519,22 @@ def compare_alignments(
     else:
         logging.warning("Skipping coverage/mismatch metrics (insert region unavailable).")
 
+    # Compute whole-plasmid depths once if possible for sharing across metrics and genes
+    plasmid_depths: Any = None
+    try:
+        with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
+            if hasattr(bam, "lengths") and len(bam.lengths) > 0 and bam.lengths[0] > 0:
+                contig = bam.get_reference_name(0)
+                plasmid_length = bam.lengths[0]
+                depth_arr = get_depth_array(plasmid_bam, contig, 0, plasmid_length)
+                if isinstance(depth_arr, np.ndarray) and len(depth_arr) > 0:
+                    plasmid_depths = depth_arr
+    except Exception as e:
+        logging.warning(f"Could not compute whole-plasmid depth array: {e}")
+
     # Compute per-region coverage metrics
     coverage_metrics, coverage_fallback = compute_region_coverage_metrics(
-        plasmid_bam, insert_region, BREADTH_THRESHOLDS
+        plasmid_bam, insert_region, BREADTH_THRESHOLDS, plasmid_depths=plasmid_depths
     )
     if coverage_fallback:
         logging.warning(
@@ -491,13 +564,27 @@ def compare_alignments(
             logging.info(f"Detected {len(detected_genes)} resistance/reporter genes")
 
             if detected_genes:
-                # Compute per-gene coverage using Phase 9 infrastructure
-                with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
-                    contig = bam.get_reference_name(0)
-
                 for gene in detected_genes:
-                    # get_depth_array uses half-open intervals, gene coordinates are inclusive
-                    depth_array = get_depth_array(plasmid_bam, contig, gene.start, gene.end + 1)
+                    if plasmid_depths is not None and len(plasmid_depths) > 0:
+                        if gene.start > gene.end:
+                            depth_array = np.concatenate(
+                                [plasmid_depths[gene.start :], plasmid_depths[: gene.end + 1]]
+                            )
+                        else:
+                            depth_array = plasmid_depths[gene.start : gene.end + 1]
+                    else:
+                        with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
+                            c = bam.get_reference_name(0)
+                            plen = bam.lengths[0]
+                        if gene.start > gene.end:
+                            depth_array = np.concatenate(
+                                [
+                                    get_depth_array(plasmid_bam, c, gene.start, plen),
+                                    get_depth_array(plasmid_bam, c, 0, gene.end + 1),
+                                ]
+                            )
+                        else:
+                            depth_array = get_depth_array(plasmid_bam, c, gene.start, gene.end + 1)
                     stats = compute_coverage_stats(depth_array, [1])
                     gene_coverage[gene.sanitized_name] = stats
                     logging.debug(
@@ -510,11 +597,11 @@ def compare_alignments(
         gene_coverage = {}
 
     # Group BAMs by read name into temporary files for streaming merge
-    plasmid_ns = plasmid_bam.replace(".bam", ".namesorted.bam")
-    human_ns = human_bam.replace(".bam", ".namesorted.bam")
+    plasmid_ns = f"{os.path.splitext(plasmid_bam)[0]}.namesorted.bam"
+    human_ns = f"{os.path.splitext(human_bam)[0]}.namesorted.bam"
     logging.info("Grouping BAMs by read name for streaming comparison...")
-    _namesort_bam(plasmid_bam, plasmid_ns)
-    _namesort_bam(human_bam, human_ns)
+    _namesort_bam(plasmid_bam, plasmid_ns, threads=threads)
+    _namesort_bam(human_bam, human_ns, threads=threads)
 
     logging.debug(f"Writing alignment comparison results to {output_basename}.reads_assignment.tsv")
 
@@ -537,17 +624,17 @@ def compare_alignments(
         except OSError:
             logging.warning(f"Could not remove temporary file: {ns_bam}")
 
-    plasmid_count = assigned_counts["Plasmid"]
+    plasmid_num = (
+        assigned_counts["Plasmid"]
+        if filter_backbone_only
+        else assigned_counts["Plasmid"] + assigned_counts["Backbone_Only"]
+    )
     human_count = assigned_counts["Human"]
-    if FILTER_BACKBONE_ONLY:
-        # Exclude Backbone_Only and Ambiguous from ratio (new v0.33.0 behavior)
-        ratio = plasmid_count / human_count if human_count != 0 else float("inf")
-    else:
-        # Include all plasmid-favoring categories (pre-v0.33.0 behavior)
-        effective_plasmid = (
-            plasmid_count + assigned_counts["Backbone_Only"] + assigned_counts["Ambiguous"]
-        )
-        ratio = effective_plasmid / human_count if human_count != 0 else float("inf")
+    ratio = (
+        plasmid_num / human_count
+        if human_count != 0
+        else (float("inf") if plasmid_num > 0 else 0.0)
+    )
 
     if ratio > threshold:
         verdict = "Sample is contaminated with plasmid DNA"
@@ -575,10 +662,10 @@ def compare_alignments(
         summary_file.write(f"MeanDepthInsert\t{insert_metrics['mean_depth']:.2f}\n")
         summary_file.write(f"MedianDepthInsert\t{insert_metrics['median_depth']:.2f}\n")
         summary_file.write(f"BreadthInsert\t{insert_metrics['breadth_1x']:.2f}\n")
-        for threshold in BREADTH_THRESHOLDS:
-            if threshold != 1:
+        for depth_threshold in BREADTH_THRESHOLDS:
+            if depth_threshold != 1:
                 summary_file.write(
-                    f"BreadthInsert_{threshold}x\t{insert_metrics[f'breadth_{threshold}x']:.2f}\n"
+                    f"BreadthInsert_{depth_threshold}x\t{insert_metrics[f'breadth_{depth_threshold}x']:.2f}\n"
                 )
         summary_file.write(f"CoverageCV_Insert\t{insert_metrics['cv']:.2f}\n")
 
@@ -586,10 +673,10 @@ def compare_alignments(
         summary_file.write(f"MeanDepthBackbone\t{backbone_metrics['mean_depth']:.2f}\n")
         summary_file.write(f"MedianDepthBackbone\t{backbone_metrics['median_depth']:.2f}\n")
         summary_file.write(f"BreadthBackbone\t{backbone_metrics['breadth_1x']:.2f}\n")
-        for threshold in BREADTH_THRESHOLDS:
-            if threshold != 1:
+        for depth_threshold in BREADTH_THRESHOLDS:
+            if depth_threshold != 1:
                 summary_file.write(
-                    f"BreadthBackbone_{threshold}x\t{backbone_metrics[f'breadth_{threshold}x']:.2f}\n"
+                    f"BreadthBackbone_{depth_threshold}x\t{backbone_metrics[f'breadth_{depth_threshold}x']:.2f}\n"
                 )
         summary_file.write(f"CoverageCV_Backbone\t{backbone_metrics['cv']:.2f}\n")
 
@@ -640,36 +727,3 @@ def compare_alignments(
             summary_file.write("ExonCount\tNA\n")
             summary_file.write("ExonLengths\tNA\n")
             summary_file.write("IntronLengths\tNA\n")
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Compare alignments and assign reads to plasmid or human reference"
-    )
-    parser.add_argument("-p", "--plasmid_bam", help="BAM file for plasmid alignment", required=True)
-    parser.add_argument("-m", "--human_bam", help="BAM file for human alignment", required=True)
-    parser.add_argument("-o", "--output_basename", help="Basename for output files", required=True)
-    parser.add_argument(
-        "-t",
-        "--threshold",
-        type=float,
-        default=DEFAULT_THRESHOLD,
-        help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})",
-    )
-    parser.add_argument(
-        "-gb",
-        "--genbank_file",
-        type=str,
-        default=None,
-        help="GenBank file for resistance gene detection (optional)",
-    )
-    add_logging_args(parser)
-    args = parser.parse_args()
-
-    configure_logging_from_args(args)
-
-    compare_alignments(
-        args.plasmid_bam, args.human_bam, args.output_basename, args.threshold, args.genbank_file
-    )

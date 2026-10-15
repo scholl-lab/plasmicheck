@@ -48,6 +48,6 @@ rule run_plasmicheck_pipeline:
     shell:
         """
         plasmicheck pipeline -hf reference/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna \
-            -pf {input.plasmid} -sf {input.bam} \
+            -pf {input.plasmid} -sf1 {input.bam} \
             -o output --log-file {output[0]} --archive_output
         """

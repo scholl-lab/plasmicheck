@@ -120,6 +120,7 @@ def compute_region_coverage_metrics(
     plasmid_bam: str,
     insert_region: tuple[int, int] | InsertRegionData | None,
     breadth_thresholds: list[int],
+    plasmid_depths: npt.NDArray[Any] | None = None,
 ) -> tuple[dict[str, dict[str, float]], bool]:
     """Compute coverage metrics for insert and backbone regions.
 
@@ -127,6 +128,7 @@ def compute_region_coverage_metrics(
         plasmid_bam: Path to plasmid alignment BAM file
         insert_region: (start, end) inclusive boundaries of insert region, or None for fallback
         breadth_thresholds: List of depth thresholds for breadth calculation
+        plasmid_depths: Optional precomputed whole-plasmid depth array
 
     Returns:
         Tuple of:
@@ -137,46 +139,75 @@ def compute_region_coverage_metrics(
         When insert_region is None, computes metrics for whole plasmid as "insert",
         and returns empty backbone metrics (all 0.0).
     """
-    with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
-        contig = bam.get_reference_name(0)
-        plasmid_length = bam.lengths[0]
+    if plasmid_depths is not None:
+        contig = ""
+        plasmid_length = len(plasmid_depths)
+    else:
+        with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
+            contig = bam.get_reference_name(0)
+            plasmid_length = bam.lengths[0]
 
     if insert_region is None:
         # Fallback: whole plasmid as insert, empty backbone
         logging.debug("Computing coverage for whole plasmid (insert region not defined)")
-        whole_depth = get_depth_array(plasmid_bam, contig, 0, plasmid_length)
-        backbone_stats = {
-            "mean_depth": 0.0,
-            "median_depth": 0.0,
-            "cv": 0.0,
-        }
-        for threshold in breadth_thresholds:
-            backbone_stats[f"breadth_{threshold}x"] = 0.0
+        whole_depth = (
+            plasmid_depths
+            if plasmid_depths is not None
+            else get_depth_array(plasmid_bam, contig, 0, plasmid_length)
+        )
         return (
             {
                 "insert": compute_coverage_stats(whole_depth, breadth_thresholds),
-                "backbone": backbone_stats,
+                "backbone": compute_coverage_stats(
+                    np.array([], dtype=np.int64), breadth_thresholds
+                ),
             },
             True,
         )
 
-    # Insert region (inclusive boundaries -> half-open for pysam)
-    insert_depth = get_depth_array(plasmid_bam, contig, insert_region[0], insert_region[1] + 1)
+    insert_start, insert_end = insert_region[0], insert_region[1]
+    is_wrapped = insert_start > insert_end
     logging.debug(
-        f"Computing coverage for insert [{insert_region[0]}, {insert_region[1]}] "
-        f"and backbone regions"
+        f"Computing coverage for insert [{insert_start}, {insert_end}] and backbone regions"
     )
 
-    # Backbone regions (before insert + after insert)
-    backbone_parts = []
-    if insert_region[0] > 0:
-        backbone_parts.append(get_depth_array(plasmid_bam, contig, 0, insert_region[0]))
-    if insert_region[1] + 1 < plasmid_length:
-        backbone_parts.append(
-            get_depth_array(plasmid_bam, contig, insert_region[1] + 1, plasmid_length)
-        )
-
-    backbone_depth = np.concatenate(backbone_parts) if backbone_parts else np.array([])
+    if plasmid_depths is not None:
+        if is_wrapped:
+            insert_depth = np.concatenate(
+                [plasmid_depths[insert_start:], plasmid_depths[: insert_end + 1]]
+            )
+            backbone_depth = plasmid_depths[insert_end + 1 : insert_start]
+        else:
+            insert_depth = plasmid_depths[insert_start : insert_end + 1]
+            backbone_parts = []
+            if insert_start > 0:
+                backbone_parts.append(plasmid_depths[:insert_start])
+            if insert_end + 1 < len(plasmid_depths):
+                backbone_parts.append(plasmid_depths[insert_end + 1 :])
+            backbone_depth = (
+                np.concatenate(backbone_parts) if backbone_parts else np.array([], dtype=np.int64)
+            )
+    else:
+        if is_wrapped:
+            insert_depth = np.concatenate(
+                [
+                    get_depth_array(plasmid_bam, contig, insert_start, plasmid_length),
+                    get_depth_array(plasmid_bam, contig, 0, insert_end + 1),
+                ]
+            )
+            backbone_depth = get_depth_array(plasmid_bam, contig, insert_end + 1, insert_start)
+        else:
+            insert_depth = get_depth_array(plasmid_bam, contig, insert_start, insert_end + 1)
+            backbone_parts = []
+            if insert_start > 0:
+                backbone_parts.append(get_depth_array(plasmid_bam, contig, 0, insert_start))
+            if insert_end + 1 < plasmid_length:
+                backbone_parts.append(
+                    get_depth_array(plasmid_bam, contig, insert_end + 1, plasmid_length)
+                )
+            backbone_depth = (
+                np.concatenate(backbone_parts) if backbone_parts else np.array([], dtype=np.int64)
+            )
 
     return (
         {
