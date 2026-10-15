@@ -1,7 +1,9 @@
-# ---- Build stage ----
-FROM python:3.12-slim AS build
+FROM ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 AS uv
 
-COPY --from=ghcr.io/astral-sh/uv:0.11.28@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa /uv /usr/local/bin/uv
+# ---- Build stage ----
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS build
+
+COPY --from=uv /uv /usr/local/bin/uv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc wget \
@@ -9,12 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Build minimap2 from source (apt version lags behind)
-ARG MINIMAP2_VERSION=2.28
+ARG MINIMAP2_VERSION=2.31
 RUN wget -qO- "https://github.com/lh3/minimap2/releases/download/v${MINIMAP2_VERSION}/minimap2-${MINIMAP2_VERSION}.tar.bz2" \
     | tar -xj && cd minimap2-${MINIMAP2_VERSION} && make && cp minimap2 /usr/local/bin/
 
 # Build samtools from source
-ARG SAMTOOLS_VERSION=1.21
+ARG SAMTOOLS_VERSION=1.24
 RUN wget -qO- "https://github.com/samtools/samtools/releases/download/${SAMTOOLS_VERSION}/samtools-${SAMTOOLS_VERSION}.tar.bz2" \
     | tar -xj && cd samtools-${SAMTOOLS_VERSION} && ./configure --without-curses && make && make install
 
@@ -25,7 +27,7 @@ WORKDIR /tmp/plasmicheck
 RUN uv sync --locked --no-dev --no-editable --no-cache && rm -rf /tmp/plasmicheck
 
 # ---- Runtime stage ----
-FROM python:3.12-slim AS runtime-base
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS runtime-base
 
 LABEL org.opencontainers.image.title="PlasmiCheck" \
       org.opencontainers.image.description="Plasmid DNA contamination detection in sequencing data" \

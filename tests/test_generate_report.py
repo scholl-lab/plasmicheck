@@ -11,9 +11,21 @@ import pytest
 from plasmicheck.scripts.generate_report import (
     downsample_data,
     extract_verdict_from_summary,
+    generate_plots,
     load_data,
     main,
 )
+
+
+@pytest.mark.unit
+def test_sample_plots_disable_cloud_sharing(
+    tmp_path: Path, sample_reads_assignment_df: pd.DataFrame
+) -> None:
+    boxplot, _, scatter, _ = generate_plots(sample_reads_assignment_df, str(tmp_path))
+    html_outputs = [boxplot, scatter, *(p.read_text() for p in tmp_path.rglob("*.html"))]
+    assert len(html_outputs) == 4
+    for html in html_outputs:
+        assert '"showSendToCloud": false' in html
 
 
 class TestDownsampleData:

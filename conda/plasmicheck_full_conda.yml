@@ -5,7 +5,7 @@ channels:
   - nodefaults
 dependencies:
   - python=3.12
-  - uv>=0.11.28
+  - uv>=0.13.1
   - minimap2>=2.17
   - samtools>=1.19
 # Install Python dependencies from uv.lock after activating this environment.

@@ -30,6 +30,7 @@ ROUND_DECIMALS: int = PLOT_CONFIG.get("round_decimals", 3)
 LOG_OFFSET: float = PLOT_CONFIG.get("log_offset", 1e-9)
 MARKER_STYLE: dict[str, Any] = PLOT_CONFIG.get("marker_style", {"size": 8, "opacity": 0.7})
 DEPTH_HEATMAP_CAP: float = PLOT_CONFIG.get("depth_heatmap_cap", 100.0)
+_PLOTLY_CONFIG = {"showSendToCloud": False}
 
 # Setup logging for the libraries used in this script
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
@@ -326,7 +327,7 @@ def plot_boxplot(
     os.makedirs(plots_dir, exist_ok=True)
 
     boxplot_filename: str = os.path.join(plots_dir, "boxplot_contamination_ratios.html")
-    fig.write_html(boxplot_filename, include_plotlyjs=False, full_html=False)
+    fig.write_html(boxplot_filename, include_plotlyjs=False, full_html=False, config=_PLOTLY_CONFIG)
 
     boxplot_filename_png: str | None = None
     if static_report:
@@ -412,7 +413,9 @@ def plot_heatmap(
     heatmap_filename_interactive: str = os.path.join(
         plots_dir, plot_config["output_filename"].replace(".png", ".html")
     )
-    fig.write_html(heatmap_filename_interactive, include_plotlyjs=False, full_html=False)
+    fig.write_html(
+        heatmap_filename_interactive, include_plotlyjs=False, full_html=False, config=_PLOTLY_CONFIG
+    )
 
     heatmap_filename_png: str | None = None
     if static_report:
@@ -527,7 +530,7 @@ def plot_metric_heatmap(
 
     slug = metric_name.lower().replace(" ", "_")
     html_filename: str = os.path.join(plots_dir, f"heatmap_{slug}.html")
-    fig.write_html(html_filename, include_plotlyjs=False, full_html=False)
+    fig.write_html(html_filename, include_plotlyjs=False, full_html=False, config=_PLOTLY_CONFIG)
 
     # Save static PNG if requested
     png_filename: str | None = None
@@ -603,7 +606,7 @@ def plot_coverage_outside_insert_boxplot(
     os.makedirs(plots_dir, exist_ok=True)
 
     html_filename: str = os.path.join(plots_dir, "boxplot_coverage_outside_insert.html")
-    fig.write_html(html_filename, include_plotlyjs=False, full_html=False)
+    fig.write_html(html_filename, include_plotlyjs=False, full_html=False, config=_PLOTLY_CONFIG)
 
     # Save static PNG if requested
     png_filename: str | None = None
@@ -871,7 +874,7 @@ def plot_verdict_bar_by_plasmid(
     os.makedirs(plots_dir, exist_ok=True)
 
     html_path: str = os.path.join(plots_dir, "verdict_bar_by_plasmid.html")
-    fig.write_html(html_path, include_plotlyjs=False, full_html=False)
+    fig.write_html(html_path, include_plotlyjs=False, full_html=False, config=_PLOTLY_CONFIG)
 
     # Generate PNG if requested
     png_path: str | None = None
@@ -976,7 +979,7 @@ def plot_verdict_bar_by_sample(
     os.makedirs(plots_dir, exist_ok=True)
 
     html_path: str = os.path.join(plots_dir, "verdict_bar_by_sample.html")
-    fig.write_html(html_path, include_plotlyjs=False, full_html=False)
+    fig.write_html(html_path, include_plotlyjs=False, full_html=False, config=_PLOTLY_CONFIG)
 
     # Generate PNG if requested
     png_path: str | None = None

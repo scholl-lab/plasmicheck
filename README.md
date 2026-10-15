@@ -96,9 +96,18 @@ stubs. Development dependencies live in a dependency group, so replace the old
 `pip install -e ".[dev]"` workflow with `uv sync --locked`.
 
 For a dependency change, edit `pyproject.toml` (or use `uv add` / `uv add --dev`),
-run `uv lock`, then run `make ci-check`. Use `uv lock --upgrade-package NAME`
-for targeted updates and commit both metadata and lockfile. The pre-commit Ruff
+run `uv lock`, then run `make ci-check`. Use `uv lock --upgrade` to refresh all
+packages or `uv lock --upgrade-package NAME` for a targeted update, and commit
+both metadata and lockfile. The pre-commit Ruff
 hooks use this same lock, rather than installing another Ruff version.
+
+Dependabot checks Python dependencies (including transitives), GitHub Actions,
+Docker images, and pre-commit hooks weekly. Python minor/patch updates are grouped;
+major updates get individual PRs, and security fixes have a separate group.
+Docker updates retain Python 3.12. Review and test updates before merging.
+The uv version in CI and Conda, the actionlint image in `Makefile`, and the
+minimap2/samtools versions in `Dockerfile` need manual updates. When updating uv,
+keep its CI version, Docker image, and Conda minimum aligned.
 
 CI also installs the built wheel and sdist outside the checkout, checks package
 resources and CLI entry points, and builds the Docker smoke-test stage. The

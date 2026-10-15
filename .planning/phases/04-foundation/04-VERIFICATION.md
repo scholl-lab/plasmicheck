@@ -89,7 +89,7 @@ python scripts/benchmark.py -n 1
 cat BENCHMARK.md
 ```
 
-**Expected:** 
+**Expected:**
 - Script exits 0
 - BENCHMARK.md exists with per-step timing table
 - Report step dominates timing (~90%+ on v0.31.0)
