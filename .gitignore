@@ -185,3 +185,7 @@ CLAUDE.md
 # Regression and benchmark cache
 scripts/.regression_cache/
 BENCHMARK.md
+
+# Understand Anything knowledge graph artifacts
+.ua/
+.understand-anything/
