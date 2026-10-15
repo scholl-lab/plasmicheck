@@ -18,9 +18,20 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+from filelock import FileLock
+
 from plasmicheck.scripts.utils import calculate_md5
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_PADDING: int = 1000
+
+
+def _resolve_md5(val: str) -> str:
+    """Return MD5 string if given, or compute MD5 if path to an existing file."""
+    if os.path.isfile(val):
+        return calculate_md5(val)
+    return val
 
 
 class CacheManager:
@@ -41,6 +52,7 @@ class CacheManager:
     def __init__(self, cache_root: Path, size_limit_gb: float = 10.0) -> None:
         """Initialize cache manager and create directory structure."""
         self.cache_root = Path(cache_root)
+        self.cache_dir = self.cache_root
         self.indexes_dir = self.cache_root / "indexes"
         self.spliced_dir = self.cache_root / "spliced"
         self.manifest_path = self.cache_root / "manifest.json"
@@ -96,36 +108,38 @@ class CacheManager:
         Returns:
             Dict with "mmi" and "fai" keys pointing to cached files, or None on miss
         """
-        cache_key = calculate_md5(input_fasta)
+        with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
+            self.manifest = self._load_manifest()
+            cache_key = calculate_md5(input_fasta)
 
-        if cache_key in self.manifest:
-            entry = self.manifest[cache_key]
-            mmi_path = Path(entry["mmi_path"])
-            fai_path = Path(entry["fai_path"])
+            if cache_key in self.manifest:
+                entry = self.manifest[cache_key]
+                mmi_path = Path(entry["mmi_path"])
+                fai_path = Path(entry["fai_path"])
 
-            # Verify both files exist and sizes match
-            if (
-                mmi_path.exists()
-                and fai_path.exists()
-                and mmi_path.stat().st_size == entry["mmi_size"]
-                and fai_path.stat().st_size == entry["fai_size"]
-            ):
-                # Cache hit: update access time and move to end (LRU)
-                self.manifest.move_to_end(cache_key)
-                self.manifest[cache_key]["last_access"] = time.time()
-                self._save_manifest()
-                logger.info(f"Cache HIT for index: {input_fasta}")
-                return {"mmi": mmi_path, "fai": fai_path}
-            else:
-                # Stale entry: files deleted or size mismatch
-                logger.warning(
-                    f"Stale cache entry for {input_fasta} (files missing or size mismatch)"
-                )
-                del self.manifest[cache_key]
-                self._save_manifest()
+                # Verify both files exist and sizes match
+                if (
+                    mmi_path.exists()
+                    and fai_path.exists()
+                    and mmi_path.stat().st_size == entry["mmi_size"]
+                    and fai_path.stat().st_size == entry["fai_size"]
+                ):
+                    # Cache hit: update access time and move to end (LRU)
+                    self.manifest.move_to_end(cache_key)
+                    self.manifest[cache_key]["last_access"] = time.time()
+                    self._save_manifest()
+                    logger.info(f"Cache HIT for index: {input_fasta}")
+                    return {"mmi": mmi_path, "fai": fai_path}
+                else:
+                    # Stale entry: files deleted or size mismatch
+                    logger.warning(
+                        f"Stale cache entry for {input_fasta} (files missing or size mismatch)"
+                    )
+                    del self.manifest[cache_key]
+                    self._save_manifest()
 
-        logger.info(f"Cache MISS for index: {input_fasta}")
-        return None
+            logger.info(f"Cache MISS for index: {input_fasta}")
+            return None
 
     def put_index(self, input_fasta: str, mmi_path: str, fai_path: str) -> None:
         """Store index in cache.
@@ -135,138 +149,148 @@ class CacheManager:
             mmi_path: Path to minimap2 index file (.mmi)
             fai_path: Path to samtools index file (.fai)
         """
-        cache_key = calculate_md5(input_fasta)
-        cached_mmi = self.indexes_dir / f"{cache_key}.mmi"
-        cached_fai = self.indexes_dir / f"{cache_key}.fai"
+        with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
+            self.manifest = self._load_manifest()
+            cache_key = calculate_md5(input_fasta)
+            cached_mmi = self.indexes_dir / f"{cache_key}.mmi"
+            cached_fai = self.indexes_dir / f"{cache_key}.fai"
 
-        # Copy both files to cache atomically
-        self._atomic_copy(mmi_path, cached_mmi)
-        self._atomic_copy(fai_path, cached_fai)
+            # Copy both files to cache atomically
+            self._atomic_copy(mmi_path, cached_mmi)
+            self._atomic_copy(fai_path, cached_fai)
 
-        # Update manifest with both file sizes
-        mmi_size = cached_mmi.stat().st_size
-        fai_size = cached_fai.stat().st_size
-        self.manifest[cache_key] = {
-            "mmi_path": str(cached_mmi),
-            "fai_path": str(cached_fai),
-            "mmi_size": mmi_size,
-            "fai_size": fai_size,
-            "created": time.time(),
-            "last_access": time.time(),
-            "type": "index",
-        }
-        self.manifest.move_to_end(cache_key)
-        self._save_manifest()
+            # Update manifest with both file sizes
+            mmi_size = cached_mmi.stat().st_size
+            fai_size = cached_fai.stat().st_size
+            self.manifest[cache_key] = {
+                "mmi_path": str(cached_mmi),
+                "fai_path": str(cached_fai),
+                "mmi_size": mmi_size,
+                "fai_size": fai_size,
+                "created": time.time(),
+                "last_access": time.time(),
+                "type": "index",
+            }
+            self.manifest.move_to_end(cache_key)
+            self._save_manifest()
 
-        # Evict LRU if over size limit
-        self._evict_if_needed()
+            # Evict LRU if over size limit
+            self._evict_if_needed()
 
-        logger.info(f"Cached index for {input_fasta} ({cache_key[:8]}...)")
+            logger.info(f"Cached index for {input_fasta} ({cache_key[:8]}...)")
 
-    def get_spliced(self, plasmid_fasta: str, human_fasta: str) -> dict[str, Path] | None:
+    def get_spliced(
+        self, plasmid_md5: str, human_md5: str, padding: int = DEFAULT_PADDING
+    ) -> dict[str, Path] | None:
         """Get cached spliced alignment artifacts.
 
         Args:
-            plasmid_fasta: Path to plasmid FASTA file
-            human_fasta: Path to human reference FASTA file
+            plasmid_md5: Plasmid MD5 hex digest or path to plasmid FASTA file
+            human_md5: Human reference MD5 hex digest or path to human reference FASTA file
+            padding: Padding bases used for spliced alignment
 
         Returns:
             Dict with "bam", "fasta", "cdna_positions" keys pointing to cached files,
             or None on miss
         """
-        # Compute combined cache key
-        plasmid_md5 = calculate_md5(plasmid_fasta)
-        human_md5 = calculate_md5(human_fasta)
-        cache_key = hashlib.md5(f"{plasmid_md5}:{human_md5}".encode()).hexdigest()
+        p_md5 = _resolve_md5(plasmid_md5)
+        h_md5 = _resolve_md5(human_md5)
+        key = f"{p_md5}:{h_md5}:{padding}:v2"
+        cache_key = hashlib.md5(key.encode()).hexdigest()
 
-        if cache_key in self.manifest:
-            entry = self.manifest[cache_key]
-            bam_path = Path(entry["bam_path"])
-            fasta_path = Path(entry["fasta_path"])
-            cdna_path = Path(entry["cdna_path"])
+        with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
+            self.manifest = self._load_manifest()
+            if cache_key in self.manifest:
+                entry = self.manifest[cache_key]
+                bam_path = Path(entry["bam_path"])
+                fasta_path = Path(entry["fasta_path"])
+                cdna_path = Path(entry["cdna_path"])
 
-            # Verify all files exist and sizes match
-            if (
-                bam_path.exists()
-                and fasta_path.exists()
-                and cdna_path.exists()
-                and bam_path.stat().st_size == entry["bam_size"]
-                and fasta_path.stat().st_size == entry["fasta_size"]
-                and cdna_path.stat().st_size == entry["cdna_size"]
-            ):
-                # Cache hit: update access time and move to end (LRU)
-                self.manifest.move_to_end(cache_key)
-                self.manifest[cache_key]["last_access"] = time.time()
-                self._save_manifest()
-                logger.info(f"Cache HIT for spliced alignment: {plasmid_fasta} + {human_fasta}")
-                return {"bam": bam_path, "fasta": fasta_path, "cdna_positions": cdna_path}
-            else:
-                # Stale entry: files deleted or size mismatch
-                logger.warning(
-                    "Stale cache entry for spliced alignment (files missing or size mismatch)"
-                )
-                del self.manifest[cache_key]
-                self._save_manifest()
+                # Verify all files exist and sizes match
+                if (
+                    bam_path.exists()
+                    and fasta_path.exists()
+                    and cdna_path.exists()
+                    and bam_path.stat().st_size == entry["bam_size"]
+                    and fasta_path.stat().st_size == entry["fasta_size"]
+                    and cdna_path.stat().st_size == entry["cdna_size"]
+                ):
+                    # Cache hit: update access time and move to end (LRU)
+                    self.manifest.move_to_end(cache_key)
+                    self.manifest[cache_key]["last_access"] = time.time()
+                    self._save_manifest()
+                    logger.info(f"Cache HIT for spliced alignment: {p_md5} + {h_md5}")
+                    return {"bam": bam_path, "fasta": fasta_path, "cdna_positions": cdna_path}
+                else:
+                    # Stale entry: files deleted or size mismatch
+                    logger.warning(
+                        "Stale cache entry for spliced alignment (files missing or size mismatch)"
+                    )
+                    del self.manifest[cache_key]
+                    self._save_manifest()
 
-        logger.info(f"Cache MISS for spliced alignment: {plasmid_fasta} + {human_fasta}")
-        return None
+            logger.info(f"Cache MISS for spliced alignment: {p_md5} + {h_md5}")
+            return None
 
     def put_spliced(
         self,
-        plasmid_fasta: str,
-        human_fasta: str,
+        plasmid_md5: str,
+        human_md5: str,
         bam_path: str,
         fasta_path: str,
         cdna_path: str,
+        padding: int = DEFAULT_PADDING,
     ) -> None:
         """Store spliced alignment artifacts in cache.
 
         Args:
-            plasmid_fasta: Path to plasmid FASTA file (for cache key)
-            human_fasta: Path to human reference FASTA file (for cache key)
+            plasmid_md5: Plasmid MD5 hex digest or path to plasmid FASTA file
+            human_md5: Human reference MD5 hex digest or path to human reference FASTA file
             bam_path: Path to spliced alignment BAM file
             fasta_path: Path to spliced reference FASTA file
             cdna_path: Path to cDNA positions file
+            padding: Padding bases used for spliced alignment
         """
-        # Compute combined cache key
-        plasmid_md5 = calculate_md5(plasmid_fasta)
-        human_md5 = calculate_md5(human_fasta)
-        cache_key = hashlib.md5(f"{plasmid_md5}:{human_md5}".encode()).hexdigest()
+        p_md5 = _resolve_md5(plasmid_md5)
+        h_md5 = _resolve_md5(human_md5)
+        key = f"{p_md5}:{h_md5}:{padding}:v2"
+        cache_key = hashlib.md5(key.encode()).hexdigest()
 
         cached_bam = self.spliced_dir / f"{cache_key}.bam"
         cached_fasta = self.spliced_dir / f"{cache_key}.fasta"
         cached_cdna = self.spliced_dir / f"{cache_key}.txt"
 
-        # Copy all three files to cache atomically
-        self._atomic_copy(bam_path, cached_bam)
-        self._atomic_copy(fasta_path, cached_fasta)
-        self._atomic_copy(cdna_path, cached_cdna)
+        with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
+            self.manifest = self._load_manifest()
 
-        # Update manifest with all file sizes
-        bam_size = cached_bam.stat().st_size
-        fasta_size = cached_fasta.stat().st_size
-        cdna_size = cached_cdna.stat().st_size
+            # Copy all three files to cache atomically
+            self._atomic_copy(bam_path, cached_bam)
+            self._atomic_copy(fasta_path, cached_fasta)
+            self._atomic_copy(cdna_path, cached_cdna)
 
-        self.manifest[cache_key] = {
-            "bam_path": str(cached_bam),
-            "fasta_path": str(cached_fasta),
-            "cdna_path": str(cached_cdna),
-            "bam_size": bam_size,
-            "fasta_size": fasta_size,
-            "cdna_size": cdna_size,
-            "created": time.time(),
-            "last_access": time.time(),
-            "type": "spliced",
-        }
-        self.manifest.move_to_end(cache_key)
-        self._save_manifest()
+            # Update manifest with all file sizes
+            bam_size = cached_bam.stat().st_size
+            fasta_size = cached_fasta.stat().st_size
+            cdna_size = cached_cdna.stat().st_size
 
-        # Evict LRU if over size limit
-        self._evict_if_needed()
+            self.manifest[cache_key] = {
+                "bam_path": str(cached_bam),
+                "fasta_path": str(cached_fasta),
+                "cdna_path": str(cached_cdna),
+                "bam_size": bam_size,
+                "fasta_size": fasta_size,
+                "cdna_size": cdna_size,
+                "created": time.time(),
+                "last_access": time.time(),
+                "type": "spliced",
+            }
+            self.manifest.move_to_end(cache_key)
+            self._save_manifest()
 
-        logger.info(
-            f"Cached spliced alignment for {plasmid_fasta} + {human_fasta} ({cache_key[:8]}...)"
-        )
+            # Evict LRU if over size limit
+            self._evict_if_needed()
+
+            logger.info(f"Cached spliced alignment for {p_md5} + {h_md5} ({cache_key[:8]}...)")
 
     def _atomic_copy(self, source: str, target: Path) -> None:
         """Copy file to target atomically.
@@ -379,27 +403,33 @@ class CacheManager:
         Returns:
             Number of entries removed
         """
-        entry_count = len(self.manifest)
+        with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
+            self.manifest = self._load_manifest()
+            entry_count = len(self.manifest)
 
-        # Delete all cached files
-        for entry in self.manifest.values():
-            if entry["type"] == "index":
-                Path(entry["mmi_path"]).unlink(missing_ok=True)
-                Path(entry["fai_path"]).unlink(missing_ok=True)
-            elif entry["type"] == "spliced":
-                Path(entry["bam_path"]).unlink(missing_ok=True)
-                Path(entry["fasta_path"]).unlink(missing_ok=True)
-                Path(entry["cdna_path"]).unlink(missing_ok=True)
+            # Delete all cached files
+            for entry in self.manifest.values():
+                if entry["type"] == "index":
+                    Path(entry["mmi_path"]).unlink(missing_ok=True)
+                    Path(entry["fai_path"]).unlink(missing_ok=True)
+                elif entry["type"] == "spliced":
+                    Path(entry["bam_path"]).unlink(missing_ok=True)
+                    Path(entry["fasta_path"]).unlink(missing_ok=True)
+                    Path(entry["cdna_path"]).unlink(missing_ok=True)
 
-        # Delete manifest
-        self.manifest_path.unlink(missing_ok=True)
+            # Delete manifest
+            self.manifest_path.unlink(missing_ok=True)
 
-        # Clear in-memory manifest
-        self.manifest.clear()
+            # Clear in-memory manifest
+            self.manifest.clear()
 
-        # Recreate empty directories
-        self.indexes_dir.mkdir(parents=True, exist_ok=True)
-        self.spliced_dir.mkdir(parents=True, exist_ok=True)
+            # Recreate empty directories
+            self.indexes_dir.mkdir(parents=True, exist_ok=True)
+            self.spliced_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Cleaned all cache entries ({entry_count} entries removed)")
-        return entry_count
+            logger.info(f"Cleaned all cache entries ({entry_count} entries removed)")
+            return entry_count
+
+    def clear_all(self) -> int:
+        """Alias for clean_all()."""
+        return self.clean_all()

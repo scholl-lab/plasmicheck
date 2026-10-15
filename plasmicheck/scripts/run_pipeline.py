@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import os
 import shutil
@@ -10,6 +11,8 @@ from collections.abc import Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import pysam
 
 from ..cache_manager import CacheManager
 from ..config import get_config
@@ -27,9 +30,8 @@ from .spliced_alignment import (
     spliced_alignment,
 )
 from .utils import (
-    add_logging_args,
     archive_output_folder,
-    configure_logging_from_args,
+    calculate_md5,
     quality_control,
     sanitize_filename,
     write_md5sum,
@@ -436,13 +438,23 @@ def run_pipeline(
     progress: bool = False,
     static_report: bool = False,
     plotly_mode: str = "directory",
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
     threads: int | None = None,
     cache_dir: str | None = None,
     no_cache: bool = False,
 ) -> None:
     if sequencing_files_r1 is None:
         raise ValueError("-sf1 (sequencing_files_r1) is required.")
+
+    md5_cache: dict[str, str] = {}
+
+    def _get_md5(path: str) -> str:
+        if path not in md5_cache:
+            if os.path.exists(path):
+                md5_cache[path] = calculate_md5(path)
+            else:
+                md5_cache[path] = hashlib.md5(path.encode()).hexdigest()
+        return md5_cache[path]
 
     # Build the plan regardless of dry-run
     plan = build_plan(
@@ -494,7 +506,7 @@ def run_pipeline(
     # Perform quality control checks
     logging.info("Performing quality control checks on input files...")
     quality_control([human_fasta], expected_formats=["fasta"])
-    quality_control(plan.plasmid_files, expected_formats=["genbank", "xdna", "snapgene"])
+    quality_control(plan.plasmid_files, expected_formats=["genbank", "xdna", "snapgene", "fasta"])
 
     fastq_extensions = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
     for seq_input in plan.sequencing_inputs:
@@ -515,14 +527,10 @@ def run_pipeline(
         os.path.dirname(human_fasta),
         os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
     )
-    if not os.path.exists(human_index_path) or overwrite:
-        logging.info("Building human reference index (shared across all combinations)...")
-        create_indexes(human_fasta, overwrite)
-        plan.built_indexes.add(human_index_path)
-        logging.info(f"Built human reference index: {human_index_path}")
-    else:
-        plan.built_indexes.add(human_index_path)
-        logging.info(f"Skipping index for {human_fasta} (already built)")
+    logging.info("Building human reference index (shared across all combinations)...")
+    create_indexes(human_fasta, overwrite, threads=mm2_threads)
+    plan.built_indexes.add(human_index_path)
+    logging.info(f"Built human reference index: {human_index_path}")
 
     # Track results for batch resilience
     results: list[CombinationResult] = []
@@ -595,7 +603,7 @@ def run_pipeline(
                     # Human index already built in upfront phase, skip redundant call
                     if human_index not in plan.built_indexes:
                         # Defensive: should not happen after upfront phase
-                        create_indexes(human_fasta, overwrite)
+                        create_indexes(human_fasta, overwrite, threads=mm2_threads)
                         plan.built_indexes.add(human_index)
 
                     # Check cache for plasmid index (provides within-run AND cross-run dedup)
@@ -614,7 +622,7 @@ def run_pipeline(
                         # No need to call create_indexes — both files now exist
                     else:
                         # Cache MISS: build indexes normally
-                        create_indexes(plasmid_fasta, overwrite)
+                        create_indexes(plasmid_fasta, overwrite, threads=mm2_threads)
                         # Store in cache for future hits (within this run and across runs)
                         if cache:
                             plasmid_mmi = str(paths.plasmid_index)  # {base}.mmi
@@ -639,7 +647,11 @@ def run_pipeline(
                     cached_spliced = None
                     if cache:
                         try:
-                            cached_spliced = cache.get_spliced(plasmid_fasta, human_fasta)
+                            plasmid_md5 = _get_md5(plasmid_fasta)
+                            human_md5 = _get_md5(human_fasta)
+                            cached_spliced = cache.get_spliced(
+                                plasmid_md5, human_md5, padding=padding
+                            )
                         except (OSError, PermissionError) as e:
                             logging.warning(f"Cache read error: {e}")
 
@@ -648,6 +660,8 @@ def run_pipeline(
                         shutil.copy2(str(cached_spliced["bam"]), spliced_bam)
                         shutil.copy2(str(cached_spliced["fasta"]), spliced_fasta)
                         shutil.copy2(str(cached_spliced["cdna_positions"]), unique_cdna_output)
+                        if os.path.exists(spliced_bam):
+                            pysam.index(spliced_bam)
                         # Skip spliced alignment, extract_human_reference, and extract_plasmid_cdna_positions
                     else:
                         # Cache MISS: run spliced alignment as before
@@ -655,7 +669,12 @@ def run_pipeline(
                             f"Performing spliced alignment for {sequencing_file} and {plasmid_file}..."
                         )
                         spanned_regions = spliced_alignment(
-                            human_index, plasmid_fasta, spliced_bam, padding
+                            human_index,
+                            plasmid_fasta,
+                            spliced_bam,
+                            padding,
+                            threads_minimap2=mm2_threads,
+                            threads_samtools=sam_threads,
                         )
                         logging.info("Extracting human reference regions...")
                         extract_human_reference(human_fasta, spanned_regions, spliced_fasta)
@@ -670,11 +689,12 @@ def run_pipeline(
                         if cache:
                             try:
                                 cache.put_spliced(
-                                    plasmid_fasta,
-                                    human_fasta,
+                                    plasmid_md5,
+                                    human_md5,
                                     spliced_bam,
                                     spliced_fasta,
                                     unique_cdna_output,
+                                    padding=padding,
                                 )
                             except (OSError, PermissionError) as e:
                                 logging.warning(f"Cache write error: {e}")
@@ -685,7 +705,7 @@ def run_pipeline(
 
                     # Always index the spliced FASTA (fast, not worth caching separately)
                     spliced_index = str(paths.spliced_index)
-                    create_indexes(spliced_fasta, overwrite)
+                    create_indexes(spliced_fasta, overwrite=True, threads=mm2_threads)
                     if md5_level in ["all", "intermediate"]:
                         write_md5sum(spliced_index, "intermediate", output_subfolder)
                         write_md5sum(unique_cdna_output, "intermediate", output_subfolder)
@@ -732,8 +752,8 @@ def run_pipeline(
                     genbank_file_path: str | None = None
                     if plasmid_file_type == "genbank":
                         genbank_file_path = plasmid_file  # Original .gb file
-                    elif plasmid_file_type == "xdna":
-                        # xDNA conversion preserves .gb file in references_dir
+                    elif plasmid_file_type in ["xdna", "snapgene"]:
+                        # xDNA and SnapGene conversion preserves .gb file in references_dir
                         candidate_gb = str(paths.plasmid_genbank)
                         if os.path.exists(candidate_gb):
                             genbank_file_path = candidate_gb
@@ -744,7 +764,8 @@ def run_pipeline(
                         comparison_output,
                         threshold=threshold,
                         genbank_file=genbank_file_path,
-                        cdna_positions_file=str(paths.cdna_positions),
+                        cdna_positions_file=unique_cdna_output,
+                        threads=sam_threads,
                     )
                     prog.advance()
 
@@ -778,9 +799,19 @@ def run_pipeline(
                     # Step 8: Optionally delete intermediate files
                     if not keep_intermediate:
                         logging.info("Deleting intermediate files...")
-                        os.remove(plasmid_bam)
-                        os.remove(spliced_human_bam)
-                        os.remove(spliced_bam)
+                        intermediate_files = [
+                            plasmid_bam,
+                            spliced_human_bam,
+                            spliced_bam,
+                            f"{spliced_bam}.bai",
+                            f"{spliced_fasta}.fai",
+                            f"{plasmid_bam}.bai",
+                            f"{spliced_human_bam}.bai",
+                        ]
+                        for f in intermediate_files:
+                            if os.path.exists(f):
+                                with contextlib.suppress(OSError):
+                                    os.remove(f)
 
                     # Step 9: Optionally archive the output folder
                     if archive_output:
@@ -823,154 +854,3 @@ def run_pipeline(
 
     if successful:
         logging.info("Pipeline completed successfully for successful combinations.")
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Run the full pipeline to detect and quantify plasmid DNA contamination in sequencing data"
-    )
-    parser.add_argument("-hf", "--human_fasta", help="Human reference FASTA file", required=True)
-    parser.add_argument(
-        "-pf",
-        "--plasmid_files",
-        help="Plasmid files (single file or a file containing paths to multiple files)",
-        required=True,
-    )
-    parser.add_argument(
-        "-sf1",
-        "--sequencing_files_r1",
-        help="Forward (R1) FASTQ/BAM file or file list (.txt)",
-        required=True,
-    )
-    parser.add_argument(
-        "-sf2",
-        "--sequencing_files_r2",
-        help="Reverse (R2) FASTQ files or file list (.txt) for paired-end",
-        default=None,
-    )
-    parser.add_argument(
-        "-o",
-        "--output_folder",
-        help="Folder to write all outputs and intermediate files",
-        required=True,
-    )
-    parser.add_argument(
-        "-k",
-        "--keep_intermediate",
-        type=bool,
-        default=True,
-        help="Keep intermediate files (default: True)",
-    )
-    parser.add_argument(
-        "-sb",
-        "--shift_bases",
-        type=int,
-        default=500,
-        help="Number of bases to shift in the shifted reference (default: 500)",
-    )
-    parser.add_argument(
-        "-g",
-        "--generate_shifted",
-        action="store_true",
-        help="Generate a shifted reference sequence",
-    )
-    parser.add_argument(
-        "-w", "--overwrite", action="store_true", help="Overwrite existing output files"
-    )
-    parser.add_argument(
-        "-d",
-        "--padding",
-        type=int,
-        default=1000,
-        help="Padding to add to both sides of the spanned regions (default: 1000)",
-    )
-    parser.add_argument(
-        "-t",
-        "--threshold",
-        type=float,
-        default=DEFAULT_THRESHOLD,
-        help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})",
-    )
-    parser.add_argument(
-        "-md5",
-        "--md5_level",
-        type=str,
-        choices=["all", "intermediate", "output"],
-        default="intermediate",
-        help="Level of MD5 checksum calculation (default: intermediate)",
-    )
-    parser.add_argument(
-        "--cDNA_output",
-        help="Output file for cDNA start and end positions in the plasmid reference",
-        default=None,
-    )
-    parser.add_argument(
-        "--archive_output",
-        action="store_true",
-        help="Archive and compress the output folder into a .tar.gz file",
-    )
-    parser.add_argument(
-        "-n",
-        "--dry_run",
-        action="store_true",
-        help="Show execution plan without running anything",
-    )
-    parser.add_argument(
-        "--no_progress",
-        action="store_true",
-        help="Disable progress bar",
-    )
-    parser.add_argument(
-        "--static-report",
-        action="store_true",
-        help="Generate static PNG reports alongside interactive HTML (opt-in, slower)",
-    )
-    parser.add_argument(
-        "--plotly-mode",
-        choices=["cdn", "directory", "embedded"],
-        default="directory",
-        help="Plotly.js inclusion mode for interactive reports (default: directory)",
-    )
-    parser.add_argument(
-        "--plot-backend",
-        choices=["plotly", "matplotlib"],
-        default="plotly",
-        help="Backend for static PNG plot generation (default: plotly/kaleido). "
-        "Only applies when --static-report is used.",
-    )
-    parser.add_argument(
-        "--threads",
-        type=int,
-        default=None,
-        help="Total thread count for alignment (default: auto-detect via SLURM/cgroup/os)",
-    )
-    add_logging_args(parser)
-
-    args = parser.parse_args()
-
-    configure_logging_from_args(args)
-
-    run_pipeline(
-        args.human_fasta,
-        args.plasmid_files,
-        args.output_folder,
-        args.keep_intermediate,
-        args.shift_bases,
-        args.generate_shifted,
-        args.overwrite,
-        args.padding,
-        args.threshold,
-        args.md5_level,
-        args.cDNA_output,
-        args.archive_output,
-        sequencing_files_r1=args.sequencing_files_r1,
-        sequencing_files_r2=args.sequencing_files_r2,
-        dry_run=args.dry_run,
-        progress=sys.stderr.isatty() and not args.no_progress,
-        static_report=args.static_report,
-        plotly_mode=args.plotly_mode,
-        plot_backend=args.plot_backend,
-        threads=args.threads,
-    )

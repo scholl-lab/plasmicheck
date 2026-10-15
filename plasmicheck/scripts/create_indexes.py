@@ -8,19 +8,21 @@ from filelock import FileLock
 
 from plasmicheck.config import get_config
 
-from .utils import add_logging_args, configure_logging_from_args
-
 _cfg = get_config()
 MINIMAP2_OPTIONS: list[str] = _cfg["indexing"]["minimap2_options"]
 SAMTOOLS_OPTIONS: list[str] = _cfg["indexing"]["samtools_options"]
 MINIMAP2_THREADS: int = _cfg["alignment"]["minimap2_threads"]
 SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
+THREADS_MINIMAP2: int = MINIMAP2_THREADS
+THREADS_SAMTOOLS: int = SAMTOOLS_THREADS
+LOCK_TIMEOUT: int = 600
 
 
-def create_indexes(fasta_file: str, overwrite: bool = False) -> None:
+def create_indexes(fasta_file: str, overwrite: bool = False, threads: int | None = None) -> None:
     base_name = os.path.splitext(fasta_file)[0]
     minimap2_index = f"{base_name}.mmi"
     samtools_index = f"{fasta_file}.fai"
+    num_threads = threads if threads is not None else THREADS_MINIMAP2
 
     # Fast-path: if indexes already exist and we are not overwriting, avoid taking the lock.
     if not overwrite and os.path.exists(minimap2_index) and os.path.exists(samtools_index):
@@ -28,7 +30,7 @@ def create_indexes(fasta_file: str, overwrite: bool = False) -> None:
         return
 
     lock_path = f"{base_name}.lock"
-    lock = FileLock(lock_path, timeout=600)
+    lock = FileLock(lock_path, timeout=LOCK_TIMEOUT)
     with lock:
         # Re-check inside lock — another process may have finished while we waited
         if not overwrite and os.path.exists(minimap2_index) and os.path.exists(samtools_index):
@@ -46,20 +48,25 @@ def create_indexes(fasta_file: str, overwrite: bool = False) -> None:
                 "Recreating both indexes."
             )
 
-        # Create Minimap2 index
+        # Create Minimap2 index atomically via temporary file
         logging.info(f"Creating Minimap2 index for {fasta_file}")
+        tmp_mmi = f"{minimap2_index}.tmp.{os.getpid()}"
         minimap2_command = [
             "minimap2",
             "-t",
-            str(MINIMAP2_THREADS),
+            str(num_threads),
             *MINIMAP2_OPTIONS,
-            minimap2_index,
+            tmp_mmi,
             fasta_file,
         ]
         try:
             subprocess.run(minimap2_command, check=True)
+            if os.path.exists(tmp_mmi):
+                os.replace(tmp_mmi, minimap2_index)
             logging.info(f"Minimap2 index created: {minimap2_index}")
         except subprocess.CalledProcessError as e:
+            if os.path.exists(tmp_mmi):
+                os.remove(tmp_mmi)
             logging.error(f"Failed to create Minimap2 index: {e}")
             raise
 
@@ -72,21 +79,3 @@ def create_indexes(fasta_file: str, overwrite: bool = False) -> None:
         except subprocess.CalledProcessError as e:
             logging.error(f"Failed to create Samtools index: {e}")
             raise
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Create Minimap2 and Samtools indexes for a FASTA file"
-    )
-    parser.add_argument("-f", "--fasta_file", help="FASTA file to index", required=True)
-    parser.add_argument(
-        "-w", "--overwrite", action="store_true", help="Overwrite existing index files"
-    )
-    add_logging_args(parser)
-    args = parser.parse_args()
-
-    configure_logging_from_args(args)
-
-    create_indexes(args.fasta_file, args.overwrite)

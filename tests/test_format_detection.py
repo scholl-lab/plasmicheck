@@ -125,35 +125,26 @@ class TestDetectFormat:
         assert "xDNA" in str(exc_info.value)
 
     @pytest.mark.unit
-    @pytest.mark.parametrize(
-        "xdna_file",
-        [
-            "reference/plasmid/PIRES2_KCNJ5_eGFP.xdna",
-            "reference/plasmid/pENTR2B_Dual_CACNA1D.xdna",
-            "reference/plasmid/pENTR_2B_Dual_CACNA1H_myc_DDK.xdna",
-        ],
-    )
-    def test_detect_real_xdna_files(self, xdna_file: str) -> None:
-        """Real xDNA files should be detected correctly."""
-        import os
+    @pytest.mark.parametrize("suffix", ["1.xdna", "2.xdna", "3.xdna"])
+    def test_detect_synthetic_xdna_files(self, tmp_path: Path, suffix: str) -> None:
+        """Synthetic xDNA files should be detected correctly."""
+        from Bio.Seq import Seq
+        from Bio.SeqIO.XdnaIO import XdnaWriter
+        from Bio.SeqRecord import SeqRecord
 
-        if not os.path.exists(xdna_file):
-            pytest.skip(f"Test file {xdna_file} not found")
-        assert detect_format(xdna_file) == "xdna"
+        xdna_file = tmp_path / f"synthetic_{suffix}"
+        rec = SeqRecord(Seq("ATCG" * 20), id="syn", description="synthetic")
+        rec.annotations["molecule_type"] = "DNA"
+        with open(xdna_file, "wb") as f:
+            XdnaWriter(f).write_file([rec])
+
+        assert detect_format(str(xdna_file)) == "xdna"
 
     @pytest.mark.unit
-    @pytest.mark.parametrize(
-        "genbank_file",
-        [
-            "reference/plasmid/pCMV6-AC-IRES-GFP-Puro_CACNA1H.gb",
-            "reference/plasmid/pCMV6_CACNA1D_genbank.gb",
-            "reference/plasmid/pCMV6_CACNA1H_MycDDK.gb",
-        ],
-    )
-    def test_detect_real_genbank_files(self, genbank_file: str) -> None:
-        """Real GenBank files should be detected correctly."""
-        import os
-
-        if not os.path.exists(genbank_file):
-            pytest.skip(f"Test file {genbank_file} not found")
-        assert detect_format(genbank_file) == "genbank"
+    @pytest.mark.parametrize("name", ["plasmid.gb", "plasmid.gbk", "plasmid.genbank"])
+    def test_detect_synthetic_genbank_files(self, tmp_path: Path, name: str) -> None:
+        """Synthetic GenBank files should be detected correctly."""
+        src = Path("tests/data/synthetic/plasmid.gb")
+        dst = tmp_path / name
+        dst.write_text(src.read_text())
+        assert detect_format(str(dst)) == "genbank"
