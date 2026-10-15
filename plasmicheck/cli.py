@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import sys
+from pathlib import Path
 
 from .config import get_config
 from .resources import get_resource_path
@@ -18,14 +19,18 @@ DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
 
 def setup_logging(log_level: int = logging.INFO, log_file: str | None = None) -> None:
     """Set up logging configuration."""
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    if log_file:
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file))
+
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        filename=log_file,
-        filemode="a",  # Append mode for logging to a file
+        handlers=handlers,
+        force=True,
     )
-    if not log_file:  # If no log file, also log to stdout
-        logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
 
 def print_logo() -> None:
@@ -68,8 +73,12 @@ def check_requirements() -> None:
 def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     # Shared parent parsers — avoids duplicating --log-level/--log-file/--threshold
     _logging_parser = argparse.ArgumentParser(add_help=False)
-    _logging_parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    _logging_parser.add_argument("--log-file", help="Set the log output file", default=None)
+    _logging_parser.add_argument(
+        "--log-level", help="Set the logging level", default=argparse.SUPPRESS
+    )
+    _logging_parser.add_argument(
+        "--log-file", help="Set the log output file", default=argparse.SUPPRESS
+    )
 
     _threshold_parser = argparse.ArgumentParser(add_help=False)
     _threshold_parser.add_argument(
@@ -95,15 +104,16 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     _report_parser.add_argument(
         "--plot-backend",
         choices=["plotly", "matplotlib"],
-        default="plotly",
-        help="Backend for static PNG plot generation (default: plotly/kaleido). "
+        default="matplotlib",
+        help="Backend for static PNG plot generation (default: matplotlib). "
         "Only applies when --static-report is used.",
     )
 
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="plasmicheck: Detect and quantify plasmid DNA contamination in sequencing data",
-        parents=[_logging_parser],
     )
+    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
+    parser.add_argument("--log-file", help="Set the log output file", default=None)
 
     parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser] = parser.add_subparsers(
@@ -115,6 +125,13 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         print_logo()
         print(f"Version: {VERSION}")
         sys.exit(0)
+
+    # Version Command
+    subparsers.add_parser(
+        "version",
+        help="Print version information",
+        parents=[_logging_parser],
+    )
 
     # Convert Command
     parser_convert = subparsers.add_parser(
@@ -434,9 +451,14 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     log_level: int = getattr(logging, args.log_level.upper(), logging.INFO)
     setup_logging(log_level=log_level, log_file=args.log_file)
 
-    # Skip tool requirements check for cache command (doesn't need minimap2/samtools)
-    if args.command != "cache":
+    # Skip tool requirements check for cache and version commands
+    if args.command not in ("cache", "version"):
         check_requirements()
+
+    if args.command == "version":
+        print_logo()
+        print(f"Version: {VERSION}")
+        return
 
     if args.command == "convert":
         from .scripts.convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta

@@ -102,10 +102,69 @@ class TestLoadData:
         )
 
         reads_df, summary_df = load_data(str(reads_file), str(summary_file))
-        assert "ReadID" in reads_df.columns
+        assert "AssignedTo" in reads_df.columns
+        assert "ReadID" not in reads_df.columns
         assert "Category" in summary_df.columns
         assert len(reads_df) == 1
         assert len(summary_df) == 3
+
+
+@pytest.mark.unit
+def test_report_autoescape_escapes_script(tmp_path: Path) -> None:
+    """Verify Jinja2 template autoescaping prevents HTML injection."""
+    reads_file = tmp_path / "reads.tsv"
+    summary_file = tmp_path / "summary.tsv"
+    output_folder = tmp_path / "output"
+    output_folder.mkdir()
+
+    reads_file.write_text("AssignedTo\tPlasmidScore\tHumanScore\nPlasmid\t70\t30\n")
+    summary_file.write_text(
+        "Category\tCount\nPlasmid\t100\nHuman\t50\nVerdict\tSample <script>alert(1)</script> is clean\n"
+    )
+
+    with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
+        mock_plots.return_value = ("<div>box</div>", None, "<div>scatter</div>", None)
+        main(
+            str(reads_file),
+            str(summary_file),
+            str(output_folder),
+            command_line="<script>bad_cmd</script>",
+        )
+
+    report_path = output_folder / "report_interactive.html"
+    assert report_path.exists()
+    content = report_path.read_text()
+    assert "<script>alert(1)</script>" not in content
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in content
+    assert "<script>bad_cmd</script>" not in content
+    assert "&lt;script&gt;bad_cmd&lt;/script&gt;" in content
+
+
+@pytest.mark.unit
+def test_main_uses_summary_ratio_and_handles_nan_score(tmp_path: Path) -> None:
+    """Verify summary.tsv Ratio is respected and NaN scores are tolerated."""
+    reads_file = tmp_path / "reads.tsv"
+    summary_file = tmp_path / "summary.tsv"
+    output_folder = tmp_path / "output"
+    output_folder.mkdir()
+
+    reads_file.write_text("AssignedTo\tPlasmidScore\tHumanScore\nPlasmid\t\t30\nHuman\t50\t\n")
+    summary_file.write_text(
+        "Category\tCount\nPlasmid\t1\nHuman\t1\nVerdict\tSample is contaminated\nRatio\t4.5\n"
+    )
+
+    with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
+        mock_plots.return_value = ("<div>box</div>", None, "<div>scatter</div>", None)
+        main(
+            str(reads_file),
+            str(summary_file),
+            str(output_folder),
+        )
+
+    report_path = output_folder / "report_interactive.html"
+    assert report_path.exists()
+    content = report_path.read_text()
+    assert "4.500" in content
 
 
 class TestCoverageMetricsInReport:

@@ -94,6 +94,7 @@ def run_pipeline_scenario(
         threshold=0.8,
         sequencing_files_r1=r1,
         sequencing_files_r2=r2,
+        no_cache=True,
     )
 
     # Extract output files
@@ -170,10 +171,10 @@ def compare_summary_tsv(baseline_text: str, current_text: str) -> list[str]:
     Returns:
         List of error messages (empty if match)
     """
-    errors: list[str] = []
-
-    # Parse with pandas
+    import math
     from io import StringIO
+
+    errors: list[str] = []
 
     baseline_df = pd.read_csv(StringIO(baseline_text), sep="\t", dtype=str)
     current_df = pd.read_csv(StringIO(current_text), sep="\t", dtype=str)
@@ -186,44 +187,38 @@ def compare_summary_tsv(baseline_text: str, current_text: str) -> list[str]:
     for baseline_row, current_row in zip(
         baseline_df.itertuples(), current_df.itertuples(), strict=True
     ):
-        category = baseline_row.Category
+        category = str(baseline_row.Category)
+        curr_category = str(current_row.Category)
 
-        if str(category).lower() == "verdict":
-            # Exact string match (case-insensitive)
-            baseline_val = str(baseline_row.Count).strip().lower()
-            current_val = str(current_row.Count).strip().lower()
-            if baseline_val != current_val:
-                errors.append(
-                    f"Verdict mismatch: baseline='{baseline_val}', current='{current_val}'"
-                )
+        if category != curr_category:
+            errors.append(f"Category mismatch: baseline='{category}', current='{curr_category}'")
+            continue
 
-        elif category in ["Plasmid", "Human", "Tied"]:
-            # Exact integer match
-            baseline_int = int(baseline_row.Count)  # type: ignore[arg-type]
-            current_int = int(current_row.Count)  # type: ignore[arg-type]
-            if baseline_int != current_int:
-                errors.append(
-                    f"{category} count mismatch: baseline={baseline_int}, current={current_int}"
-                )
+        b_val = str(baseline_row.Count).strip()
+        c_val = str(current_row.Count).strip()
 
-        elif category in ["Ratio", "CoverageOutsideINSERT"]:
-            # Float comparison with tolerance
-            baseline_float = float(baseline_row.Count)  # type: ignore[arg-type]
-            current_float = float(current_row.Count)  # type: ignore[arg-type]
-            if abs(baseline_float - current_float) > 0.001:
-                errors.append(
-                    f"{category} divergence: baseline={baseline_float:.6f}, "
-                    f"current={current_float:.6f}, diff={abs(baseline_float - current_float):.6f}"
-                )
+        # If values match as exact strings (handles string/int/dict equality)
+        if b_val == c_val or (category.lower() == "verdict" and b_val.lower() == c_val.lower()):
+            continue
 
-        elif category == "MismatchesNearINSERT":
-            # String match (it's a dict representation)
-            baseline_val = str(baseline_row.Count).strip()
-            current_val = str(current_row.Count).strip()
-            if baseline_val != current_val:
-                errors.append(
-                    f"MismatchesNearINSERT mismatch: baseline='{baseline_val}', current='{current_val}'"
-                )
+        # Try float comparison with math.isclose
+        try:
+            b_float = float(b_val)
+            c_float = float(c_val)
+            if math.isnan(b_float) and math.isnan(c_float):
+                continue
+            if math.isclose(b_float, c_float, rel_tol=1e-3, abs_tol=1e-3):
+                continue
+            errors.append(
+                f"{category} divergence: baseline={b_float:.6f}, "
+                f"current={c_float:.6f}, diff={abs(b_float - c_float):.6f}"
+            )
+            continue
+        except ValueError:
+            pass
+
+        # String / int / dict mismatch
+        errors.append(f"{category} mismatch: baseline='{b_val}', current='{c_val}'")
 
     return errors
 

@@ -33,9 +33,10 @@ def _close_and_collect(fig: matplotlib.figure.Figure) -> None:
 def generate_boxplot_matplotlib(
     reads_df: pd.DataFrame,
     output_path: Path | str,
-    title: str,
+    title: str | None = None,
     width: int = 900,
     height: int = 600,
+    total_reads: int | None = None,
 ) -> None:
     """Generate single-sample score distribution boxplot using matplotlib.
 
@@ -45,7 +46,14 @@ def generate_boxplot_matplotlib(
         title: Plot title (typically includes total read count)
         width: Plot width in pixels (default: 900)
         height: Plot height in pixels (default: 600)
+        total_reads: Total read count before downsampling (optional)
     """
+    n_total = total_reads if total_reads is not None else len(reads_df)
+    if title is None:
+        title = f"Box Plot of Plasmid Scores by Assignment (Total Reads: {n_total})"
+    elif total_reads is not None and "(Total Reads:" not in title:
+        title = f"{title} (Total Reads: {n_total})"
+
     if reads_df.empty:
         logger.warning("Empty DataFrame provided to generate_boxplot_matplotlib")
         fig, ax = plt.subplots(figsize=(width / 100, height / 100))
@@ -69,7 +77,8 @@ def generate_boxplot_matplotlib(
 
     # Prepare data for boxplot
     data_list = [
-        reads_df[reads_df["AssignedTo"] == cat]["PlasmidScore"].tolist() for cat in categories
+        reads_df[reads_df["AssignedTo"] == cat]["PlasmidScore"].dropna().tolist()
+        for cat in categories
     ]
 
     bp = ax.boxplot(
@@ -89,7 +98,7 @@ def generate_boxplot_matplotlib(
 
     # Add jittered scatter points matching Plotly's points="all"
     for i, cat in enumerate(categories):
-        cat_data = reads_df[reads_df["AssignedTo"] == cat]["PlasmidScore"].tolist()
+        cat_data = reads_df[reads_df["AssignedTo"] == cat]["PlasmidScore"].dropna().tolist()
         if len(cat_data) > 0:
             # Add jitter to x-coordinates
             x = np.random.normal(i + 1, 0.04, size=len(cat_data))
@@ -113,9 +122,10 @@ def generate_boxplot_matplotlib(
 def generate_scatter_matplotlib(
     reads_df: pd.DataFrame,
     output_path: Path | str,
-    title: str,
+    title: str | None = None,
     width: int = 900,
     height: int = 600,
+    total_reads: int | None = None,
 ) -> None:
     """Generate single-sample score scatter plot using matplotlib.
 
@@ -125,7 +135,14 @@ def generate_scatter_matplotlib(
         title: Plot title (typically includes total read count)
         width: Plot width in pixels (default: 900)
         height: Plot height in pixels (default: 600)
+        total_reads: Total read count before downsampling (optional)
     """
+    n_total = total_reads if total_reads is not None else len(reads_df)
+    if title is None:
+        title = f"Scatter Plot of Plasmid vs. Human Scores by Assignment (Total Reads: {n_total})"
+    elif total_reads is not None and "(Total Reads:" not in title:
+        title = f"{title} (Total Reads: {n_total})"
+
     if reads_df.empty:
         logger.warning("Empty DataFrame provided to generate_scatter_matplotlib")
         fig, ax = plt.subplots(figsize=(width / 100, height / 100))
@@ -265,7 +282,7 @@ def generate_summary_boxplot_matplotlib(
 
     # Create boxplot by Plasmid
     plasmids = melted["Plasmid"].unique().tolist()
-    data_list = [melted[melted["Plasmid"] == p]["LogRatio"].tolist() for p in plasmids]
+    data_list = [melted[melted["Plasmid"] == p]["LogRatio"].dropna().tolist() for p in plasmids]
 
     ax.boxplot(
         data_list,
@@ -393,9 +410,11 @@ def generate_coverage_boxplot_matplotlib(
     fig, ax = plt.subplots(figsize=(10, 8))
 
     # Create boxplot grouped by Plasmid
-    boxplot_data_grouped = melted.groupby("Plasmid")["Value"].apply(list)
-    plasmid_labels = list(boxplot_data_grouped.index)
-    boxplot_values = [list(vals) for vals in boxplot_data_grouped.values]
+    plasmid_labels: list[str] = []
+    boxplot_values: list[list[float]] = []
+    for plasmid, group in melted.groupby("Plasmid", sort=False):
+        plasmid_labels.append(str(plasmid))
+        boxplot_values.append(group["Value"].dropna().tolist())
 
     ax.boxplot(
         boxplot_values,

@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>plasmicheck Summary Report</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PlasmiCheck &mdash; Summary Report</title>
     <link rel="stylesheet" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.min.css">
 
     {% if plotly_mode is not defined %}{% set plotly_mode = 'embedded' %}{% endif %}
@@ -22,31 +22,350 @@
     {% endif %}
 
     <style>
-        body { margin: 20px; }
-        h1, h2, h3 { text-align: center; margin-top: 20px; }
-        .container { margin-top: 20px; }
-        .table-container { width: 80%; margin: 20px auto; }
-        .plot { margin: 20px auto; display: block; width: 80%; }
-        .logo { display: block; margin: 0 auto; width: 150px; }
+        :root {
+            --pc-bg: #f8fafc;
+            --pc-surface: #ffffff;
+            --pc-surface-subtle: #f1f5f9;
+            --pc-border: #e2e8f0;
+            --pc-border-strong: #cbd5e1;
+            --pc-text: #0f172a;
+            --pc-text-secondary: #334155;
+            --pc-text-muted: #475569;
+            --pc-accent: #2563eb;
+            --pc-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        ::selection {
+            background: #dbeafe;
+            color: #1e3a8a;
+        }
+
+        body {
+            background: var(--pc-bg);
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 15px;
+            color: var(--pc-text);
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* -- Sticky Header & Navigation -------------------- */
+        .pc-header {
+            background: var(--pc-surface);
+            border-bottom: 1px solid var(--pc-border);
+            padding: 0.75rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 30;
+        }
+        .pc-header-inner {
+            max-width: 1360px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .pc-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+        }
+        .pc-logo { height: 40px; width: auto; }
+        .pc-header h1 {
+            font-size: 1.45rem;
+            font-weight: 700;
+            margin: 0;
+            line-height: 1.3;
+            letter-spacing: -0.02em;
+            color: var(--pc-text);
+        }
+        .pc-nav {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .pc-nav a {
+            color: var(--pc-text-secondary);
+            text-decoration: none;
+            font-size: 0.82rem;
+            font-weight: 500;
+            padding: 0.3rem 0.65rem;
+            border-radius: 6px;
+            line-height: 1.4;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+        .pc-nav a:hover,
+        .pc-nav a:focus-visible {
+            background: var(--pc-surface-subtle);
+            color: var(--pc-accent);
+        }
+
+        /* -- Main Container -------------------------------- */
+        .pc-main {
+            max-width: 1360px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+
+        /* -- Cohort Parameters Bar ------------------------- */
+        .pc-params-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem 2rem;
+            margin-bottom: 1.25rem;
+            padding: 0.85rem 1.25rem;
+            background: var(--pc-surface);
+            border: 1px solid var(--pc-border);
+            border-radius: 10px;
+            box-shadow: var(--pc-shadow);
+            font-size: 0.86rem;
+        }
+        .pc-param-item {
+            display: flex;
+            align-items: baseline;
+            gap: 0.45rem;
+            line-height: 1.4;
+        }
+        .pc-param-label {
+            color: var(--pc-text-muted);
+            font-weight: 600;
+            font-size: 0.78rem;
+        }
+        .pc-param-val {
+            font-weight: 600;
+            color: var(--pc-text);
+            font-variant-numeric: tabular-nums;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.84rem;
+        }
+
+        /* -- Collapsible Section Cards --------------------- */
+        .pc-section {
+            background: var(--pc-surface);
+            border: 1px solid var(--pc-border);
+            border-radius: 10px;
+            box-shadow: var(--pc-shadow);
+            margin-bottom: 1.25rem;
+            overflow: hidden;
+        }
+        .pc-section > summary {
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            background: var(--pc-surface);
+            border-bottom: 1px solid transparent;
+            user-select: none;
+        }
+        .pc-section[open] > summary {
+            border-bottom-color: var(--pc-border);
+            background: #fcfdff;
+        }
+        .pc-section > summary::-webkit-details-marker { display: none; }
+        .pc-section > summary::before {
+            content: '\25B6';
+            font-size: 0.72rem;
+            line-height: 1.3;
+            color: var(--pc-text-muted);
+            transition: transform 0.18s ease;
+        }
+        .pc-section[open] > summary::before {
+            transform: rotate(90deg);
+        }
+        .pc-section > summary h2 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            line-height: 1.35;
+            margin: 0;
+            color: var(--pc-text);
+            letter-spacing: -0.01em;
+        }
+        .pc-section-body {
+            padding: 1.35rem 1.5rem;
+        }
+
+        /* -- Grids & Panels -------------------------------- */
+        .pc-grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 1.25rem;
+        }
+        .pc-grid-2:last-child {
+            margin-bottom: 0;
+        }
+        @media (max-width: 1024px) {
+            .pc-grid-2 { grid-template-columns: 1fr; }
+        }
+        .pc-panel {
+            background: #fcfdff;
+            border: 1px solid var(--pc-border);
+            border-radius: 8px;
+            padding: 1rem 1.15rem;
+        }
+        .pc-panel h3 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            line-height: 1.4;
+            color: var(--pc-text-secondary);
+            margin: 0 0 0.75rem 0;
+            padding-bottom: 0.45rem;
+            border-bottom: 1px solid var(--pc-border);
+        }
+        .plot {
+            width: 100%;
+            overflow-x: auto;
+        }
+        .plot img {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+        }
+        .plot .plotly-graph-div,
+        .plot .js-plotly-plot {
+            width: 100% !important;
+        }
+
+        /* -- Tables & DataTables overrides ----------------- */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+        table.table,
+        table.dataTable {
+            width: 100% !important;
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            font-size: 0.84rem;
+            font-variant-numeric: tabular-nums;
+            margin: 0.5rem 0 !important;
+            border: 1px solid var(--pc-border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        table.table thead th,
+        table.dataTable thead th {
+            background: var(--pc-surface-subtle) !important;
+            color: var(--pc-text-secondary) !important;
+            font-weight: 600 !important;
+            font-size: 0.78rem;
+            line-height: 1.4;
+            padding: 0.55rem 0.75rem !important;
+            border-bottom: 1px solid var(--pc-border-strong) !important;
+            text-align: left;
+        }
+        table.table tbody td,
+        table.dataTable tbody td {
+            padding: 0.5rem 0.75rem !important;
+            border-bottom: 1px solid var(--pc-border) !important;
+            color: var(--pc-text);
+            line-height: 1.45;
+            vertical-align: middle;
+        }
+        table.table tbody tr:last-child td,
+        table.dataTable tbody tr:last-child td {
+            border-bottom: none !important;
+        }
+        table.table tbody tr:hover,
+        table.dataTable tbody tr:hover {
+            background: #f8fafc !important;
+        }
+        .dataTables_wrapper .dataTables_filter input,
+        .dataTables_wrapper .dataTables_length select {
+            border: 1px solid var(--pc-border-strong);
+            border-radius: 6px;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.82rem;
+            color: var(--pc-text);
+            background: var(--pc-surface);
+        }
+        .dataTables_wrapper .dataTables_info,
+        .dataTables_wrapper .dataTables_paginate {
+            font-size: 0.8rem;
+            color: var(--pc-text-muted) !important;
+            margin-top: 0.4rem;
+        }
+
+        /* -- Provenance Footer ----------------------------- */
+        .details {
+            background: var(--pc-surface);
+            border: 1px solid var(--pc-border);
+            border-radius: 10px;
+            padding: 1rem 1.5rem;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            color: var(--pc-text-muted);
+            margin-top: 1.5rem;
+        }
+        .details p {
+            margin: 0.25rem 0;
+        }
+        .details p span {
+            font-weight: 600;
+            color: var(--pc-text-secondary);
+        }
     </style>
 </head>
 <body>
-    <img src="{{ logo_base64 }}" alt="plasmicheck Logo" class="logo">
-    <h1>plasmicheck Summary Report</h1>
-
-    <!-- Section 0: Verdict Overview -->
-    <div class="card mb-3">
-        <div class="card-header" id="headingVerdictOverview">
-            <h5 class="mb-0">
-                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseVerdictOverview" aria-expanded="true">
-                    Verdict Overview
-                </button>
-            </h5>
+    <header class="pc-header">
+        <div class="pc-header-inner">
+            <div class="pc-brand">
+                <img src="{{ logo_base64 }}" alt="plasmicheck Logo" class="pc-logo">
+                <h1>plasmicheck Summary Report</h1>
+            </div>
+            <nav class="pc-nav" aria-label="Report Sections">
+                <a href="#sec-verdicts">Overview</a>
+                <a href="#sec-contamination">Contamination</a>
+                {% if coverage_outside_heatmap_content %}<a href="#sec-outside">Outside Insert</a>{% endif %}
+                {% if depth_heatmap_content or breadth_heatmap_content %}<a href="#sec-coverage">Backbone Coverage</a>{% endif %}
+                {% if mismatches_heatmap_content %}<a href="#sec-mismatches">Mismatches</a>{% endif %}
+                {% if resistance_gene_table %}<a href="#sec-resistance">Resistance Genes</a>{% endif %}
+                {% if junction_table %}<a href="#sec-junctions">Splice Junctions</a>{% endif %}
+            </nav>
         </div>
-        <div id="collapseVerdictOverview" class="collapse show" aria-labelledby="headingVerdictOverview">
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
+    </header>
+
+    <main class="pc-main">
+        <!-- Cohort Parameters Strip -->
+        <div class="pc-params-bar">
+            <div class="pc-param-item">
+                <span class="pc-param-label">Contamination Threshold</span>
+                <span class="pc-param-val">{{ threshold }}</span>
+            </div>
+            <div class="pc-param-item">
+                <span class="pc-param-label">Unclear Range</span>
+                <span class="pc-param-val">{{ unclear_range.lower_bound }} &ndash; {{ unclear_range.upper_bound }}</span>
+            </div>
+            <div class="pc-param-item">
+                <span class="pc-param-label">Version</span>
+                <span class="pc-param-val">v{{ version }}</span>
+            </div>
+            <div class="pc-param-item">
+                <span class="pc-param-label">Run Date</span>
+                <span class="pc-param-val">{{ run_date }}</span>
+            </div>
+        </div>
+
+        <!-- Section 0: Verdict Overview -->
+        <details open id="sec-verdicts" class="pc-section">
+            <summary>
+                <h2>Verdict Overview</h2>
+            </summary>
+            <div class="pc-section-body">
+                <div class="pc-grid-2">
+                    <div class="pc-panel">
                         <h3>Verdicts by Plasmid</h3>
                         <div class="plot">
                             {% if interactive %}
@@ -56,7 +375,7 @@
                             {% endif %}
                         </div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="pc-panel">
                         <h3>Verdicts by Sample</h3>
                         <div class="plot">
                             {% if interactive %}
@@ -68,214 +387,236 @@
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
+        </details>
 
-    <!-- Section 1: Contamination Analysis -->
-    <div class="card mb-3">
-        <div class="card-header" id="headingContamination">
-            <h5 class="mb-0">
-                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseContamination" aria-expanded="true">
-                    Contamination Analysis
-                </button>
-            </h5>
-        </div>
-        <div id="collapseContamination" class="collapse show" aria-labelledby="headingContamination">
-            <div class="card-body">
-                <h3>Contamination Ratio Heatmap</h3>
-                <div class="plot">
-                    {% if interactive %}
-                        {{ heatmap_content|safe }}
-                    {% else %}
-                        <img src="{{ heatmap_content }}" alt="Contamination Ratio Heatmap">
-                    {% endif %}
+        <!-- Section 1: Contamination Analysis -->
+        <details open id="sec-contamination" class="pc-section">
+            <summary>
+                <h2>Contamination Analysis</h2>
+            </summary>
+            <div class="pc-section-body">
+                <div class="pc-grid-2">
+                    <div class="pc-panel">
+                        <h3>Contamination Ratio Heatmap</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ heatmap_content|safe }}
+                            {% else %}
+                                <img src="{{ heatmap_content }}" alt="Contamination Ratio Heatmap">
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="pc-panel">
+                        <h3>Contamination Ratio Boxplot</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ boxplot_content|safe }}
+                            {% else %}
+                                <img src="{{ boxplot_content }}" alt="Contamination Ratio Boxplot">
+                            {% endif %}
+                        </div>
+                    </div>
                 </div>
 
-                <h3>Contamination Ratio Boxplot</h3>
-                <div class="plot">
-                    {% if interactive %}
-                        {{ boxplot_content|safe }}
-                    {% else %}
-                        <img src="{{ boxplot_content }}" alt="Contamination Ratio Boxplot">
-                    {% endif %}
+                <div class="pc-panel" style="margin-bottom: 1.25rem;">
+                    <h3>Verdicts</h3>
+                    <div class="table-container">
+                        {{ verdict_df|safe }}
+                    </div>
                 </div>
 
-                <h3>Summary Table</h3>
-                <div class="table-container">
-                    {{ combined_df|safe }}
+                <div class="pc-panel" style="margin-bottom: 1.25rem;">
+                    <h3>Contamination Ratios</h3>
+                    <div class="table-container">
+                        {{ ratio_df|safe }}
+                    </div>
                 </div>
 
-                <h3>Verdicts</h3>
-                <div class="table-container">
-                    {{ verdict_df|safe }}
+                <div class="pc-panel" style="margin-bottom: 1.25rem;">
+                    <h3>P-Value Table</h3>
+                    <div class="table-container">
+                        {{ p_value_table|safe }}
+                    </div>
                 </div>
 
-                <h3>Contamination Ratios</h3>
-                <div class="table-container">
-                    {{ ratio_df|safe }}
-                </div>
-
-                <h3>P-Value Table</h3>
-                <div class="table-container">
-                    {{ p_value_table|safe }}
+                <div class="pc-panel">
+                    <h3>Summary Table</h3>
+                    <div class="table-container">
+                        {{ combined_df|safe }}
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
+        </details>
 
-    <!-- Section 2: Coverage Outside Insert -->
-    {% if coverage_outside_heatmap_content %}
-    <div class="card mb-3">
-        <div class="card-header" id="headingCovOutside">
-            <h5 class="mb-0">
-                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseCovOutside" aria-expanded="true">
-                    Coverage Outside Insert
-                </button>
-            </h5>
-        </div>
-        <div id="collapseCovOutside" class="collapse show" aria-labelledby="headingCovOutside">
-            <div class="card-body">
-                <h3>Coverage Outside Insert Heatmap</h3>
-                <div class="plot">
-                    {% if interactive %}
-                        {{ coverage_outside_heatmap_content|safe }}
-                    {% else %}
-                        <img src="{{ coverage_outside_heatmap_content }}" alt="CoverageOutsideINSERT Heatmap">
-                    {% endif %}
-                </div>
-                {% if coverage_outside_boxplot_content %}
-                <h3>Coverage Outside Insert Distribution</h3>
-                <div class="plot">
-                    {% if interactive %}
-                        {{ coverage_outside_boxplot_content|safe }}
-                    {% else %}
-                        <img src="{{ coverage_outside_boxplot_content }}" alt="CoverageOutsideINSERT Boxplot">
-                    {% endif %}
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Section 3: Coverage Analysis -->
-    {% if depth_heatmap_content or breadth_heatmap_content %}
-    <div class="card mb-3">
-        <div class="card-header" id="headingCoverage">
-            <h5 class="mb-0">
-                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseCoverage" aria-expanded="true">
-                    Coverage Analysis
-                </button>
-            </h5>
-        </div>
-        <div id="collapseCoverage" class="collapse show" aria-labelledby="headingCoverage">
-            <div class="card-body">
-                {% if depth_heatmap_content %}
-                <h3>Backbone Mean Depth Heatmap</h3>
-                <div class="plot">
-                    {% if interactive %}
-                        {{ depth_heatmap_content|safe }}
-                    {% else %}
-                        <img src="{{ depth_heatmap_content }}" alt="Backbone Mean Depth Heatmap">
-                    {% endif %}
-                </div>
-                {% endif %}
-                {% if breadth_heatmap_content %}
-                <h3>Backbone Breadth Heatmap</h3>
-                <div class="plot">
-                    {% if interactive %}
-                        {{ breadth_heatmap_content|safe }}
-                    {% else %}
-                        <img src="{{ breadth_heatmap_content }}" alt="Backbone Breadth Heatmap">
-                    {% endif %}
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Section 4: Mismatch Analysis -->
-    {% if mismatches_heatmap_content %}
-    <div class="card mb-3">
-        <div class="card-header" id="headingMismatches">
-            <h5 class="mb-0">
-                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseMismatches" aria-expanded="true">
-                    Mismatch Analysis
-                </button>
-            </h5>
-        </div>
-        <div id="collapseMismatches" class="collapse show" aria-labelledby="headingMismatches">
-            <div class="card-body">
-                <h3>Mismatches Near Insert Heatmap</h3>
-                <div class="plot">
-                    {% if interactive %}
-                        {{ mismatches_heatmap_content|safe }}
-                    {% else %}
-                        <img src="{{ mismatches_heatmap_content }}" alt="MismatchesNearINSERT Heatmap">
+        <!-- Section 2: Coverage Outside Insert -->
+        {% if coverage_outside_heatmap_content %}
+        <details open id="sec-outside" class="pc-section">
+            <summary>
+                <h2>Coverage Outside Insert</h2>
+            </summary>
+            <div class="pc-section-body">
+                <div class="pc-grid-2">
+                    <div class="pc-panel">
+                        <h3>Coverage Outside Insert Heatmap</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ coverage_outside_heatmap_content|safe }}
+                            {% else %}
+                                <img src="{{ coverage_outside_heatmap_content }}" alt="CoverageOutsideINSERT Heatmap">
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if coverage_outside_boxplot_content %}
+                    <div class="pc-panel">
+                        <h3>Coverage Outside Insert Distribution</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ coverage_outside_boxplot_content|safe }}
+                            {% else %}
+                                <img src="{{ coverage_outside_boxplot_content }}" alt="CoverageOutsideINSERT Boxplot">
+                            {% endif %}
+                        </div>
+                    </div>
                     {% endif %}
                 </div>
             </div>
-        </div>
-    </div>
-    {% endif %}
+        </details>
+        {% endif %}
 
-    <!-- Section 5: Resistance Gene Coverage -->
-    {% if resistance_gene_table %}
-    <div class="card mb-3">
-        <div class="card-header" id="headingResGenes">
-            <h5 class="mb-0">
-                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseResGenes" aria-expanded="true">
-                    Resistance Gene Coverage
-                </button>
-            </h5>
-        </div>
-        <div id="collapseResGenes" class="collapse show" aria-labelledby="headingResGenes">
-            <div class="card-body">
-                <h3>Resistance Gene Table</h3>
-                <div class="table-container">
-                    {{ resistance_gene_table|safe }}
+        <!-- Section 3: Coverage Analysis -->
+        {% if depth_heatmap_content or breadth_heatmap_content %}
+        <details open id="sec-coverage" class="pc-section">
+            <summary>
+                <h2>Coverage Analysis</h2>
+            </summary>
+            <div class="pc-section-body">
+                <div class="pc-grid-2">
+                    {% if depth_heatmap_content %}
+                    <div class="pc-panel">
+                        <h3>Backbone Mean Depth Heatmap</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ depth_heatmap_content|safe }}
+                            {% else %}
+                                <img src="{{ depth_heatmap_content }}" alt="Backbone Mean Depth Heatmap">
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if breadth_heatmap_content %}
+                    <div class="pc-panel">
+                        <h3>Backbone Breadth Heatmap</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ breadth_heatmap_content|safe }}
+                            {% else %}
+                                <img src="{{ breadth_heatmap_content }}" alt="Backbone Breadth Heatmap">
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
-        </div>
-    </div>
-    {% endif %}
+        </details>
+        {% endif %}
 
-    <!-- Section 6: Splice Junction Metadata -->
-    {% if junction_table %}
-    <div class="card mb-3">
-        <div class="card-header" id="headingJunction">
-            <h5 class="mb-0">
-                <button class="btn btn-link" data-toggle="collapse" data-target="#collapseJunction" aria-expanded="true">
-                    Splice Junction Metadata
-                </button>
-            </h5>
-        </div>
-        <div id="collapseJunction" class="collapse show" aria-labelledby="headingJunction">
-            <div class="card-body">
-                <h3>Splice Junction Table</h3>
-                <div class="table-container">
-                    {{ junction_table|safe }}
+        <!-- Section 4: Mismatch Analysis -->
+        {% if mismatches_heatmap_content %}
+        <details open id="sec-mismatches" class="pc-section">
+            <summary>
+                <h2>Mismatch Analysis</h2>
+            </summary>
+            <div class="pc-section-body">
+                <div class="pc-panel">
+                    <h3>Mismatches Near Insert Heatmap</h3>
+                    <div class="plot">
+                        {% if interactive %}
+                            {{ mismatches_heatmap_content|safe }}
+                        {% else %}
+                            <img src="{{ mismatches_heatmap_content }}" alt="MismatchesNearINSERT Heatmap">
+                        {% endif %}
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
-    {% endif %}
+        </details>
+        {% endif %}
 
-    <div class="details">
-        <p><span>Threshold for Contamination:</span> {{ threshold }}</p>
-        <p><span>Unclear Range:</span> {{ unclear_range.lower_bound }} - {{ unclear_range.upper_bound }}</p>
-        <p><span>Script Version:</span> {{ version }}</p>
-        <p><span>Run Date:</span> {{ run_date }}</p>
-        <p><span>Command Line:</span> {{ command_line }}</p>
-    </div>
+        <!-- Section 5: Resistance Gene Coverage -->
+        {% if resistance_gene_table %}
+        <details open id="sec-resistance" class="pc-section">
+            <summary>
+                <h2>Resistance Gene Coverage</h2>
+            </summary>
+            <div class="pc-section-body">
+                <div class="pc-panel">
+                    <h3>Resistance Gene Table</h3>
+                    <div class="table-container">
+                        {{ resistance_gene_table|safe }}
+                    </div>
+                </div>
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- Section 6: Splice Junction Metadata -->
+        {% if junction_table %}
+        <details open id="sec-junctions" class="pc-section">
+            <summary>
+                <h2>Splice Junction Metadata</h2>
+            </summary>
+            <div class="pc-section-body">
+                <div class="pc-panel">
+                    <h3>Splice Junction Table</h3>
+                    <div class="table-container">
+                        {{ junction_table|safe }}
+                    </div>
+                </div>
+            </div>
+        </details>
+        {% endif %}
+
+        <footer class="details">
+            <p><span>Threshold for Contamination:</span> {{ threshold }}</p>
+            <p><span>Unclear Range:</span> {{ unclear_range.lower_bound }} - {{ unclear_range.upper_bound }}</p>
+            <p><span>Script Version:</span> {{ version }}</p>
+            <p><span>Run Date:</span> {{ run_date }}</p>
+            <p><span>Command Line:</span> {{ command_line }}</p>
+        </footer>
+    </main>
 
     <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
     <script src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.min.js"></script>
     <script>
         $(document).ready(function() {
-            $('table').DataTable();
+            $('table').DataTable({
+                pageLength: 10
+            });
         });
+        {% if interactive %}
+        (function() {
+            function resizeSummaryPlots() {
+                if (typeof Plotly === 'undefined') return;
+                var plots = document.querySelectorAll('.plot .js-plotly-plot');
+                plots.forEach(function(el) {
+                    el.style.width = '100%';
+                    el.style.height = '460px';
+                    var w = el.parentElement ? el.parentElement.clientWidth : null;
+                    Plotly.relayout(el, { autosize: true, width: w, height: 460 });
+                });
+            }
+            window.addEventListener('load', function() {
+                setTimeout(resizeSummaryPlots, 120);
+            });
+            window.addEventListener('resize', function() {
+                setTimeout(resizeSummaryPlots, 150);
+            });
+            document.querySelectorAll('details.pc-section').forEach(function(det) {
+                det.addEventListener('toggle', function() {
+                    if (det.open) setTimeout(resizeSummaryPlots, 50);
+                });
+            });
+        })();
+        {% endif %}
     </script>
 </body>
 </html>

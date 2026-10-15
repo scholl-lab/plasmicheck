@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import logging
 import os
 import sys
@@ -11,7 +10,7 @@ from plasmicheck.config import get_config
 from plasmicheck.resources import get_resource_path
 from plasmicheck.version import __version__ as VERSION
 
-from .utils import add_logging_args, configure_logging_from_args
+from .utils import encode_image_to_base64
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -40,13 +39,6 @@ logging.getLogger("fontTools").setLevel(logging.ERROR)
 
 
 # Helper Functions
-def encode_image_to_base64(image_path: str) -> str:
-    logging.info(f"Encoding image {image_path} to base64")
-    with open(image_path, "rb") as image_file:
-        encoded_string: str = base64.b64encode(image_file.read()).decode("utf-8")
-    return f"data:image/png;base64,{encoded_string}"
-
-
 def find_tsv_files(input_dir: str, pattern: str) -> list[str]:
     """Recursively find all tsv files matching the pattern in the input directory."""
     tsv_files: list[str] = []
@@ -95,27 +87,11 @@ def read_compare_outputs(
     import pandas as pd
 
     logging.info(f"Reading compare outputs from {input_dir}")
-    reads_assignment_files: list[str] = find_tsv_files(input_dir, ".reads_assignment.tsv")
     summary_files: list[str] = find_tsv_files(input_dir, ".summary.tsv")
 
-    if not reads_assignment_files or not summary_files:
+    if not summary_files:
         logging.error("No valid TSV files found in the specified directory structure.")
         raise ValueError("No valid TSV files found in the specified directory structure.")
-
-    reads_df_list: list[pd.DataFrame] = []
-    for file in reads_assignment_files:
-        sample_name, plasmid_name = _extract_sample_plasmid(file)
-
-        # Remove the substring from the sample name if provided
-        if substring_to_remove:
-            sample_name = sample_name.replace(substring_to_remove, "")
-
-        df = pd.read_csv(
-            file, sep="\t", low_memory=False
-        )  # Disable low_memory mode to avoid DtypeWarning
-        df["Sample"] = sample_name
-        df["Plasmid"] = plasmid_name
-        reads_df_list.append(df)
 
     summary_df_list: list[pd.DataFrame] = []
     for file in summary_files:
@@ -133,10 +109,9 @@ def read_compare_outputs(
         df = df.rename(columns={"Count": "Value"})  # Rename Count to Value
         summary_df_list.append(df)
 
-    reads_df = pd.concat(reads_df_list, ignore_index=True)
     summary_df = pd.concat(summary_df_list, ignore_index=True)
 
-    return reads_df, summary_df
+    return pd.DataFrame(), summary_df
 
 
 def apply_sorting(df: pd.DataFrame, sorting_config: dict[str, Any] | None) -> pd.DataFrame:
@@ -245,9 +220,9 @@ def save_tables_as_tsv_and_excel(
 # Data Manipulation Functions
 def calculate_variations(ratio_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Calculate p-values and apply FDR correction for contamination ratios by plasmid."""
+    import numpy as np
     import pandas as pd
-    import scipy.stats as stats
-    from statsmodels.stats.multitest import multipletests
+    from scipy.stats import false_discovery_control, ttest_1samp
 
     logging.info("Calculating variations for contamination ratios.")
 
@@ -267,24 +242,39 @@ def calculate_variations(ratio_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataF
         # Only run the t-test if there are enough data points
         if len(data) > 1:
             for i in range(len(data)):
-                # Exclude the current sample and run the one-sample t-test
-                try:
-                    _, p_value = stats.ttest_1samp(data.drop(data.index[i]), data.iloc[i])
-                    p_values_list.append(
-                        {
-                            "Sample": data.index[i],
-                            "Plasmid": plasmid,
-                            "p_value": p_value,
-                        }
-                    )
-                except Exception as e:
-                    logging.error(f"Error during t-test for {plasmid}, sample {data.index[i]}: {e}")
+                others = data.drop(data.index[i])
+                if len(others) < 2 or float(others.std(ddof=1)) == 0.0:
+                    p_val = np.nan
+                else:
+                    # Exclude the current sample and run the one-sample t-test
+                    try:
+                        res = ttest_1samp(others, data.iloc[i])
+                        p_val = float(res.pvalue) if not np.isnan(res.pvalue) else np.nan
+                    except Exception as e:
+                        logging.error(
+                            f"Error during t-test for {plasmid}, sample {data.index[i]}: {e}"
+                        )
+                        p_val = np.nan
+                p_values_list.append(
+                    {
+                        "Sample": data.index[i],
+                        "Plasmid": plasmid,
+                        "p_value": p_val,
+                    }
+                )
 
-    p_values_df: pd.DataFrame = pd.DataFrame(p_values_list)
-    if not p_values_df.empty:
-        p_values_df["p_value_corrected"] = multipletests(p_values_df["p_value"], method="fdr_bh")[1]
+    p_values_df = pd.DataFrame(p_values_list, columns=["Sample", "Plasmid", "p_value"])
+    p_values_df["p_value_corrected"] = np.nan
+    valid = p_values_df["p_value"].notna()
+    if valid.any():
+        p_values_df.loc[valid, "p_value_corrected"] = false_discovery_control(
+            p_values_df.loc[valid, "p_value"].to_numpy(dtype=float), method="bh"
+        )
 
     return boxplot_data, p_values_df
+
+
+calculate_Metrics = calculate_variations  # noqa: N816
 
 
 # Plotting Functions
@@ -292,7 +282,7 @@ def plot_boxplot(
     boxplot_data: pd.DataFrame,
     output_dir: str,
     static_report: bool = False,
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
 ) -> tuple[str, str | None]:
     """Generate and save boxplots for contamination ratios by plasmid."""
     import numpy as np
@@ -346,6 +336,16 @@ def plot_boxplot(
     return boxplot_filename, boxplot_filename_png
 
 
+def categorize_value(val: float, threshold: float, unclear_range: dict[str, float]) -> str:
+    """Categorize a ratio value matching compare_alignments.py verdict boundaries."""
+    if val > threshold:
+        return "Contaminated"
+    elif unclear_range["lower_bound"] <= val <= unclear_range["upper_bound"]:
+        return "Unclear"
+    else:
+        return "Clean"
+
+
 def plot_heatmap(
     ratio_df: pd.DataFrame,
     output_dir: str,
@@ -353,7 +353,7 @@ def plot_heatmap(
     unclear_range: dict[str, float],
     plot_config: dict[str, Any],
     static_report: bool = False,
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
 ) -> tuple[str, str | None]:
     """Generate and save heatmap for contamination ratios by plasmid without the color bar."""
     import pandas as pd
@@ -452,8 +452,19 @@ def create_metric_heatmap_data(summary_df: pd.DataFrame, metric_category: str) -
         logging.warning(f"Metric category '{metric_category}' not found in summary data")
         return pd.DataFrame()
 
-    # Convert Value to numeric
-    filtered["Value"] = pd.to_numeric(filtered["Value"], errors="coerce")
+    if metric_category == "MismatchesNearINSERT":
+        from plasmicheck.scripts.generate_report import _parse_mismatches
+
+        def _extract_mismatches(val: Any) -> float:
+            if isinstance(val, (int, float)):
+                return float(val)
+            w, _ = _parse_mismatches(str(val))
+            return float(w)
+
+        filtered["Value"] = filtered["Value"].apply(_extract_mismatches)
+    else:
+        # Convert Value to numeric
+        filtered["Value"] = pd.to_numeric(filtered["Value"], errors="coerce")
 
     # Pivot to Sample x Plasmid grid
     metric_data = filtered.pivot(index="Sample", columns="Plasmid", values="Value").round(
@@ -469,7 +480,7 @@ def plot_metric_heatmap(
     metric_name: str,
     vmax: float | None = None,
     static_report: bool = False,
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
 ) -> tuple[str, str | None]:
     """Generate Plotly heatmap for any Sample x Plasmid metric grid.
 
@@ -552,7 +563,7 @@ def plot_coverage_outside_insert_boxplot(
     summary_df: pd.DataFrame,
     output_dir: str,
     static_report: bool = False,
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
 ) -> tuple[str, str | None]:
     """Generate boxplot for CoverageOutsideINSERT distribution across plasmids.
 
@@ -636,6 +647,8 @@ def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     """
     import pandas as pd
 
+    from plasmicheck.scripts.resistance_gene_detection import sanitize_gene_name
+
     # Check if resistance genes are available
     available_rows = summary_df[summary_df["Category"] == "ResistanceGenesAvailable"]
     if available_rows.empty or (available_rows["Value"] == "false").all():
@@ -662,8 +675,8 @@ def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
         gene_names = [g.strip() for g in gene_names_str.split(",")]
 
         for gene_name in gene_names:
-            # Sanitize gene name for lookup (replace "/" and " " with "_")
-            sanitized_name = gene_name.replace("/", "_").replace(" ", "_")
+            # Sanitize gene name for lookup
+            sanitized_name = sanitize_gene_name(gene_name)
 
             # Look up depth and breadth
             depth_category = f"ResGene_{sanitized_name}_MeanDepth"
@@ -792,7 +805,7 @@ def plot_verdict_bar_by_plasmid(
     summary_df: pd.DataFrame,
     output_dir: str,
     static_report: bool = False,
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
 ) -> tuple[str, str | None]:
     """Generate stacked bar chart of verdicts grouped by plasmid.
 
@@ -897,7 +910,7 @@ def plot_verdict_bar_by_sample(
     summary_df: pd.DataFrame,
     output_dir: str,
     static_report: bool = False,
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
 ) -> tuple[str, str | None]:
     """Generate stacked bar chart of verdicts grouped by sample.
 
@@ -1042,11 +1055,20 @@ def generate_report(
     # Apply sorting to each DataFrame
     combined_df = apply_sorting(combined_df, TABLE_SORTING.get("combined"))
     verdict_df = apply_sorting(verdict_df, TABLE_SORTING.get("verdict"))
-    ratio_df = apply_sorting(ratio_df, TABLE_SORTING.get("ratio"))
-    p_values_df = pd.read_csv(p_value_table_filename, sep="\t")
+    if os.path.exists(p_value_table_filename) and os.path.getsize(p_value_table_filename) > 0:
+        try:
+            p_values_df = pd.read_csv(p_value_table_filename, sep="\t")
+        except pd.errors.EmptyDataError:
+            p_values_df = pd.DataFrame(
+                columns=["Sample", "Plasmid", "p_value", "p_value_corrected"]
+            )
+    else:
+        p_values_df = pd.DataFrame(columns=["Sample", "Plasmid", "p_value", "p_value_corrected"])
     p_values_df = apply_sorting(p_values_df, TABLE_SORTING.get("p_value"))
 
-    env = Environment(loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))))
+    env = Environment(
+        loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))), autoescape=True
+    )
     template = env.get_template("summary_template.html")
 
     # Read the Plotly HTML files content for interactive report
@@ -1238,7 +1260,7 @@ def main(
     substring_to_remove: str | None = None,
     static_report: bool = False,
     plotly_mode: str = "directory",
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
 ) -> None:
     # Initialize kaleido once before plotting if static_report is True and using plotly backend
     if static_report and plot_backend == "plotly":
@@ -1433,54 +1455,4 @@ def main(
         verdict_by_plasmid_png=verdict_by_plasmid_png,
         verdict_by_sample_interactive=verdict_by_sample_interactive,
         verdict_by_sample_png=verdict_by_sample_png,
-    )
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Merge and generate summary reports for multiple samples and plasmids."
-    )
-    parser.add_argument(
-        "-i", "--input_dir", help="Directory containing compare outputs", required=True
-    )
-    parser.add_argument(
-        "-o", "--output_dir", help="Directory to save the plots and reports", required=True
-    )
-    parser.add_argument(
-        "-t",
-        "--threshold",
-        type=float,
-        default=DEFAULT_THRESHOLD,
-        help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})",
-    )
-    parser.add_argument(
-        "--substring_to_remove", help="Substring to remove from sample names", default=None
-    )
-    parser.add_argument(
-        "--static-report",
-        action="store_true",
-        help="Generate PNG files and non-interactive HTML report (slower, requires kaleido)",
-    )
-    parser.add_argument(
-        "--plotly-mode",
-        choices=["directory", "cdn", "embedded"],
-        default="directory",
-        help="Plotly.js inclusion mode: directory (shared file), cdn (online), embedded (inline)",
-    )
-    add_logging_args(parser)
-
-    args = parser.parse_args()
-
-    configure_logging_from_args(args)
-
-    main(
-        args.input_dir,
-        args.output_dir,
-        args.threshold,
-        unclear_range=UNCLEAR_RANGE,
-        substring_to_remove=args.substring_to_remove,
-        static_report=args.static_report,
-        plotly_mode=args.plotly_mode,
     )

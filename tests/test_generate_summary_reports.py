@@ -15,10 +15,13 @@ from plasmicheck.scripts.generate_summary_reports import (
     _sanitize_for_excel,
     aggregate_verdicts,
     apply_sorting,
+    calculate_Metrics,
     calculate_variations,
+    categorize_value,
     create_metric_heatmap_data,
     create_resistance_gene_table,
     find_tsv_files,
+    generate_report,
     plot_boxplot,
     plot_coverage_outside_insert_boxplot,
     plot_heatmap,
@@ -449,11 +452,8 @@ class TestReadCompareOutputsBothLayouts:
         # Read outputs
         reads_df, summary_df = read_compare_outputs(str(tmp_path))
 
-        # Verify Sample and Plasmid columns are correct
-        assert len(reads_df) == 1
-        assert reads_df.iloc[0]["Sample"] == "sampleA"
-        assert reads_df.iloc[0]["Plasmid"] == "plasmidX"
-        assert reads_df.iloc[0]["ReadName"] == "read1"
+        # reads_df is empty as reads assignment files are intentionally not loaded
+        assert reads_df.empty
 
         assert len(summary_df) == 1
         assert summary_df.iloc[0]["Sample"] == "sampleA"
@@ -477,11 +477,8 @@ class TestReadCompareOutputsBothLayouts:
         # Read outputs
         reads_df, summary_df = read_compare_outputs(str(tmp_path))
 
-        # Verify Sample and Plasmid columns are correct
-        assert len(reads_df) == 1
-        assert reads_df.iloc[0]["Sample"] == "sampleB"
-        assert reads_df.iloc[0]["Plasmid"] == "plasmidY"
-        assert reads_df.iloc[0]["ReadName"] == "read2"
+        # reads_df is empty as reads assignment files are intentionally not loaded
+        assert reads_df.empty
 
         assert len(summary_df) == 1
         assert summary_df.iloc[0]["Sample"] == "sampleB"
@@ -513,10 +510,8 @@ class TestReadCompareOutputsBothLayouts:
         # Read outputs
         reads_df, summary_df = read_compare_outputs(str(tmp_path))
 
-        # Should have both samples
-        assert len(reads_df) == 2
-        assert set(reads_df["Sample"]) == {"sample1", "sample2"}
-        assert set(reads_df["Plasmid"]) == {"plasmid1", "plasmid2"}
+        # reads_df is empty as reads assignment files are intentionally not loaded
+        assert reads_df.empty
 
         assert len(summary_df) == 2
         assert set(summary_df["Sample"]) == {"sample1", "sample2"}
@@ -954,3 +949,129 @@ class TestPlotVerdictBarBySample:
         assert '"showSendToCloud": false' in Path(html_file).read_text()
         assert png_file is not None
         assert Path(png_file).exists()
+
+
+@pytest.mark.unit
+def test_calculate_metrics_one_sample_and_zero_variance() -> None:
+    """Test calculate_Metrics handles single-sample and zero variance gracefully."""
+    # 1. Single sample should return empty p-values DataFrame with expected columns
+    df_single = pd.DataFrame({"Sample": ["s1"], "Plasmid": ["p1"], "Value": [0.5]})
+    _boxplot_data, p_values_df = calculate_Metrics(df_single)
+    assert p_values_df.empty
+    assert list(p_values_df.columns) == ["Sample", "Plasmid", "p_value", "p_value_corrected"]
+
+    # 2. Multi-sample where p1 has zero variance (identical values) and p2 has varying values
+    df_multi = pd.DataFrame(
+        {
+            "Sample": ["s1", "s2", "s3", "s1", "s2", "s3"],
+            "Plasmid": ["p1", "p1", "p1", "p2", "p2", "p2"],
+            "Value": [1.0, 1.0, 1.0, 0.1, 0.4, 0.8],
+        }
+    )
+    _boxplot_data, p_values_df = calculate_Metrics(df_multi)
+    assert not p_values_df.empty
+    p1_rows = p_values_df[p_values_df["Plasmid"] == "p1"]
+    p2_rows = p_values_df[p_values_df["Plasmid"] == "p2"]
+
+    # For p1, zero variance leaves p_value as NaN
+    assert p1_rows["p_value"].isna().all()
+    assert p1_rows["p_value_corrected"].isna().all()
+
+    # For p2, p_value and p_value_corrected are computed and valid
+    assert p2_rows["p_value"].notna().all()
+    assert p2_rows["p_value_corrected"].notna().all()
+
+
+@pytest.mark.unit
+def test_mismatches_near_insert_dict_string_parsed() -> None:
+    """Test that MismatchesNearINSERT dict string is parsed to numeric mismatch count."""
+    df = pd.DataFrame(
+        {
+            "Sample": ["s1", "s2"],
+            "Plasmid": ["p1", "p1"],
+            "Category": ["MismatchesNearINSERT", "MismatchesNearINSERT"],
+            "Value": [
+                "{'with_mismatches_or_clipping': 8, 'without_mismatches_or_clipping': 12}",
+                "{'with_mismatches_or_clipping': 3, 'without_mismatches_or_clipping': 17}",
+            ],
+        }
+    )
+    result = create_metric_heatmap_data(df, "MismatchesNearINSERT")
+    assert result.loc["s1", "p1"] == 8.0
+    assert result.loc["s2", "p1"] == 3.0
+
+
+@pytest.mark.unit
+def test_create_resistance_gene_table_sanitizes_gene_names() -> None:
+    """Test that resistance gene table sanitizes gene names when looking up metrics."""
+    df = pd.DataFrame(
+        {
+            "Sample": ["s1", "s1", "s1", "s1"],
+            "Plasmid": ["p1", "p1", "p1", "p1"],
+            "Category": [
+                "ResistanceGenesAvailable",
+                "ResistanceGenes",
+                "ResGene_bla_TEM-1__MeanDepth",
+                "ResGene_bla_TEM-1__Breadth",
+            ],
+            "Value": ["true", "bla(TEM-1)", "42.0", "99.5"],
+        }
+    )
+    result = create_resistance_gene_table(df)
+    assert len(result) == 1
+    assert result.iloc[0]["Gene Name"] == "bla(TEM-1)"
+    assert result.iloc[0]["Mean Depth"] == 42.0
+    assert result.iloc[0]["Breadth (%)"] == 99.5
+
+
+@pytest.mark.unit
+def test_categorize_value_boundary_consistency() -> None:
+    """Test categorize_value matches verdict boundaries with inclusive unclear range."""
+    unclear = {"lower_bound": 0.05, "upper_bound": 0.10}
+    threshold = 0.10
+
+    assert categorize_value(0.04, threshold, unclear) == "Clean"
+    assert categorize_value(0.05, threshold, unclear) == "Unclear"
+    assert categorize_value(0.08, threshold, unclear) == "Unclear"
+    assert categorize_value(0.10, threshold, unclear) == "Unclear"
+    assert categorize_value(0.11, threshold, unclear) == "Contaminated"
+
+
+@pytest.mark.unit
+def test_summary_report_autoescape(tmp_path: Path) -> None:
+    """Test that summary_template.html autoescapes potentially dangerous content."""
+    heatmap_html = tmp_path / "heatmap.html"
+    boxplot_html = tmp_path / "boxplot.html"
+    heatmap_html.write_text("<div>Heatmap</div>")
+    boxplot_html.write_text("<div>Boxplot</div>")
+
+    combined_df = pd.DataFrame(
+        {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Verdict"], "Value": ["Clean"]}
+    )
+    verdict_df = pd.DataFrame(
+        {"Sample": ["s1"], "Plasmid": ["p1"], "Category": ["Verdict"], "Value": ["Clean"]}
+    )
+    ratio_df = pd.DataFrame({"Sample": ["s1"], "Plasmid": ["p1"], "Value": [0.01]})
+    p_value_tsv = tmp_path / "p_values.tsv"
+    p_value_tsv.write_text("Sample\tPlasmid\tp_value\tp_value_corrected\n")
+
+    generate_report(
+        combined_df=combined_df,
+        verdict_df=verdict_df,
+        ratio_df=ratio_df,
+        heatmap_filename_interactive=str(heatmap_html),
+        heatmap_filename_png=None,
+        boxplot_filename_interactive=str(boxplot_html),
+        boxplot_filename_png=None,
+        p_value_table_filename=str(p_value_tsv),
+        output_folder=str(tmp_path),
+        threshold=0.8,
+        unclear_range={"lower_bound": 0.5, "upper_bound": 0.8},
+        command_line="<script>alert('cmd')</script>",
+    )
+
+    report_file = tmp_path / "summary_report_interactive.html"
+    assert report_file.exists()
+    content = report_file.read_text()
+    assert "<script>alert('cmd')</script>" not in content
+    assert "&lt;script&gt;alert(&#39;cmd&#39;)&lt;/script&gt;" in content
