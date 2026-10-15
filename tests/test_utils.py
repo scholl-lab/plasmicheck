@@ -241,6 +241,19 @@ class TestArchiveOutputFolder:
 
 class TestRunCommand:
     @pytest.mark.unit
+    def test_real_pipeline_reports_upstream_failure(self) -> None:
+        with (
+            patch("plasmicheck.scripts.utils.time.sleep"),
+            pytest.raises(subprocess.CalledProcessError),
+        ):
+            run_command("false | cat")
+
+    @pytest.mark.unit
+    def test_real_pipeline_captures_output(self) -> None:
+        result = run_command("printf 'aligned reads' | cat")
+        assert result.stdout == "aligned reads"
+
+    @pytest.mark.unit
     @patch("plasmicheck.scripts.utils.subprocess.run")
     def test_successful_command(self, mock_run: MagicMock) -> None:
         mock_run.return_value = subprocess.CompletedProcess(

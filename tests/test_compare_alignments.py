@@ -3,22 +3,94 @@
 from __future__ import annotations
 
 import io
+import shutil
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pysam
 import pytest
 
 from plasmicheck.scripts.compare_alignments import (
     InsertRegionData,
     _assign,
     _best_read,
+    _namesort_bam,
     _streaming_compare,
     _write_assignment,
     calculate_alignment_score,
     parse_insert_region,
     read_overlaps_insert,
 )
+
+
+class TestNameSortedMerge:
+    @pytest.mark.unit
+    def test_sort_order_matches_string_comparison(self) -> None:
+        with patch("plasmicheck.scripts.compare_alignments.subprocess.run") as run:
+            _namesort_bam("input.bam", "sorted.bam")
+
+        command = run.call_args.args[0]
+        assert command[:3] == ["samtools", "sort", "-N"]
+
+    @pytest.mark.integration
+    @pytest.mark.skipif(shutil.which("samtools") is None, reason="samtools not found on PATH")
+    @pytest.mark.parametrize(
+        ("plasmid_names", "human_names", "expected"),
+        [
+            (
+                ["read2", "read10"],
+                ["read10"],
+                [("read10", "Tied"), ("read2", "Plasmid")],
+            ),
+            (
+                ["read10"],
+                ["read2", "read10"],
+                [("read10", "Tied"), ("read2", "Human")],
+            ),
+            (
+                ["read1", "read01", "read001", "read2", "read10"],
+                ["read001", "read1", "read10"],
+                [
+                    ("read001", "Tied"),
+                    ("read01", "Plasmid"),
+                    ("read1", "Tied"),
+                    ("read10", "Tied"),
+                    ("read2", "Plasmid"),
+                ],
+            ),
+        ],
+    )
+    def test_each_name_is_compared_once(
+        self,
+        tmp_path: Path,
+        plasmid_names: list[str],
+        human_names: list[str],
+        expected: list[tuple[str, str]],
+    ) -> None:
+        for label, names in (("plasmid", plasmid_names), ("human", human_names)):
+            source = tmp_path / f"{label}.bam"
+            header = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "ref", "LN": 1000}]}
+            with pysam.AlignmentFile(str(source), "wb", header=header) as bam:
+                for name in names:
+                    read = pysam.AlignedSegment()
+                    read.query_name = name
+                    read.query_sequence = "A" * 100
+                    read.reference_id = 0
+                    read.reference_start = 0
+                    read.mapping_quality = 60
+                    read.cigarstring = "100M"
+                    bam.write(read)
+            _namesort_bam(str(source), str(tmp_path / f"{label}.sorted.bam"))
+
+        output = io.StringIO()
+        counts = _streaming_compare(
+            str(tmp_path / "plasmid.sorted.bam"), str(tmp_path / "human.sorted.bam"), output
+        )
+
+        assignments = [tuple(line.split("\t")[:2]) for line in output.getvalue().splitlines()]
+        assert assignments == expected
+        assert sum(counts.values()) == len(expected)
 
 
 class TestCalculateAlignmentScore:
@@ -288,6 +360,28 @@ class TestWriteAssignment:
 
 
 class TestStreamingCompare:
+    @pytest.mark.unit
+    @pytest.mark.parametrize("extra_side", ["plasmid", "human"])
+    def test_numeric_names_in_lexicographic_order(
+        self, mock_pysam_read: Any, extra_side: str
+    ) -> None:
+        shared = mock_pysam_read(query_name="read10", mapping_quality=60)
+        extra = mock_pysam_read(query_name="read2", mapping_quality=60)
+        plasmid = [("read10", [shared])]
+        human = [("read10", [shared])]
+        (plasmid if extra_side == "plasmid" else human).append(("read2", [extra]))
+
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter(plasmid), iter(human)],
+        ):
+            output = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", output)
+
+        assignments = [tuple(line.split("\t")[:2]) for line in output.getvalue().splitlines()]
+        assert assignments == [("read10", "Tied"), ("read2", extra_side.title())]
+        assert sum(counts.values()) == 2
+
     @pytest.mark.unit
     def test_matched_reads(self, mock_pysam_read: Any) -> None:
         """Both BAMs have the same reads — should compare and assign."""

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -8,7 +8,8 @@ dynamic = ["version"]
 description = "Detect and quantify plasmid DNA contamination in sequencing data"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Bernt Popp", email = "bernt.popp.md@gmail.com" },
 ]
@@ -17,14 +18,14 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Typing :: Typed",
 ]
 dependencies = [
     "biopython>=1.84",
-    "pysam>=0.22.1",
+    "pysam>=0.24.1",
     "jinja2>=3.0.0",
     "matplotlib>=3.9.1",
     "seaborn>=0.13.2",
@@ -39,25 +40,25 @@ dependencies = [
     "rich>=13.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "ruff>=0.11",
-    "mypy>=1.10",
-    "pytest>=8.0",
-    "pytest-cov>=5.0",
+    "ruff>=0.15.1",
+    "mypy>=1.19",
+    "pytest>=9.0",
+    "pytest-cov>=7.0",
     "pytest-mock>=3.14",
-    "pre-commit",
+    "pre-commit>=4.0",
     "pandas-stubs",
-    "types-jinja2",
+    "openpyxl>=3.1",
 ]
 
 [project.scripts]
 plasmicheck = "plasmicheck.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/berntpopp/plasmicheck"
-Repository = "https://github.com/berntpopp/plasmicheck"
-Issues = "https://github.com/berntpopp/plasmicheck/issues"
+Homepage = "https://github.com/scholl-lab/plasmicheck"
+Repository = "https://github.com/scholl-lab/plasmicheck"
+Issues = "https://github.com/scholl-lab/plasmicheck/issues"
 
 [tool.hatch.version]
 path = "plasmicheck/version.py"
@@ -66,7 +67,8 @@ path = "plasmicheck/version.py"
 packages = ["plasmicheck"]
 
 [tool.hatch.build.targets.sdist]
-include = ["plasmicheck/"]
+include = ["plasmicheck/", "tests/", "README.md", "LICENSE", "pyproject.toml", "uv.lock"]
+exclude = ["tests/data/real/**"]
 
 # --- Ruff (linter + formatter) ---
 
@@ -105,7 +107,7 @@ convention = "numpy"
 # --- mypy (strict type checking) ---
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 strict = true
 warn_unused_configs = true
 warn_return_any = true
@@ -136,7 +138,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "-ra --tb=short --strict-markers --color=yes"
+addopts = "-ra --tb=short --strict-markers --strict-config"
 testpaths = ["tests"]
 markers = [
     "unit: Unit tests",
@@ -148,9 +150,11 @@ markers = [
 
 [tool.coverage.run]
 source = ["plasmicheck"]
+branch = true
 omit = ["*/tests/*", "*/__pycache__/*", "*/.venv/*"]
 
 [tool.coverage.report]
+fail_under = 70
 precision = 2
 show_missing = true
 skip_covered = false

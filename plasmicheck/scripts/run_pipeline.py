@@ -742,6 +742,7 @@ def run_pipeline(
                         plasmid_bam,
                         spliced_human_bam,
                         comparison_output,
+                        threshold=threshold,
                         genbank_file=genbank_file_path,
                         cdna_positions_file=str(paths.cdna_positions),
                     )

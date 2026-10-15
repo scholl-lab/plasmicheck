@@ -80,7 +80,7 @@ def configure_logging_from_args(args: argparse.Namespace) -> None:
 
 
 def run_command(command: str) -> subprocess.CompletedProcess[str]:
-    """Run a command using subprocess with retry logic and log the output."""
+    """Run a shell pipeline with retries, propagating failures from every stage."""
     # Fetch retry settings from config or use default values
     retries: int = _cfg.get("retry_settings", {}).get("retries", 3)
     delay: int = _cfg.get("retry_settings", {}).get("delay", 5)
@@ -89,8 +89,7 @@ def run_command(command: str) -> subprocess.CompletedProcess[str]:
         logging.info(f"Running command: {command} (Attempt {attempt + 1}/{retries})")
         try:
             result: subprocess.CompletedProcess[str] = subprocess.run(
-                command,
-                shell=True,
+                ["bash", "-o", "pipefail", "-c", command],
                 check=True,
                 capture_output=True,
                 text=True,

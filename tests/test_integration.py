@@ -80,17 +80,17 @@ class TestPipelineContaminated:
             keep_intermediate=True,
             overwrite=True,
             threshold=0.8,
+            no_cache=True,
             sequencing_files_r1=r1,
             sequencing_files_r2=r2,
         )
 
         # Find the summary file
         summaries = list(output_dir.rglob("*.summary.tsv"))
-        assert len(summaries) >= 1, "No summary.tsv found"
+        assert len(summaries) == 1, "Expected exactly one summary.tsv"
         content = summaries[0].read_text()
-        assert "Verdict" in content
         # With 60% plasmid reads and threshold 0.8, expect contamination
-        assert "contaminated" in content.lower()
+        assert "Verdict\tSample is contaminated with plasmid DNA" in content.splitlines()
 
 
 @pytest.mark.skipif(not (_HAS_MINIMAP2 and _HAS_SAMTOOLS), reason=_SKIP_REASON)
@@ -112,12 +112,12 @@ class TestPipelineClean:
             keep_intermediate=True,
             overwrite=True,
             threshold=0.8,
+            no_cache=True,
             sequencing_files_r1=r1,
             sequencing_files_r2=r2,
         )
 
         summaries = list(output_dir.rglob("*.summary.tsv"))
-        assert len(summaries) >= 1, "No summary.tsv found"
+        assert len(summaries) == 1, "Expected exactly one summary.tsv"
         content = summaries[0].read_text()
-        assert "Verdict" in content
-        assert "not contaminated" in content.lower()
+        assert "Verdict\tSample is not contaminated with plasmid DNA" in content.splitlines()

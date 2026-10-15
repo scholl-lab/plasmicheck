@@ -246,6 +246,35 @@ class TestCombinationResultDataclass:
         assert result.error is error
 
 
+@pytest.mark.unit
+def test_pipeline_uses_requested_threshold_for_comparison_and_report(
+    synthetic_data_dir: Path, tmp_path: Path
+) -> None:
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments") as compare,
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report") as report,
+    ):
+        run_pipeline(
+            human_fasta=str(synthetic_data_dir / "human_ref.fasta"),
+            plasmid_files=str(synthetic_data_dir / "plasmid.gb"),
+            sequencing_files_r1=str(synthetic_data_dir / "contaminated_R1.fastq"),
+            output_folder=str(tmp_path / "output"),
+            threshold=1.25,
+            md5_level="none",
+            no_cache=True,
+        )
+
+    assert compare.call_count == 1
+    assert compare.call_args.kwargs["threshold"] == 1.25
+    assert report.call_args.kwargs["threshold"] == 1.25
+
+
 class TestIndexDeduplication:
     @pytest.mark.unit
     def test_index_dedup_human_index_built_once(self, tmp_path: Path) -> None:

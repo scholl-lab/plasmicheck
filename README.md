@@ -31,9 +31,10 @@ Beyond its core logic, 'plasmicheck' offers a comprehensive set of functionaliti
 ### Option 1: Using uv (recommended)
 
 ```bash
-git clone https://github.com/berntpopp/plasmicheck.git
+git clone https://github.com/scholl-lab/plasmicheck.git
 cd plasmicheck
-uv pip install -e .
+uv sync --locked --no-dev
+source .venv/bin/activate
 ```
 
 ### Option 2: Using pip
@@ -47,42 +48,67 @@ pip install -e .
 You can set up a Conda environment using the provided `plasmicheck_full_conda.yml` file:
 
 ```bash
-git clone https://github.com/berntpopp/plasmicheck.git
+git clone https://github.com/scholl-lab/plasmicheck.git
 cd plasmicheck
-conda env create -f conda/conda/plasmicheck_full_conda.yml
+conda env create -f conda/plasmicheck_full_conda.yml
 conda activate plasmicheck
+uv sync --locked --no-dev --python "$CONDA_PREFIX/bin/python"
+source .venv/bin/activate
 ```
 
 ### Requirements
 
 - **Python** >= 3.10
 - **External tools** (must be on PATH):
+  - `bash` (alignment pipelines use `pipefail` to detect upstream failures)
   - `minimap2` (version >= 2.17-r941)
-  - `samtools` (version >= 1.13)
+  - `samtools` (version >= 1.19; lexicographic read-name sorting is required)
 
 All Python dependencies are installed automatically from `pyproject.toml`.
 
 ## Development
 
+Use Python 3.12 (pinned in `.python-version`) and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Python 3.10 remains the compatibility floor; CI tests 3.10, 3.12, and 3.13.
+The committed `uv.lock` supplies the same dependencies to local commands and CI.
+
 ```bash
-# Install with dev dependencies
-uv pip install -e ".[dev]"
-
-# Lint + format + typecheck + test (mirrors CI)
-make ci-check
-
-# Individual targets
-make lint          # ruff linter
-make format        # ruff formatter (auto-fix)
-make typecheck     # mypy (strict)
-make test          # pytest with coverage
-make test-fast     # unit tests only (no integration/slow)
-make fix           # auto-fix then lint
-make clean         # remove build artifacts
+make install-dev                  # uv sync --locked; no activation needed
+make ci-check                     # lint, formatting, strict typing, coverage, build
+make test-fast                    # quick portable tests without coverage
+make test-integration             # synthetic pipeline; minimap2 + samtools >=1.19
+make lint-actions                 # actionlint via a pinned Docker image
+make format                       # safe Ruff fixes and formatting
+uv run --locked pre-commit install
 ```
 
-See the [Makefile](Makefile) for all available targets (`make help`).
+`make test` enforces **70% combined statement and branch coverage** across the
+whole package, including the CLI. Keep this baseline stable and raise it when
+meaningful tests support it; do not exclude difficult modules or lower the floor
+to make a change pass. Add focused regression tests for behavior changes.
+`make test-fast` avoids coverage overhead during iteration. Tests needing local
+reference datasets skip when those files are absent; synthetic integration data
+is committed and needs no downloads.
 
+Ruff checks all Python files against Python 3.10 syntax. Strict mypy checks the
+package using the Python 3.12 development environment and its matching dependency
+stubs. Development dependencies live in a dependency group, so replace the old
+`pip install -e ".[dev]"` workflow with `uv sync --locked`.
+
+For a dependency change, edit `pyproject.toml` (or use `uv add` / `uv add --dev`),
+run `uv lock`, then run `make ci-check`. Use `uv lock --upgrade-package NAME`
+for targeted updates and commit both metadata and lockfile. The pre-commit Ruff
+hooks use this same lock, rather than installing another Ruff version.
+
+CI also installs the built wheel and sdist outside the checkout, checks package
+resources and CLI entry points, and builds the Docker smoke-test stage. The
+`CI Success` check aggregates all required jobs. Tagged Docker releases run these
+checks before publishing to GHCR; manual Docker runs validate without publishing.
+No PyPI credentials or publishing workflow are required for the existing release
+path.
+
+See [AGENTS.md](AGENTS.md) for the code map and agent workflow, and `make help`
+for all commands.
 
 ## Configuration
 
