@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import logging
 import os
 from datetime import datetime, timezone
@@ -14,7 +13,7 @@ from plasmicheck.resources import get_resource_path
 from plasmicheck.version import __version__ as VERSION
 
 from .plotting.colors import ASSIGNMENT_COLORS
-from .utils import add_logging_args, configure_logging_from_args
+from .utils import encode_image_to_base64
 
 _cfg = get_config()
 DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
@@ -23,7 +22,7 @@ PLOT_SAMPLE_REPORT: dict[str, Any] = _cfg["plot_sample_report"]
 TEMPLATE_DIR: str = _cfg["paths"]["template_dir"]
 LOGO_PATH: str = _cfg["paths"]["logo_path"]
 PLOT_DIMENSIONS: dict[str, int] = PLOT_SAMPLE_REPORT.get("figsize", {"width": 1000, "height": 400})
-DOWNSAMPLE_LIMIT: int = _cfg.get("downsample_limit", 5000)
+DOWNSAMPLE_LIMIT: int = PLOT_SAMPLE_REPORT.get("max_rows_for_interactive_plots", 5000)
 
 # Setup logging for the libraries used in this script
 logging.getLogger("jinja2").setLevel(logging.ERROR)
@@ -34,7 +33,11 @@ def load_data(reads_assignment_file: str, summary_file: str) -> tuple[pd.DataFra
     import pandas as pd
 
     logging.info(f"Loading data from {reads_assignment_file} and {summary_file}")
-    reads_df = pd.read_csv(reads_assignment_file, sep="\t")
+    reads_df = pd.read_csv(
+        reads_assignment_file,
+        sep="\t",
+        usecols=lambda c: c in {"AssignedTo", "PlasmidScore", "HumanScore"},
+    )
     summary_df = pd.read_csv(summary_file, sep="\t")
     return reads_df, summary_df
 
@@ -113,8 +116,9 @@ def generate_plots(
     reads_df: pd.DataFrame,
     output_folder: str,
     static_report: bool = False,
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
     reports_dir: str | None = None,
+    total_reads: int | None = None,
 ) -> tuple[str, str | None, str, str | None]:
     """Generate interactive and optional static plots.
 
@@ -204,9 +208,9 @@ def generate_plots(
     import plotly.graph_objects as go
 
     score_max = max(
-        reads_df["PlasmidScore"].max(),
-        reads_df["HumanScore"].max(),
         1,
+        reads_df["PlasmidScore"].max() if not reads_df.empty else 1,
+        reads_df["HumanScore"].max() if not reads_df.empty else 1,
     )
     fig_scatter.add_trace(
         go.Scattergl(
@@ -256,17 +260,8 @@ def generate_plots(
             )
 
             # Generate plots using matplotlib
-            boxplot_title = f"{PLOT_SAMPLE_REPORT['title_box_plot']} (Total Reads: {len(reads_df)})"
-            scatter_title = (
-                f"{PLOT_SAMPLE_REPORT['title_scatter_plot']} (Total Reads: {len(reads_df)})"
-            )
-
-            generate_boxplot_matplotlib(
-                reads_df, boxplot_filename_png, boxplot_title, width, height
-            )
-            generate_scatter_matplotlib(
-                reads_df, scatter_filename_png, scatter_title, width, height
-            )
+            generate_boxplot_matplotlib(reads_df, boxplot_filename_png, total_reads=total_reads)
+            generate_scatter_matplotlib(reads_df, scatter_filename_png, total_reads=total_reads)
         else:
             # Default plotly/kaleido backend
             import kaleido  # type: ignore[import-untyped]
@@ -304,13 +299,6 @@ def _ensure_plotly_assets(output_root: str) -> None:
         logging.info(f"Copied plotly.min.js to {dest}")
 
 
-def encode_image_to_base64(image_path: str) -> str:
-    logging.info(f"Encoding image {image_path} to base64")
-    with open(image_path, "rb") as image_file:
-        encoded_string: str = base64.b64encode(image_file.read()).decode("utf-8")
-    return f"data:image/png;base64,{encoded_string}"
-
-
 def extract_verdict_from_summary(summary_df: pd.DataFrame) -> str:
     verdict_row: pd.DataFrame = summary_df[summary_df["Category"] == "Verdict"]
     if not verdict_row.empty:
@@ -341,7 +329,7 @@ def _compute_gauge_position(
     """
     if ratio <= 0:
         return 0.0
-    if ratio <= unclear_lower:
+    if ratio < unclear_lower:
         return (ratio / unclear_lower) * 40.0
     if ratio <= unclear_upper:
         return 40.0 + ((ratio - unclear_lower) / (unclear_upper - unclear_lower)) * 20.0
@@ -433,7 +421,9 @@ def generate_report(
     from jinja2 import Environment, FileSystemLoader
 
     logging.info("Generating report")
-    env = Environment(loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))))
+    env = Environment(
+        loader=FileSystemLoader(str(get_resource_path(TEMPLATE_DIR))), autoescape=True
+    )
     env.filters["truncate_list"] = _truncate_list_filter
     template = env.get_template("report_template.html")
 
@@ -578,11 +568,25 @@ def main(
     command_line: str = "",
     static_report: bool = False,
     plotly_mode: str = "directory",
-    plot_backend: str = "plotly",
+    plot_backend: str = "matplotlib",
     output_root: str | None = None,
     reports_dir: str | None = None,
 ) -> None:
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
+
+    # Extract category counts from summary_df before downsampling
+    def _get_count(df: pd.DataFrame, category: str) -> int:
+        rows = df[df["Category"] == category]
+        return int(rows["Count"].values[0]) if not rows.empty else 0
+
+    plasmid_count = _get_count(summary_df, "Plasmid")
+    human_count = _get_count(summary_df, "Human")
+    tied_count = _get_count(summary_df, "Tied")
+    backbone_only_count = _get_count(summary_df, "Backbone_Only")
+    ambiguous_count = _get_count(summary_df, "Ambiguous")
+    total_reads = plasmid_count + human_count + tied_count + backbone_only_count + ambiguous_count
+    if total_reads == 0 and not reads_df.empty:
+        total_reads = len(reads_df)
 
     # Downsample data if necessary
     reads_df, downsampled = downsample_data(reads_df, DOWNSAMPLE_LIMIT)
@@ -599,22 +603,11 @@ def main(
         static_report=static_report,
         plot_backend=plot_backend,
         reports_dir=reports_dir,
+        total_reads=total_reads,
     )
 
     # Extract the verdict from the summary file
     verdict = extract_verdict_from_summary(summary_df)
-
-    # Extract category counts from summary_df
-    def _get_count(df: pd.DataFrame, category: str) -> int:
-        rows = df[df["Category"] == category]
-        return int(rows["Count"].values[0]) if not rows.empty else 0
-
-    plasmid_count = _get_count(summary_df, "Plasmid")
-    human_count = _get_count(summary_df, "Human")
-    tied_count = _get_count(summary_df, "Tied")
-    backbone_only_count = _get_count(summary_df, "Backbone_Only")
-    ambiguous_count = _get_count(summary_df, "Ambiguous")
-    total_reads = plasmid_count + human_count + tied_count + backbone_only_count + ambiguous_count
 
     # Calculate percentages
     def _pct(count: int, total: int) -> str:
@@ -670,7 +663,14 @@ def main(
     # Determine if backbone filtering was unavailable
     backbone_warning = ""
 
-    ratio = plasmid_count / human_count if human_count != 0 else float("inf")
+    ratio_str = _get_metric(summary_df, "Ratio", default="")
+    if ratio_str != "":
+        try:
+            ratio = float(ratio_str)
+        except (ValueError, TypeError):
+            ratio = plasmid_count / human_count if human_count != 0 else float("inf")
+    else:
+        ratio = plasmid_count / human_count if human_count != 0 else float("inf")
 
     # Derive new template variables
     verdict_short, verdict_class = _derive_verdict_info(verdict)
@@ -766,76 +766,4 @@ def main(
         coverage_fallback=coverage_fallback,
         reports_dir=reports_dir,
         junction_metrics=junction_metrics,
-    )
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Generate a visualized HTML report from alignment comparison results"
-    )
-    parser.add_argument(
-        "-r",
-        "--reads_assignment_file",
-        help="Reads assignment file (reads_assignment.tsv)",
-        required=True,
-    )
-    parser.add_argument("-s", "--summary_file", help="Summary file (summary.tsv)", required=True)
-    parser.add_argument(
-        "-o", "--output_folder", help="Folder to write the report and plots", required=True
-    )
-    parser.add_argument(
-        "-t",
-        "--threshold",
-        type=float,
-        default=DEFAULT_THRESHOLD,
-        help=f"Threshold for contamination verdict (default: {DEFAULT_THRESHOLD})",
-    )
-    parser.add_argument("-hf", "--human_fasta", default="None", help="Human reference FASTA file")
-    parser.add_argument("-pg", "--plasmid_gb", default="None", help="GenBank plasmid file")
-    parser.add_argument(
-        "-sf",
-        "--sequencing_file",
-        default="None",
-        help="Sequencing file (BAM, interleaved FASTQ, or first FASTQ file for paired FASTQ)",
-    )
-    parser.add_argument(
-        "--static-report",
-        action="store_true",
-        help="Generate static PNG plots and non-interactive HTML report (slow)",
-    )
-    parser.add_argument(
-        "--plotly-mode",
-        choices=["directory", "cdn", "embedded"],
-        default="directory",
-        help="Plotly.js inclusion mode: directory (local file), cdn (CDN), or embedded (inline)",
-    )
-    parser.add_argument(
-        "--output-root",
-        default=None,
-        help="Root directory for shared assets (plotly.min.js). Defaults to output_folder.",
-    )
-    add_logging_args(parser)
-
-    import sys
-
-    args = parser.parse_args()
-    command_line = " ".join(sys.argv)
-
-    configure_logging_from_args(args)
-
-    main(
-        args.reads_assignment_file,
-        args.summary_file,
-        args.output_folder,
-        args.threshold,
-        UNCLEAR_RANGE,
-        args.human_fasta,
-        args.plasmid_gb,
-        args.sequencing_file,
-        command_line,
-        args.static_report,
-        args.plotly_mode,
-        args.output_root,
     )

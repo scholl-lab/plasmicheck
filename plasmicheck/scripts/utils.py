@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import argparse
+import base64
 import hashlib
 import logging
 import os
 import re
 import subprocess
-import sys
 import tarfile
 import time  # Added for retry delay
 from datetime import datetime, timezone
@@ -16,6 +15,14 @@ from plasmicheck.config import get_config
 
 _cfg = get_config()
 SUPPORTED_FORMATS: dict[str, Any] = _cfg["supported_formats"]
+
+
+def encode_image_to_base64(image_path: str) -> str:
+    """Encode a PNG image file as a data:image/png;base64 URI."""
+    logging.info(f"Encoding image {image_path} to base64")
+    with open(image_path, "rb") as image_file:
+        encoded_string: str = base64.b64encode(image_file.read()).decode("utf-8")
+    return f"data:image/png;base64,{encoded_string}"
 
 
 def calculate_md5(file_path: str) -> str:
@@ -46,37 +53,6 @@ def write_md5sum(file_path: str, file_type: str, output_folder: str) -> None:
 def sanitize_filename(filename: str) -> str:
     """Sanitize a filename by replacing non-alphanumeric characters with underscores."""
     return re.sub(r"[^a-zA-Z0-9_-]", "_", filename)
-
-
-def setup_logging(log_level: int = logging.INFO, log_file: str | None = None) -> None:
-    """Setup logging configuration, avoid adding multiple handlers."""
-    logger: logging.Logger = logging.getLogger()
-    if not logger.handlers:  # Avoid adding multiple handlers
-        handler: logging.StreamHandler[Any] = logging.StreamHandler(sys.stdout)
-        formatter: logging.Formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-
-        if log_file:
-            file_handler: logging.FileHandler = logging.FileHandler(log_file)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-
-        logger.setLevel(log_level)
-
-
-def add_logging_args(parser: argparse.ArgumentParser) -> None:
-    """Add standard --log-level and --log-file arguments to a parser."""
-    parser.add_argument("--log-level", help="Set the logging level", default="INFO")
-    parser.add_argument("--log-file", help="Set the log output file", default=None)
-
-
-def configure_logging_from_args(args: argparse.Namespace) -> None:
-    """Configure logging from parsed CLI arguments."""
-    log_level: int = getattr(logging, args.log_level.upper(), logging.INFO)
-    setup_logging(log_level=log_level, log_file=args.log_file)
 
 
 def run_command(command: str) -> subprocess.CompletedProcess[str]:

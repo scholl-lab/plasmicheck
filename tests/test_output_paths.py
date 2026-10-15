@@ -370,22 +370,8 @@ def test_output_paths_with_read_compare_outputs(tmp_path: Path) -> None:
     # Read outputs with read_compare_outputs
     reads_df, summary_df = read_compare_outputs(str(tmp_path))
 
-    # Verify reads DataFrame
-    assert len(reads_df) == 4  # 2 reads from sample1 + 2 from sample2
-    assert set(reads_df["Sample"]) == {"sampleA", "sampleB"}
-    assert set(reads_df["Plasmid"]) == {"plasmidX", "plasmidY"}
-
-    # Check sample1 reads
-    sample1_reads = reads_df[reads_df["Sample"] == "sampleA"]
-    assert len(sample1_reads) == 2
-    assert (sample1_reads["Plasmid"] == "plasmidX").all()
-    assert set(sample1_reads["ReadName"]) == {"read1", "read2"}
-
-    # Check sample2 reads
-    sample2_reads = reads_df[reads_df["Sample"] == "sampleB"]
-    assert len(sample2_reads) == 2
-    assert (sample2_reads["Plasmid"] == "plasmidY").all()
-    assert set(sample2_reads["ReadName"]) == {"read3", "read4"}
+    # Verify reads DataFrame is empty (#109.1: read_compare_outputs skips .reads_assignment.tsv)
+    assert reads_df.empty
 
     # Verify summary DataFrame
     assert len(summary_df) == 8  # 4 rows from sample1 + 4 from sample2

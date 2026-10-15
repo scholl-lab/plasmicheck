@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -75,7 +77,7 @@ def test_generate_heatmap_matplotlib_creates_png(tmp_path: Path) -> None:
 
     output_path = tmp_path / "heatmap.png"
     threshold = 0.8
-    plot_config = {}
+    plot_config: dict[str, Any] = {}
 
     generate_heatmap_matplotlib(ratio_data, output_path, threshold, plot_config)
 
@@ -166,7 +168,7 @@ def test_plot_backend_cli_flag_exists() -> None:
     """Test that --plot-backend flag exists in CLI help output."""
     # Test pipeline command
     result_pipeline = subprocess.run(
-        ["plasmicheck", "pipeline", "--help"],
+        [sys.executable, "-m", "plasmicheck.cli", "pipeline", "--help"],
         capture_output=True,
         text=True,
         check=True,
@@ -175,7 +177,7 @@ def test_plot_backend_cli_flag_exists() -> None:
 
     # Test report command
     result_report = subprocess.run(
-        ["plasmicheck", "report", "--help"],
+        [sys.executable, "-m", "plasmicheck.cli", "report", "--help"],
         capture_output=True,
         text=True,
         check=True,
@@ -184,7 +186,7 @@ def test_plot_backend_cli_flag_exists() -> None:
 
     # Test summary_reports command
     result_summary = subprocess.run(
-        ["plasmicheck", "summary_reports", "--help"],
+        [sys.executable, "-m", "plasmicheck.cli", "summary_reports", "--help"],
         capture_output=True,
         text=True,
         check=True,
@@ -193,8 +195,8 @@ def test_plot_backend_cli_flag_exists() -> None:
 
 
 @pytest.mark.unit
-def test_plot_backend_default_is_plotly() -> None:
-    """Test that the default value for --plot-backend is 'plotly'."""
+def test_plot_backend_default_is_matplotlib() -> None:
+    """Test that the default value for --plot-backend is 'matplotlib'."""
     import inspect
 
     from plasmicheck.scripts.generate_report import main
@@ -203,7 +205,33 @@ def test_plot_backend_default_is_plotly() -> None:
     plot_backend_param = sig.parameters.get("plot_backend")
 
     assert plot_backend_param is not None
-    assert plot_backend_param.default == "plotly"
+    assert plot_backend_param.default == "matplotlib"
+
+
+@pytest.mark.unit
+def test_generate_boxplot_matplotlib_with_nans_and_total_reads(tmp_path: Path) -> None:
+    """Test that generate_boxplot_matplotlib handles NaN scores and total_reads."""
+    from plasmicheck.scripts.plotting.matplotlib_backend import generate_boxplot_matplotlib
+
+    reads_df = pd.DataFrame(
+        {
+            "ReadID": ["read1", "read2", "read3", "read4"],
+            "AssignedTo": ["Plasmid", "Plasmid", "Human", "Human"],
+            "PlasmidScore": [50.0, float("nan"), 20.0, float("nan")],
+            "HumanScore": [10.0, 15.0, float("nan"), 60.0],
+        }
+    )
+
+    output_path = tmp_path / "box_nan.png"
+    generate_boxplot_matplotlib(
+        reads_df,
+        output_path,
+        title="Custom Boxplot Title",
+        total_reads=500,
+    )
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
 
 
 @pytest.mark.unit
@@ -225,7 +253,7 @@ def test_matplotlib_backend_no_kaleido_import(
         def __getattr__(self, name: str) -> None:
             raise ImportError("kaleido is not available")
 
-    monkeypatch.setitem(sys.modules, "kaleido", MockKaleido())  # type: ignore[arg-type]
+    monkeypatch.setitem(sys.modules, "kaleido", MockKaleido())
 
     try:
         from plasmicheck.scripts.generate_report import generate_plots

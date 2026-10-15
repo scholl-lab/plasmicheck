@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ SUBCOMMANDS = [
     "report",
     "summary_reports",
     "cache",
+    "version",
 ]
 
 PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -506,3 +508,45 @@ class TestCLI:
         # Should NOT contain error about missing tools
         assert "minimap2" not in result.stderr.lower()
         assert "samtools" not in result.stderr.lower()
+
+    @pytest.mark.unit
+    def test_setup_logging_single_handler(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Verify setup_logging configures a single StreamHandler and logs each message once."""
+        from plasmicheck.cli import setup_logging
+
+        root_logger = logging.getLogger()
+        old_handlers = list(root_logger.handlers)
+        root_logger.handlers.clear()
+        try:
+            setup_logging(log_level=logging.INFO, log_file=None)
+            assert len(root_logger.handlers) == 1
+            assert isinstance(root_logger.handlers[0], logging.StreamHandler)
+
+            test_msg = "unique_single_stream_message_12345"
+            root_logger.info(test_msg)
+            captured = capsys.readouterr()
+            assert captured.out.count(test_msg) == 1
+            assert captured.err.count(test_msg) == 0
+        finally:
+            root_logger.handlers[:] = old_handlers
+
+    @pytest.mark.unit
+    def test_log_level_preserved_with_subcommand(self) -> None:
+        """Verify top-level --log-level is preserved when followed by a subcommand."""
+        from plasmicheck.cli import main
+
+        # Verify parsing --log-level DEBUG version
+        with (
+            patch("sys.argv", ["plasmicheck", "--log-level", "DEBUG", "version"]),
+            patch("plasmicheck.cli.setup_logging") as mock_setup,
+        ):
+            main()
+            mock_setup.assert_called_once_with(log_level=logging.DEBUG, log_file=None)
+
+        # Verify parsing version --log-level DEBUG
+        with (
+            patch("sys.argv", ["plasmicheck", "version", "--log-level", "DEBUG"]),
+            patch("plasmicheck.cli.setup_logging") as mock_setup,
+        ):
+            main()
+            mock_setup.assert_called_once_with(log_level=logging.DEBUG, log_file=None)
