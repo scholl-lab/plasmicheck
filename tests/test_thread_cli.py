@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 def test_pipeline_help_shows_threads_flag() -> None:
     """Test that plasmicheck pipeline --help includes --threads flag."""
     result = subprocess.run(
-        ["plasmicheck", "pipeline", "--help"],
+        [sys.executable, "-m", "plasmicheck.cli", "pipeline", "--help"],
         capture_output=True,
         text=True,
     )

@@ -79,3 +79,44 @@ class TestCreateIndexes:
 
         create_indexes(str(fasta), overwrite=False)
         assert mock_run.call_count == 2
+
+    @pytest.mark.unit
+    @patch("plasmicheck.scripts.create_indexes.subprocess.run")
+    def test_threads_parameter_passed_to_minimap2(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """threads parameter is forwarded to minimap2."""
+        fasta = tmp_path / "ref.fasta"
+        fasta.write_text(">seq\nATCG")
+
+        create_indexes(str(fasta), overwrite=True, threads=16)
+        minimap2_call = mock_run.call_args_list[0][0][0]
+        assert minimap2_call[0] == "minimap2"
+        assert minimap2_call[1] == "-t"
+        assert minimap2_call[2] == "16"
+
+    @pytest.mark.unit
+    def test_atomic_mmi_creation_and_replace(self, tmp_path: Path) -> None:
+        """Minimap2 writes to temporary file which is atomically replaced."""
+        import os
+
+        fasta = tmp_path / "ref.fasta"
+        fasta.write_text(">seq\nATCG")
+
+        # Fake subprocess.run to simulate minimap2 creating the temp file
+        def fake_run(cmd: list[str], check: bool = True) -> None:
+            if cmd[0] == "minimap2":
+                tmp_out = cmd[-2]
+                Path(tmp_out).write_text("fake_mmi_content")
+            elif cmd[0] == "samtools":
+                Path(f"{fasta}.fai").write_text("fake_fai_content")
+
+        with patch("plasmicheck.scripts.create_indexes.subprocess.run", side_effect=fake_run):
+            create_indexes(str(fasta), overwrite=True)
+
+        mmi_file = tmp_path / "ref.mmi"
+        assert mmi_file.exists()
+        assert mmi_file.read_text() == "fake_mmi_content"
+        # Verify no leftover .tmp file
+        tmp_mmi = tmp_path / f"ref.mmi.tmp.{os.getpid()}"
+        assert not tmp_mmi.exists()

@@ -314,6 +314,33 @@ def test_spliced_combined_key_uses_both_inputs(
     assert cache.get_spliced(str(plasmid2), str(human)) is None
 
 
+@pytest.mark.unit
+def test_spliced_cache_differentiates_padding(
+    tmp_path: Path,
+    sample_bam: Path,
+    sample_spliced_fasta: Path,
+    sample_cdna_positions: Path,
+) -> None:
+    """Test that get_spliced and put_spliced differentiate different padding values."""
+    cache = CacheManager(tmp_path / "cache")
+    plasmid = tmp_path / "plasmid.fasta"
+    plasmid.write_text(">plasmid\nACGT\n")
+    human = tmp_path / "human.fasta"
+    human.write_text(">human\nATGC\n")
+
+    cache.put_spliced(
+        str(plasmid),
+        str(human),
+        str(sample_bam),
+        str(sample_spliced_fasta),
+        str(sample_cdna_positions),
+        padding=1000,
+    )
+
+    assert cache.get_spliced(str(plasmid), str(human), padding=1000) is not None
+    assert cache.get_spliced(str(plasmid), str(human), padding=500) is None
+
+
 # Atomic write tests
 
 
