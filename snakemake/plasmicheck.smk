@@ -27,11 +27,11 @@ def get_mem_from_threads(wildcards, threads):
 # Define the rules
 rule all:
     input:
-        expand(f"logs/{{bam_basename}}__{{plasmid_basename}}.log", 
+        expand(f"logs/{{bam_basename}}__{{plasmid_basename}}.log",
                zip,
                bam_basename = [jobs[key]['bam_basename'] for key in jobs.keys()],
                plasmid_basename = [jobs[key]['plasmid_basename'] for key in jobs.keys()])
-			   
+
 rule run_plasmicheck_pipeline:
     input:
         bam = lambda wildcards: f"{jobs[wildcards.bam_basename + '__' + wildcards.plasmid_basename]['bam']}",

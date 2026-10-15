@@ -1,5 +1,19 @@
 version: 2
 updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    versioning-strategy: increase-if-necessary
+    allow:
+      - dependency-type: all
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -7,10 +21,19 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-  - package-ecosystem: uv
+  - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
     groups:
-      python:
+      docker:
         patterns: ["*"]
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly

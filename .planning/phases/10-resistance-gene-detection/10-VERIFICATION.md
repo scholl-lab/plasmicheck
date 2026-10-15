@@ -173,11 +173,11 @@ else:
 1. **No GenBank file** (`genbank_file=None`, no .gb in output_dir)
    - Output: `ResistanceGenesAvailable\tfalse`
    - Test: test_summary_tsv_no_genbank
-   
+
 2. **GenBank present, no genes detected** (`genbank_file` provided, detect_resistance_genes returns [])
    - Output: `ResistanceGenesAvailable\ttrue` + `ResistanceGenes\tNone`
    - Test: test_summary_tsv_genbank_no_genes
-   
+
 3. **GenBank present, genes detected** (`genbank_file` provided, detect_resistance_genes returns [gene, ...])
    - Output: `ResistanceGenesAvailable\ttrue` + `ResistanceGenes\tAmpR` + ResGene_ rows
    - Test: test_summary_tsv_includes_resistance_genes

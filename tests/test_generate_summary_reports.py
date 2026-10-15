@@ -8,6 +8,8 @@ import pandas as pd
 import pytest
 
 from plasmicheck.scripts.generate_summary_reports import (
+    PLOT_CONFIG,
+    UNCLEAR_RANGE,
     _extract_sample_plasmid,
     _format_verdict_hover,
     _sanitize_for_excel,
@@ -17,13 +19,27 @@ from plasmicheck.scripts.generate_summary_reports import (
     create_metric_heatmap_data,
     create_resistance_gene_table,
     find_tsv_files,
+    plot_boxplot,
     plot_coverage_outside_insert_boxplot,
+    plot_heatmap,
     plot_metric_heatmap,
     plot_verdict_bar_by_plasmid,
     plot_verdict_bar_by_sample,
     read_compare_outputs,
     save_tables_as_tsv_and_excel,
 )
+
+
+@pytest.mark.unit
+def test_ratio_plots_disable_cloud_sharing(tmp_path: Path) -> None:
+    ratios = pd.DataFrame({"Sample": ["s1"], "Plasmid": ["p1"], "Value": [0.1]})
+    pivot = ratios.pivot(index="Sample", columns="Plasmid", values="Value")
+    outputs = [
+        plot_boxplot(pivot, str(tmp_path)),
+        plot_heatmap(ratios, str(tmp_path), 0.8, UNCLEAR_RANGE, PLOT_CONFIG),
+    ]
+    for html_file, _ in outputs:
+        assert '"showSendToCloud": false' in Path(html_file).read_text()
 
 
 class TestApplySorting:
@@ -322,6 +338,7 @@ class TestPlotMetricHeatmap:
             df, str(tmp_path), "Test Metric", static_report=False
         )
         assert Path(html_file).exists()
+        assert '"showSendToCloud": false' in Path(html_file).read_text()
         assert png_file is None
 
     @pytest.mark.unit
@@ -340,6 +357,7 @@ class TestPlotMetricHeatmap:
             df, str(tmp_path), "Test Metric", vmax=50.0, static_report=False
         )
         assert Path(html_file).exists()
+        assert '"showSendToCloud": false' in Path(html_file).read_text()
         assert png_file is None
 
 
@@ -358,6 +376,7 @@ class TestPlotCoverageOutsideInsertBoxplot:
             df, str(tmp_path), static_report=False
         )
         assert Path(html_file).exists()
+        assert '"showSendToCloud": false' in Path(html_file).read_text()
         assert png_file is None
 
     @pytest.mark.unit
@@ -827,6 +846,7 @@ class TestPlotVerdictBarByPlasmid:
         html_file, png_file = plot_verdict_bar_by_plasmid(df, str(tmp_path), static_report=False)
 
         assert Path(html_file).exists()
+        assert '"showSendToCloud": false' in Path(html_file).read_text()
         assert png_file is None
 
     @pytest.mark.unit
@@ -866,6 +886,7 @@ class TestPlotVerdictBarByPlasmid:
         )
 
         assert Path(html_file).exists()
+        assert '"showSendToCloud": false' in Path(html_file).read_text()
         assert png_file is not None
         assert Path(png_file).exists()
 
@@ -890,6 +911,7 @@ class TestPlotVerdictBarBySample:
         html_file, png_file = plot_verdict_bar_by_sample(df, str(tmp_path), static_report=False)
 
         assert Path(html_file).exists()
+        assert '"showSendToCloud": false' in Path(html_file).read_text()
         assert png_file is None
 
     @pytest.mark.unit
@@ -929,5 +951,6 @@ class TestPlotVerdictBarBySample:
         )
 
         assert Path(html_file).exists()
+        assert '"showSendToCloud": false' in Path(html_file).read_text()
         assert png_file is not None
         assert Path(png_file).exists()

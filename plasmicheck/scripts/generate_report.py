@@ -94,6 +94,7 @@ _PLOTLY_LAYOUT: dict[str, Any] = {
 }
 
 _PLOTLY_CONFIG: dict[str, Any] = {
+    "showSendToCloud": False,
     "displayModeBar": "hover",
     "displaylogo": False,
     "modeBarButtonsToRemove": ["pan2d", "lasso2d", "select2d", "autoScale2d"],
