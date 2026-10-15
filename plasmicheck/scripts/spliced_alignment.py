@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from shlex import quote
 from typing import Any
 
 import pysam
@@ -40,7 +41,10 @@ def spliced_alignment(
     )
     try:
         run_command(
-            f"minimap2 -t {MINIMAP2_THREADS} -ax splice {human_index} {plasmid_fasta} | samtools view -@ {SAMTOOLS_THREADS} -h -F 4 - | samtools sort -@ {SAMTOOLS_THREADS} -o {output_bam}"
+            f"minimap2 -t {quote(str(MINIMAP2_THREADS))} -ax splice "
+            f"{quote(human_index)} {quote(plasmid_fasta)} "
+            f"| samtools view -@ {quote(str(SAMTOOLS_THREADS))} -h -F 4 - "
+            f"| samtools sort -@ {quote(str(SAMTOOLS_THREADS))} -o {quote(output_bam)}"
         )
     except Exception as e:
         logging.error(f"Failed to perform spliced alignment: {e}")
@@ -52,7 +56,7 @@ def spliced_alignment(
 
     logging.info(f"Indexing BAM file: {output_bam}")
     try:
-        run_command(f"samtools index {output_bam}")
+        run_command(f"samtools index {quote(output_bam)}")
     except Exception as e:
         logging.error(f"Failed to index BAM file: {e}")
         raise

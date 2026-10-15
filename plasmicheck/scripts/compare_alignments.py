@@ -271,9 +271,9 @@ def count_mismatches_near_insert_end(
 
 
 def _namesort_bam(input_bam: str, output_bam: str) -> None:
-    """Sort a BAM by read name using samtools sort -n."""
+    """Sort names lexicographically to match the streaming merge comparison."""
     subprocess.run(
-        ["samtools", "sort", "-n", "-@", str(SAMTOOLS_THREADS), "-o", output_bam, input_bam],
+        ["samtools", "sort", "-N", "-@", str(SAMTOOLS_THREADS), "-o", output_bam, input_bam],
         check=True,
     )
 

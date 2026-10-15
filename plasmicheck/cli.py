@@ -238,6 +238,11 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         default=1000,
         help="Padding to add to both sides of the spanned regions (default: 1000)",
     )
+    parser_spliced.add_argument(
+        "--cDNA_output",
+        help="Output file for cDNA start and end positions in the plasmid reference",
+        default=None,
+    )
 
     # Pipeline Command
     parser_pipeline = subparsers.add_parser(

@@ -6,74 +6,131 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: "check --output-format=github"
-          src: "plasmicheck/ tests/"
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: "format --check --diff"
-          src: "plasmicheck/ tests/"
+env:
+  UV_VERSION: "0.11.28"
 
-  type-check:
-    name: Type Check
-    runs-on: ubuntu-latest
+jobs:
+  quality:
+    name: Quality & Packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.10"
-      - uses: astral-sh/setup-uv@v5
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
           enable-cache: true
-      - run: uv pip install --system -e ".[dev]"
-      - run: python -m mypy plasmicheck/
+      - run: uv sync --locked
+      - run: make lint format-check typecheck build
+      - name: Smoke test wheel and sdist outside the checkout
+        shell: bash
+        run: |
+          uv export --locked --no-dev --no-emit-project --format requirements-txt \
+            > "$RUNNER_TEMP/package-requirements.txt"
+          for artifact in "$GITHUB_WORKSPACE"/dist/*.whl "$GITHUB_WORKSPACE"/dist/*.tar.gz; do
+            uv venv --clear --python 3.12 "$RUNNER_TEMP/package-smoke"
+            uv pip sync --python "$RUNNER_TEMP/package-smoke/bin/python" \
+              "$RUNNER_TEMP/package-requirements.txt"
+            uv pip install --python "$RUNNER_TEMP/package-smoke/bin/python" --no-deps "$artifact"
+            (
+              cd "$RUNNER_TEMP"
+              "$RUNNER_TEMP/package-smoke/bin/plasmicheck" --version
+              "$RUNNER_TEMP/package-smoke/bin/python" - <<'PY'
+          import sys
+          from pathlib import Path
+
+          import plasmicheck
+          from plasmicheck.resources import get_resource_path
+
+          assert Path(plasmicheck.__file__).is_relative_to(Path(sys.prefix))
+          for resource in (
+              "config.json", "py.typed", "templates/report_template.html",
+              "templates/summary_template.html", "static/img/plasmicheck_ascii.txt",
+              "static/img/plasmicheck_logo.svg", "static/img/plasmicheck_logo_200px.png",
+              "static/img/plasmicheck_logo_600px.png",
+          ):
+              assert get_resource_path(resource).is_file(), resource
+          PY
+            )
+          done
 
   test:
     name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v5
-        with:
           enable-cache: true
-      - run: uv pip install --system -e ".[dev]"
-      - name: Install minimap2 and samtools
-        run: sudo apt-get update && sudo apt-get install -y minimap2 samtools
-      - run: |
-          python -m pytest -m "not slow" tests/ \
-            --verbose \
-            --cov=plasmicheck \
-            --cov-report=xml \
-            --cov-report=term-missing
+      - run: uv sync --locked
+      - name: Unit tests with branch coverage
+        run: make test
+      - name: Install integration tools
+        if: matrix.python-version == '3.12'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minimap2 samtools
+      - name: Integration tests
+        if: matrix.python-version == '3.12'
+        run: make test-integration
+      - name: Upload coverage report
+        if: always() && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
+  docker:
+    name: Docker smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Validate workflow syntax and shell commands
+        run: make lint-actions
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: test
+          push: false
+          cache-from: type=gha,scope=plasmicheck
+          cache-to: type=gha,scope=plasmicheck,mode=max
 
   ci-success:
     name: CI Success
-    needs: [lint, type-check, test]
+    needs: [quality, test, docker]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - run: |
-          if [[ "${{ needs.lint.result }}" != "success" ]] || \
-             [[ "${{ needs.type-check.result }}" != "success" ]] || \
-             [[ "${{ needs.test.result }}" != "success" ]]; then
-            exit 1
-          fi
+      - name: Require every check to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            test "$result" = success || exit 1
+          done

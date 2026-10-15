@@ -174,6 +174,7 @@ def compare_summary_tsv(baseline_text: str, current_text: str) -> list[str]:
 
     # Parse with pandas
     from io import StringIO
+
     baseline_df = pd.read_csv(StringIO(baseline_text), sep="\t", dtype=str)
     current_df = pd.read_csv(StringIO(current_text), sep="\t", dtype=str)
 
@@ -182,7 +183,9 @@ def compare_summary_tsv(baseline_text: str, current_text: str) -> list[str]:
         return errors
 
     # Compare each row
-    for baseline_row, current_row in zip(baseline_df.itertuples(), current_df.itertuples(), strict=True):
+    for baseline_row, current_row in zip(
+        baseline_df.itertuples(), current_df.itertuples(), strict=True
+    ):
         category = baseline_row.Category
 
         if str(category).lower() == "verdict":
@@ -190,14 +193,18 @@ def compare_summary_tsv(baseline_text: str, current_text: str) -> list[str]:
             baseline_val = str(baseline_row.Count).strip().lower()
             current_val = str(current_row.Count).strip().lower()
             if baseline_val != current_val:
-                errors.append(f"Verdict mismatch: baseline='{baseline_val}', current='{current_val}'")
+                errors.append(
+                    f"Verdict mismatch: baseline='{baseline_val}', current='{current_val}'"
+                )
 
         elif category in ["Plasmid", "Human", "Tied"]:
             # Exact integer match
             baseline_int = int(baseline_row.Count)  # type: ignore[arg-type]
             current_int = int(current_row.Count)  # type: ignore[arg-type]
             if baseline_int != current_int:
-                errors.append(f"{category} count mismatch: baseline={baseline_int}, current={current_int}")
+                errors.append(
+                    f"{category} count mismatch: baseline={baseline_int}, current={current_int}"
+                )
 
         elif category in ["Ratio", "CoverageOutsideINSERT"]:
             # Float comparison with tolerance
@@ -214,7 +221,9 @@ def compare_summary_tsv(baseline_text: str, current_text: str) -> list[str]:
             baseline_val = str(baseline_row.Count).strip()
             current_val = str(current_row.Count).strip()
             if baseline_val != current_val:
-                errors.append(f"MismatchesNearINSERT mismatch: baseline='{baseline_val}', current='{current_val}'")
+                errors.append(
+                    f"MismatchesNearINSERT mismatch: baseline='{baseline_val}', current='{current_val}'"
+                )
 
     return errors
 
@@ -233,6 +242,7 @@ def compare_reads_assignment_tsv(baseline_text: str, current_text: str) -> list[
 
     # Parse with pandas
     from io import StringIO
+
     baseline_df = pd.read_csv(StringIO(baseline_text), sep="\t")
     current_df = pd.read_csv(StringIO(current_text), sep="\t")
 
@@ -285,7 +295,9 @@ def compare_against_baseline(baseline_dir: Path) -> bool:
 
     baseline_version = baseline_data.get("version", "unknown")
     if baseline_version != __version__:
-        print(f"WARNING: Baseline was generated with v{baseline_version}, current version is v{__version__}")
+        print(
+            f"WARNING: Baseline was generated with v{baseline_version}, current version is v{__version__}"
+        )
         print()
 
     print(f"Comparing against baseline (v{baseline_version})...")
@@ -299,9 +311,9 @@ def compare_against_baseline(baseline_dir: Path) -> bool:
     ]
 
     for scenario_name, r1_file, r2_file in scenarios:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"Scenario: {scenario_name}")
-        print('='*70)
+        print("=" * 70)
 
         # Run pipeline
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -313,8 +325,7 @@ def compare_against_baseline(baseline_dir: Path) -> bool:
         # Compare summary.tsv
         print("Comparing summary.tsv...")
         summary_errors = compare_summary_tsv(
-            baseline_results["summary"],
-            current_results["summary"]
+            baseline_results["summary"], current_results["summary"]
         )
 
         if summary_errors:
@@ -328,8 +339,7 @@ def compare_against_baseline(baseline_dir: Path) -> bool:
         # Compare reads_assignment.tsv
         print("Comparing reads_assignment.tsv...")
         reads_errors = compare_reads_assignment_tsv(
-            baseline_results["reads_assignment"],
-            current_results["reads_assignment"]
+            baseline_results["reads_assignment"], current_results["reads_assignment"]
         )
 
         if reads_errors:
@@ -340,13 +350,13 @@ def compare_against_baseline(baseline_dir: Path) -> bool:
         else:
             print("  PASS - Reads assignment matches baseline")
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     if all_pass:
         print("RESULT: All tests PASSED")
-        print('='*70)
+        print("=" * 70)
     else:
         print("RESULT: Some tests FAILED")
-        print('='*70)
+        print("=" * 70)
 
     return all_pass
 
@@ -355,18 +365,16 @@ def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description="Regression test for PlasmiCheck pipeline",
-        epilog="Note: First run may be slower due to index generation."
+        epilog="Note: First run may be slower due to index generation.",
     )
     parser.add_argument(
-        "--generate",
-        action="store_true",
-        help="Generate baseline from current pipeline output"
+        "--generate", action="store_true", help="Generate baseline from current pipeline output"
     )
     parser.add_argument(
         "--baseline-dir",
         type=Path,
         default=get_repo_root() / "scripts" / ".regression_cache",
-        help="Directory to store/load baseline (default: scripts/.regression_cache/)"
+        help="Directory to store/load baseline (default: scripts/.regression_cache/)",
     )
 
     args = parser.parse_args()
@@ -375,7 +383,9 @@ def main() -> int:
     tools_available, error_msg = check_external_tools()
     if not tools_available:
         print(f"ERROR: {error_msg}")
-        print("\nRegression tests require minimap2 and samtools to be installed and available on PATH.")
+        print(
+            "\nRegression tests require minimap2 and samtools to be installed and available on PATH."
+        )
         print("Please install these tools and try again.")
         return 1
 
@@ -393,6 +403,7 @@ def main() -> int:
         except Exception as e:
             print(f"\nERROR: Failed to compare against baseline: {e}")
             import traceback
+
             traceback.print_exc()
             return 1
 

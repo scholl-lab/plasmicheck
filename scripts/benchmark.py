@@ -144,7 +144,12 @@ def run_pipeline_step(
     else:
         # Still run but don't time
         convert_plasmidfile_to_fasta(
-            plasmid_gb, plasmid_fasta, "genbank", shift_bases=500, generate_shifted=False, overwrite=True
+            plasmid_gb,
+            plasmid_fasta,
+            "genbank",
+            shift_bases=500,
+            generate_shifted=False,
+            overwrite=True,
         )
 
     # Step 2: Create indexes
@@ -159,7 +164,9 @@ def run_pipeline_step(
     # Step 3: Spliced alignment (includes extract_human_reference, create_indexes, extract_cdna_positions)
     if should_time("spliced"):
         with timed_step("spliced", timings):
-            spanned_regions = spliced_alignment(human_index, plasmid_fasta, spliced_bam, padding=1000)
+            spanned_regions = spliced_alignment(
+                human_index, plasmid_fasta, spliced_bam, padding=1000
+            )
             extract_human_reference(human_fasta, spanned_regions, spliced_fasta)
             create_indexes(spliced_fasta, overwrite=True)
             extract_plasmid_cdna_positions(plasmid_fasta, spliced_bam, cdna_positions)
@@ -311,7 +318,10 @@ def run_benchmark(
 
 
 def format_benchmark_report(
-    timings: dict[str, list[float]], dataset_dir: str, iterations: int, enabled_steps: set[str] | None
+    timings: dict[str, list[float]],
+    dataset_dir: str,
+    iterations: int,
+    enabled_steps: set[str] | None,
 ) -> str:
     """Format benchmark results as Markdown.
 
@@ -366,9 +376,7 @@ def format_benchmark_report(
 
         # Mark steps that weren't timed
         if enabled_steps and step not in enabled_steps:
-            lines.append(
-                f"| {step} | — | — | — | — | — |"
-            )
+            lines.append(f"| {step} | — | — | — | — | — |")
         else:
             lines.append(
                 f"| {step} | {mean_val:.3f} | {std_val:.3f} | {min_val:.3f} | {max_val:.3f} | {pct:.1f}% |"
@@ -385,7 +393,9 @@ def format_benchmark_report(
     lines.append("")
     lines.append("- Warm-up iteration excluded from statistics")
     lines.append("- Index generation includes both human and plasmid references")
-    lines.append("- Spliced step includes alignment, extraction, indexing, and cDNA position extraction")
+    lines.append(
+        "- Spliced step includes alignment, extraction, indexing, and cDNA position extraction"
+    )
     lines.append("- Align step includes both plasmid and spliced human alignments")
     lines.append("- Timings include subprocess overhead (minimap2, samtools)")
     if enabled_steps:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from shlex import quote
 
 from plasmicheck.config import get_config
 
@@ -39,19 +40,28 @@ def align_reads(
 
     if input_file.endswith(".bam"):
         command = (
-            f"samtools fasta {input_file} | minimap2 -t {minimap2_threads} -ax sr {reference_index} - "
-            f"| samtools view -@ {samtools_threads} -h -F 4 - | samtools sort -@ {samtools_threads} -m {samtools_sort_memory} -o {output_bam}"
+            f"samtools fasta {quote(input_file)} "
+            f"| minimap2 -t {quote(str(minimap2_threads))} -ax sr {quote(reference_index)} - "
+            f"| samtools view -@ {quote(str(samtools_threads))} -h -F 4 - "
+            f"| samtools sort -@ {quote(str(samtools_threads))} "
+            f"-m {quote(str(samtools_sort_memory))} -o {quote(output_bam)}"
         )
     elif input_file.endswith(fastq_extensions):
         if fastq2:
             command = (
-                f"minimap2 -t {minimap2_threads} -ax sr {reference_index} {input_file} {fastq2} "
-                f"| samtools view -@ {samtools_threads} -h -F 4 - | samtools sort -@ {samtools_threads} -m {samtools_sort_memory} -o {output_bam}"
+                f"minimap2 -t {quote(str(minimap2_threads))} -ax sr "
+                f"{quote(reference_index)} {quote(input_file)} {quote(fastq2)} "
+                f"| samtools view -@ {quote(str(samtools_threads))} -h -F 4 - "
+                f"| samtools sort -@ {quote(str(samtools_threads))} "
+                f"-m {quote(str(samtools_sort_memory))} -o {quote(output_bam)}"
             )
         else:
             command = (
-                f"minimap2 -t {minimap2_threads} -ax sr {reference_index} {input_file} "
-                f"| samtools view -@ {samtools_threads} -h -F 4 - | samtools sort -@ {samtools_threads} -m {samtools_sort_memory} -o {output_bam}"
+                f"minimap2 -t {quote(str(minimap2_threads))} -ax sr "
+                f"{quote(reference_index)} {quote(input_file)} "
+                f"| samtools view -@ {quote(str(samtools_threads))} -h -F 4 - "
+                f"| samtools sort -@ {quote(str(samtools_threads))} "
+                f"-m {quote(str(samtools_sort_memory))} -o {quote(output_bam)}"
             )
     else:
         logging.error(f"Unsupported input file type: {input_file}")
@@ -63,7 +73,7 @@ def align_reads(
     run_command(command)
 
     # Generate the BAI index with retry logic
-    run_command(f"samtools index {output_bam}")
+    run_command(f"samtools index {quote(output_bam)}")
 
     logging.info(
         f"Alignment completed successfully for {input_file}, output written to {output_bam}"
