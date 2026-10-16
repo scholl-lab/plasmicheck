@@ -52,7 +52,22 @@ def test_alignment_preserves_shell_metacharacters(
         expected_reads.append(fastq2)
     assert minimap_args == ["-t", "2", "-ax", "sr", reference, *expected_reads]
     if input_kind == "bam":
-        assert (command_log / "samtools-fasta").read_text().splitlines() == ["fasta", input_file]
+        assert (command_log / "samtools-collate").read_text().splitlines() == [
+            "collate",
+            "-@",
+            "1",
+            "-u",
+            "-O",
+            input_file,
+        ]
+        assert (command_log / "samtools-fastq").read_text().splitlines() == [
+            "fastq",
+            "-@",
+            "1",
+            "-F",
+            "0x900",
+            "-",
+        ]
     assert (command_log / "samtools-sort").read_text().splitlines() == [
         "sort",
         "-@",
@@ -64,6 +79,22 @@ def test_alignment_preserves_shell_metacharacters(
     ]
     assert (command_log / "samtools-index").read_text().splitlines() == ["index", output_bam]
     assert not (command_log / "injected").exists()
+
+
+@pytest.mark.unit
+def test_human_alignment_sorts_by_name_without_index(command_log: Path) -> None:
+    align_reads("human.mmi", "reads.fastq", "human_out.bam", "human", None, 2, 1, "2G")
+    assert (command_log / "samtools-sort").read_text().splitlines() == [
+        "sort",
+        "-N",
+        "-@",
+        "1",
+        "-m",
+        "2G",
+        "-o",
+        "human_out.bam",
+    ]
+    assert not (command_log / "samtools-index").exists()
 
 
 @pytest.mark.unit

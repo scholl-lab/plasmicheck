@@ -534,8 +534,43 @@ def run_pipeline(
 
     # Track results for batch resilience
     results: list[CombinationResult] = []
+    extracted_bam_fastqs: dict[str, str] = {}
 
-    with _progress_context(progress, plan.total_steps) as prog:
+    def _cleanup_extracted_fastqs() -> None:
+        for tmp_fq in extracted_bam_fastqs.values():
+            with contextlib.suppress(OSError):
+                if os.path.exists(tmp_fq):
+                    os.remove(tmp_fq)
+
+    with (
+        contextlib.ExitStack() as cleanup_stack,
+        _progress_context(progress, plan.total_steps) as prog,
+    ):
+        cleanup_stack.callback(_cleanup_extracted_fastqs)
+        if len(plan.plasmid_files) > 1:
+            for seq_input in plan.sequencing_inputs:
+                sf = seq_input.file1
+                if (
+                    sf.endswith(".bam")
+                    and sf not in extracted_bam_fastqs
+                    and os.path.exists(sf)
+                    and os.path.getsize(sf) > 64
+                ):
+                    os.makedirs(output_folder, exist_ok=True)
+                    tmp_fq = os.path.join(
+                        output_folder,
+                        f".tmp_{sanitize_filename(os.path.basename(sf))}_{os.getpid()}.fastq",
+                    )
+                    logging.info(f"Pre-collating paired reads from BAM once for {sf}...")
+                    from shlex import quote as _quote
+
+                    from .utils import run_command as _run_cmd
+
+                    _run_cmd(
+                        f"samtools collate -@ {_quote(str(sam_threads))} -u -O {_quote(sf)} "
+                        f"| samtools fastq -@ {_quote(str(sam_threads))} -F 0x900 - > {_quote(tmp_fq)}"
+                    )
+                    extracted_bam_fastqs[sf] = tmp_fq
         for plasmid_file in plan.plasmid_files:
             # Auto-detect plasmid file format from magic bytes and content
             from .format_detection import detect_format
@@ -718,27 +753,63 @@ def run_pipeline(
                     # Step 5: Align reads
                     plasmid_bam = str(paths.plasmid_bam)
                     spliced_human_bam = str(paths.spliced_human_bam)
+                    align_input = extracted_bam_fastqs.get(sequencing_file, sequencing_file)
                     logging.info("Aligning reads to the plasmid and spliced human reference...")
-                    align_reads(
-                        plasmid_index,
-                        sequencing_file,
-                        plasmid_bam,
-                        "plasmid",
-                        fastq2,
-                        minimap2_threads=mm2_threads,
-                        samtools_threads=sam_threads,
-                        samtools_sort_memory=sort_memory,
-                    )
-                    align_reads(
-                        spliced_index,
-                        sequencing_file,
-                        spliced_human_bam,
-                        "human",
-                        fastq2,
-                        minimap2_threads=mm2_threads,
-                        samtools_threads=sam_threads,
-                        samtools_sort_memory=sort_memory,
-                    )
+                    if (
+                        total_threads >= 4
+                        and os.path.exists(plasmid_index)
+                        and os.path.exists(spliced_index)
+                    ):
+                        from concurrent.futures import ThreadPoolExecutor
+
+                        half_mm2 = max(1, mm2_threads // 2)
+                        half_sam = max(1, sam_threads // 2)
+                        with ThreadPoolExecutor(max_workers=2) as pool:
+                            f1 = pool.submit(
+                                align_reads,
+                                plasmid_index,
+                                align_input,
+                                plasmid_bam,
+                                "plasmid",
+                                fastq2,
+                                minimap2_threads=half_mm2,
+                                samtools_threads=half_sam,
+                                samtools_sort_memory=sort_memory,
+                            )
+                            f2 = pool.submit(
+                                align_reads,
+                                spliced_index,
+                                align_input,
+                                spliced_human_bam,
+                                "human",
+                                fastq2,
+                                minimap2_threads=half_mm2,
+                                samtools_threads=half_sam,
+                                samtools_sort_memory=sort_memory,
+                            )
+                            f1.result()
+                            f2.result()
+                    else:
+                        align_reads(
+                            plasmid_index,
+                            align_input,
+                            plasmid_bam,
+                            "plasmid",
+                            fastq2,
+                            minimap2_threads=mm2_threads,
+                            samtools_threads=sam_threads,
+                            samtools_sort_memory=sort_memory,
+                        )
+                        align_reads(
+                            spliced_index,
+                            align_input,
+                            spliced_human_bam,
+                            "human",
+                            fastq2,
+                            minimap2_threads=mm2_threads,
+                            samtools_threads=sam_threads,
+                            samtools_sort_memory=sort_memory,
+                        )
                     if md5_level in ["all", "intermediate"]:
                         write_md5sum(plasmid_bam, "intermediate", output_subfolder)
                         write_md5sum(spliced_human_bam, "intermediate", output_subfolder)

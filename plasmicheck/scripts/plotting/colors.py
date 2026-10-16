@@ -25,17 +25,17 @@ ASSIGNMENT_COLORS: dict[str, str] = {
     "Ambiguous": "#A9A9A9",  # darkgray
 }
 
-# Heatmap colors matching Plotly config
+# Heatmap colors matching clinical status palette
 HEATMAP_COLORS: dict[str, str] = {
-    "not_contaminated": "lightblue",
-    "unclear": "orange",
-    "contaminated": "red",
+    "not_contaminated": "#10b981",  # emerald-500
+    "unclear": "#f59e0b",  # amber-500
+    "contaminated": "#ef4444",  # red-500
 }
 
 # Verdict bar chart colors derived from heatmap colors
 VERDICT_COLORS: dict[str, str] = {
-    "Clean": HEATMAP_COLORS["not_contaminated"],  # lightblue
-    "Unclear": HEATMAP_COLORS["unclear"],  # orange
-    "Contaminated": HEATMAP_COLORS["contaminated"],  # red
-    "No Result": "#D3D3D3",  # lightgray (matches Backbone_Only)
+    "Clean": HEATMAP_COLORS["not_contaminated"],
+    "Unclear": HEATMAP_COLORS["unclear"],
+    "Contaminated": HEATMAP_COLORS["contaminated"],
+    "No Result": "#94a3b8",  # slate-400
 }

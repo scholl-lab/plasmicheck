@@ -703,3 +703,23 @@ def test_pcmv6_ac_ires_gfp_puro_detects_markers(tmp_path: Path) -> None:
 
     genes = detect_resistance_genes(str(gb_file))
     assert len(genes) >= 1
+
+
+@pytest.mark.unit
+def test_excludes_lacz_alpha_and_deduplicates_overlapping_cds(tmp_path: Path) -> None:
+    """lacZ alpha cloning peptide is excluded while overlapping AmpR CDS annotations are deduplicated."""
+    gb_file = create_test_genbank(
+        tmp_path,
+        [
+            {"type": "CDS", "label": "lacZ alpha", "start": 100, "end": 300},
+            {"type": "CDS", "label": "NeomycinR", "start": 400, "end": 1200},
+            {"type": "CDS", "label": "AmpR", "start": 1500, "end": 2360},
+            {"type": "CDS", "label": "AmpR", "start": 1569, "end": 2360},
+        ],
+    )
+    genes = detect_resistance_genes(str(gb_file))
+    names = [g.name for g in genes]
+    assert "lacZ alpha" not in names
+    assert names == ["NeomycinR", "AmpR"]
+    assert genes[1].start == 1500
+    assert genes[1].end == 2359
