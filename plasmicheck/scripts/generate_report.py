@@ -341,21 +341,25 @@ def _compute_gauge_position(
     unclear_lower: float,
     unclear_upper: float,
 ) -> float:
-    """Map ratio to 0-100 gauge position using piecewise linear scale.
+    """Map ratio to 0-100 gauge position across three equal-width visual zones.
 
-    Zones: [0, unclear_lower] -> 0-40%,  [unclear_lower, unclear_upper] -> 40-60%,
-    [unclear_upper, 10*unclear_upper] -> 60-95%, clamped at 97.
+    Zones: [0, unclear_lower] -> 0-33.33%, [unclear_lower, unclear_upper] -> 33.33-66.67%,
+    [unclear_upper, 10*unclear_upper] -> 66.67-95%, clamped to [3.0, 95.0] for badge padding.
     """
     if ratio <= 0:
-        return 0.0
+        return 3.0
     if ratio < unclear_lower:
-        return (ratio / unclear_lower) * 40.0
+        return max(3.0, (ratio / unclear_lower) * (100.0 / 3.0))
     if ratio <= unclear_upper:
-        return 40.0 + ((ratio - unclear_lower) / (unclear_upper - unclear_lower)) * 20.0
+        return (100.0 / 3.0) + ((ratio - unclear_lower) / (unclear_upper - unclear_lower)) * (
+            100.0 / 3.0
+        )
     upper_max = 10.0 * unclear_upper
     if ratio <= upper_max:
-        return 60.0 + ((ratio - unclear_upper) / (upper_max - unclear_upper)) * 35.0
-    return 97.0
+        return (200.0 / 3.0) + ((ratio - unclear_upper) / (upper_max - unclear_upper)) * (
+            95.0 - (200.0 / 3.0)
+        )
+    return 95.0
 
 
 def _parse_mismatches(raw: str) -> tuple[int, int]:
