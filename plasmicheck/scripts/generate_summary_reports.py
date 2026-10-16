@@ -328,7 +328,12 @@ def plot_boxplot(
         hover_data={"Sample": True, "Value": ":.4f", "log_value": False},
     )
 
-    thresh_log = float(np.log10(DEFAULT_THRESHOLD + LOG_OFFSET))
+    contam_cutoff = (
+        UNCLEAR_RANGE["upper_bound"]
+        if UNCLEAR_RANGE["lower_bound"] <= DEFAULT_THRESHOLD <= UNCLEAR_RANGE["upper_bound"]
+        else DEFAULT_THRESHOLD
+    )
+    thresh_log = float(np.log10(contam_cutoff + LOG_OFFSET))
     low_log = float(np.log10(UNCLEAR_RANGE["lower_bound"] + LOG_OFFSET))
     high_log = float(np.log10(UNCLEAR_RANGE["upper_bound"] + LOG_OFFSET))
 
@@ -337,8 +342,8 @@ def plot_boxplot(
         y1=high_log,
         fillcolor="rgba(245, 158, 11, 0.12)",
         line_width=0,
-        annotation_text="Unclear zone",
-        annotation_position="top left",
+        annotation_text=f"Unclear ({UNCLEAR_RANGE['lower_bound']}-{UNCLEAR_RANGE['upper_bound']})",
+        annotation_position="bottom right",
         annotation_font={"size": 10, "color": "#b45309"},
     )
     fig.add_hline(
@@ -346,8 +351,8 @@ def plot_boxplot(
         line_dash="dash",
         line_color="#dc2626",
         line_width=1.5,
-        annotation_text=f"Threshold ({DEFAULT_THRESHOLD})",
-        annotation_position="bottom right",
+        annotation_text=f"Contaminated (> {contam_cutoff})",
+        annotation_position="top right",
         annotation_font={"size": 10, "color": "#dc2626"},
     )
 
@@ -402,6 +407,11 @@ def plot_boxplot(
 
 def categorize_value(val: float, threshold: float, unclear_range: dict[str, float]) -> str:
     """Categorize a ratio value matching compare_alignments.py verdict boundaries."""
+    if (
+        threshold == DEFAULT_THRESHOLD
+        and unclear_range["lower_bound"] <= val <= unclear_range["upper_bound"]
+    ):
+        return "Unclear"
     if val > threshold:
         return "Contaminated"
     elif unclear_range["lower_bound"] <= val <= unclear_range["upper_bound"]:

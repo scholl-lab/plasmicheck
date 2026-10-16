@@ -368,15 +368,6 @@
         }
         .pc-gauge-seg-unclear {
             background: #f59e0b;
-            position: relative;
-        }
-        .pc-gauge-seg-unclear::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 50%;
-            border-left: 1.5px dashed rgba(255, 255, 255, 0.85);
         }
         .pc-gauge-seg-contam {
             background: #ef4444;
@@ -876,8 +867,7 @@
                 <div class="pc-gauge-ticks" aria-hidden="true">
                     <span class="pc-gauge-tick pc-gauge-tick-start">0.0</span>
                     <span class="pc-gauge-tick pc-gauge-tick-low">{{ unclear_range.lower_bound }}</span>
-                    <span class="pc-gauge-tick pc-gauge-tick-mid">{{ threshold }}</span>
-                    <span class="pc-gauge-tick pc-gauge-tick-high">{{ unclear_range.upper_bound }}</span>
+                    <span class="pc-gauge-tick pc-gauge-tick-high">{{ contam_cutoff }}</span>
                     <span class="pc-gauge-tick pc-gauge-tick-end">10+</span>
                 </div>
                 <div class="pc-gauge-zones">

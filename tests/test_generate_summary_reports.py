@@ -1036,6 +1036,15 @@ def test_categorize_value_boundary_consistency() -> None:
     assert categorize_value(0.10, threshold, unclear) == "Unclear"
     assert categorize_value(0.11, threshold, unclear) == "Contaminated"
 
+    # Default config: threshold=0.8 is midpoint of unclear_range=[0.6, 1.0]
+    default_unclear = {"lower_bound": 0.6, "upper_bound": 1.0}
+    assert categorize_value(0.59, 0.8, default_unclear) == "Clean"
+    assert categorize_value(0.60, 0.8, default_unclear) == "Unclear"
+    assert categorize_value(0.80, 0.8, default_unclear) == "Unclear"
+    assert categorize_value(0.95, 0.8, default_unclear) == "Unclear"
+    assert categorize_value(1.00, 0.8, default_unclear) == "Unclear"
+    assert categorize_value(1.01, 0.8, default_unclear) == "Contaminated"
+
 
 @pytest.mark.unit
 def test_summary_report_autoescape(tmp_path: Path) -> None:

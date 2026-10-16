@@ -283,13 +283,22 @@ def generate_summary_boxplot_matplotlib(
     plasmids = melted["Plasmid"].unique().tolist()
     data_list = [melted[melted["Plasmid"] == p]["LogRatio"].dropna().tolist() for p in plasmids]
 
-    thresh_log = float(np.log10(0.8 + log_offset))
+    low_log = float(np.log10(0.6 + log_offset))
+    high_log = float(np.log10(1.0 + log_offset))
+    ax.axhspan(
+        low_log,
+        high_log,
+        color="#f59e0b",
+        alpha=0.12,
+        label="Unclear (0.6-1.0)",
+        zorder=1,
+    )
     ax.axhline(
-        thresh_log,
+        high_log,
         color="#dc2626",
         linestyle="--",
         linewidth=1.2,
-        label="Threshold (0.8)",
+        label="Contaminated (>1.0)",
         zorder=1,
     )
 

@@ -382,14 +382,19 @@
 
     <main class="pc-main">
         <!-- Cohort Parameters Strip -->
+        {% set contam_cutoff = unclear_range.upper_bound if threshold >= unclear_range.lower_bound and threshold <= unclear_range.upper_bound else threshold %}
         <div class="pc-params-bar">
-            <div class="pc-param-item">
-                <span class="pc-param-label">Contamination Threshold</span>
-                <span class="pc-param-val">{{ threshold }}</span>
+            <div class="pc-param-item" title="Samples with Plasmid/Human ratio below {{ unclear_range.lower_bound }} are classified as Clean.">
+                <span class="pc-param-label">Clean Cutoff</span>
+                <span class="pc-param-val" style="color: #065f46;">&lt; {{ unclear_range.lower_bound }}</span>
             </div>
-            <div class="pc-param-item">
-                <span class="pc-param-label">Unclear Range</span>
-                <span class="pc-param-val">{{ unclear_range.lower_bound }} &ndash; {{ unclear_range.upper_bound }}</span>
+            <div class="pc-param-item" title="Symmetric uncertainty buffer ({{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }}) centered around the {{ threshold }} midpoint.">
+                <span class="pc-param-label">Unclear Zone</span>
+                <span class="pc-param-val" style="color: #92400e;">{{ unclear_range.lower_bound }} &ndash; {{ unclear_range.upper_bound }}</span>
+            </div>
+            <div class="pc-param-item" title="Samples with Plasmid/Human ratio above {{ contam_cutoff }} exceed the unclear buffer zone and are classified as Contaminated.">
+                <span class="pc-param-label">Contaminated Cutoff</span>
+                <span class="pc-param-val" style="color: #991b1b;">&gt; {{ contam_cutoff }}</span>
             </div>
             <div class="pc-param-item">
                 <span class="pc-param-label">Version</span>
@@ -644,8 +649,7 @@
         {% endif %}
 
         <footer class="details">
-            <p><span>Threshold for Contamination:</span> {{ threshold }}</p>
-            <p><span>Unclear Range:</span> {{ unclear_range.lower_bound }} - {{ unclear_range.upper_bound }}</p>
+            <p><span>Verdict Cutoffs:</span> Clean &lt; {{ unclear_range.lower_bound }} | Unclear {{ unclear_range.lower_bound }} &ndash; {{ unclear_range.upper_bound }} | Contaminated &gt; {{ contam_cutoff }} (midpoint threshold: {{ threshold }})</p>
             <p><span>Script Version:</span> {{ version }}</p>
             <p><span>Run Date:</span> {{ run_date }}</p>
             <p><span>Command Line:</span> {{ command_line }}</p>
