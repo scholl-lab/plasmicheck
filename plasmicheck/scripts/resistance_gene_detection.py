@@ -51,7 +51,7 @@ MAMMALIAN_RESISTANCE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bHygromycin\b", re.IGNORECASE),
     re.compile(r"\bNeoR\b", re.IGNORECASE),
     re.compile(r"\bNeo\b", re.IGNORECASE),
-    re.compile(r"\bNeomycin\b", re.IGNORECASE),
+    re.compile(r"\bNeomycinR?\b", re.IGNORECASE),
     re.compile(r"\bBlasticidinR\b", re.IGNORECASE),
     re.compile(r"\bBsd\b", re.IGNORECASE),
     re.compile(r"\bBsdR\b", re.IGNORECASE),
@@ -73,7 +73,7 @@ REPORTER_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\blacZ\b", re.IGNORECASE),
 ]
 
-# Affinity tags to exclude (not resistance/reporter genes)
+# Affinity tags and cloning peptide fragments to exclude (not full resistance/reporter genes)
 EXCLUDE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bHis[-_]?tag\b", re.IGNORECASE),
     re.compile(r"\b6His\b", re.IGNORECASE),
@@ -81,6 +81,7 @@ EXCLUDE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bMyc\b", re.IGNORECASE),
     re.compile(r"\bV5\b", re.IGNORECASE),
     re.compile(r"\bHA\b", re.IGNORECASE),
+    re.compile(r"\blacZ[\s_-]*alpha\b", re.IGNORECASE),
 ]
 
 # Combined resistance and default patterns
@@ -332,8 +333,21 @@ def detect_resistance_genes(
                 )
                 detected_genes.append(detected_gene)
 
-        # Sort by start position
-        detected_genes.sort(key=lambda g: g.start)
+        # Sort by start position, then descending length
+        detected_genes.sort(key=lambda g: (g.start, -(g.end - g.start)))
+
+        # Deduplicate overlapping annotations of the same gene (e.g. mature peptide + full CDS)
+        deduped: list[DetectedGene] = []
+        for g in detected_genes:
+            if (
+                deduped
+                and deduped[-1].sanitized_name == g.sanitized_name
+                and deduped[-1].start <= g.end
+                and g.start <= deduped[-1].end
+            ):
+                continue
+            deduped.append(g)
+        detected_genes = deduped
 
         logging.info(f"Detected {len(detected_genes)} resistance/reporter genes in {genbank_file}")
 

@@ -33,16 +33,32 @@ BREADTH_THRESHOLDS: list[int] = _cfg.get("breadth_thresholds", [5])
 CUSTOM_RESISTANCE_PATTERNS: list[str] = _cfg.get("resistance_gene_patterns", [])
 
 
-def calculate_alignment_score(read: Any) -> int:
+def calculate_alignment_score(read: Any, plasmid_length: int = 0) -> int:
     """Calculate a custom alignment score based on multiple criteria."""
     if read.is_unmapped:
         return 0
 
+    ops = read.cigartuples or []
+    r_start = read.reference_start
+    r_end = read.reference_end
     score: int = read.mapping_quality
+    if (
+        plasmid_length > 0
+        and ops
+        and (
+            (ops[0][0] in {4, 5} and r_start == 0)
+            or (ops[-1][0] in {4, 5} and r_end == plasmid_length)
+        )
+    ):
+        score = max(score, 60)
 
-    # Penalize for clipping
-    for operation, length in read.cigartuples:
+    # Penalize for clipping (excusing circular origin boundary clips on plasmids)
+    for idx, (operation, length) in enumerate(ops):
         if operation in {4, 5}:  # 4: soft clipping, 5: hard clipping
+            if plasmid_length > 0 and (
+                (idx == 0 and r_start == 0) or (idx == len(ops) - 1 and r_end == plasmid_length)
+            ):
+                continue
             score -= length * CLIPPING_PENALTY
 
     # Penalize for mismatches
@@ -181,14 +197,47 @@ def read_overlaps_insert(read: Any, insert_region: tuple[int, int] | InsertRegio
     return not (read_end <= insert_region[0] or read_start > insert_region[1])
 
 
-def calculate_coverage_outside_insert(
-    plasmid_bam: str, insert_region: tuple[int, int] | InsertRegionData
-) -> float:
-    """Calculate the coverage of reads mapping outside the INSERT_REGION."""
+def _compute_junction_positions(
+    insert_region: tuple[int, int] | InsertRegionData, plasmid_length: int
+) -> list[int]:
+    """Compute 0-based plasmid coordinates of exon-exon splice junctions within the insert."""
+    if not isinstance(insert_region, InsertRegionData) or not insert_region.exon_lengths:
+        return []
+    exons = list(insert_region.exon_lengths)
+    if len(exons) <= 1:
+        return []
+    if insert_region.strand == "-":
+        exons = exons[::-1]
+    positions: list[int] = []
+    pos = insert_region.start
+    for exon_len in exons[:-1]:
+        pos = (pos + exon_len) % plasmid_length if plasmid_length > 0 else pos + exon_len
+        positions.append(pos)
+    return positions
+
+
+def _scan_plasmid_bam(
+    plasmid_bam: str,
+    insert_region: tuple[int, int] | InsertRegionData,
+    window_size: int = 100,
+    min_junction_anchor: int = 15,
+) -> tuple[float, dict[str, int], int, int]:
+    """Single-pass scan of plasmid_bam for outside-insert coverage, boundary mismatches, and splice-junction reads."""
     total_aligned_bases_outside_insert = 0
+    mismatches_near_insert = {"with_mismatches_or_clipping": 0, "without_mismatches_or_clipping": 0}
+    splice_junction_reads = 0
+    covered_junctions: set[int] = set()
 
     with pysam.AlignmentFile(plasmid_bam, "rb") as bamfile:
-        plasmid_length = bamfile.lengths[bamfile.get_tid(bamfile.get_reference_name(0))]
+        plasmid_length = 0
+        if (
+            hasattr(bamfile, "lengths")
+            and isinstance(bamfile.lengths, (list, tuple))
+            and len(bamfile.lengths) > 0
+        ):
+            plasmid_length = bamfile.lengths[0]
+        else:
+            plasmid_length = bamfile.lengths[bamfile.get_tid(bamfile.get_reference_name(0))]
 
         insert_start, insert_end = insert_region[0], insert_region[1]
         is_wrapped = insert_start > insert_end
@@ -199,6 +248,8 @@ def calculate_coverage_outside_insert(
         if total_reference_bases_outside_insert <= 0:
             raise ValueError("The INSERT_REGION covers the entire reference sequence.")
 
+        junc_positions = _compute_junction_positions(insert_region, plasmid_length)
+
         for read in bamfile.fetch():
             if read.is_unmapped:
                 continue
@@ -208,89 +259,75 @@ def calculate_coverage_outside_insert(
             if read_start is None or read_end is None:
                 continue
 
+            # 1. Coverage outside insert (read_end is 0-based exclusive; insert_end is 0-based inclusive)
             if is_wrapped:
-                bb_start = insert_end + 1
-                bb_end = insert_start - 1
-                if read_start >= bb_start and read_end <= bb_end + 1:
-                    total_aligned_bases_outside_insert += read.query_length
-                else:
-                    overlap = max(0, min(read_end, bb_end + 1) - max(read_start, bb_start))
-                    total_aligned_bases_outside_insert += overlap
+                # Backbone is half-open [insert_end + 1, insert_start)
+                outside = max(0, min(read_end, insert_start) - max(read_start, insert_end + 1))
+                total_aligned_bases_outside_insert += outside
             else:
-                if read_end < insert_start or read_start > insert_end:
-                    total_aligned_bases_outside_insert += read.query_length
+                # Insert is half-open [insert_start, insert_end + 1)
+                inside = max(0, min(read_end, insert_end + 1) - max(read_start, insert_start))
+                outside = max(0, (read_end - read_start) - inside)
+                total_aligned_bases_outside_insert += outside
+
+            # 2. Mismatches near insert boundaries
+            if plasmid_length > 0:
+                d_start = abs(read_end - insert_start) % plasmid_length
+                near_insert_start = min(d_start, plasmid_length - d_start) <= window_size
+                d_end = abs(read_start - insert_end) % plasmid_length
+                near_insert_end = min(d_end, plasmid_length - d_end) <= window_size
+            else:
+                near_insert_start = (
+                    insert_start - window_size <= read_end <= insert_start + window_size
+                )
+                near_insert_end = insert_end - window_size <= read_start <= insert_end + window_size
+
+            cigartuples = read.cigartuples
+            if (near_insert_start or near_insert_end) and cigartuples is not None:
+                if any(op in {1, 2, 3, 4, 5} for op, _ in cigartuples):
+                    mismatches_near_insert["with_mismatches_or_clipping"] += 1
                 else:
-                    if read_start < insert_start:
-                        outside_start = read_start
-                        outside_end = min(read_end, insert_start - 1)
-                        total_aligned_bases_outside_insert += outside_end - outside_start + 1
-                    if read_end > insert_end:
-                        outside_start = max(read_start, insert_end + 1)
-                        outside_end = read_end
-                        total_aligned_bases_outside_insert += outside_end - outside_start + 1
+                    mismatches_near_insert["without_mismatches_or_clipping"] += 1
+
+            # 3. Direct exon-exon splice-junction spanning reads
+            if (
+                junc_positions
+                and not read.is_secondary
+                and not read.is_supplementary
+                and cigartuples is not None
+                and not any(op in {4, 5} for op, ln in cigartuples if ln > 2)
+            ):
+                spanned = False
+                for jp in junc_positions:
+                    if read_start + min_junction_anchor <= jp <= read_end - min_junction_anchor:
+                        spanned = True
+                        covered_junctions.add(jp)
+                if spanned:
+                    splice_junction_reads += 1
 
     coverage_outside_insert: float = (
         total_aligned_bases_outside_insert / total_reference_bases_outside_insert
     )
-    return coverage_outside_insert
+    return (
+        coverage_outside_insert,
+        mismatches_near_insert,
+        splice_junction_reads,
+        len(covered_junctions),
+    )
+
+
+def calculate_coverage_outside_insert(
+    plasmid_bam: str, insert_region: tuple[int, int] | InsertRegionData
+) -> float:
+    """Calculate the coverage of reads mapping outside the INSERT_REGION."""
+    return _scan_plasmid_bam(plasmid_bam, insert_region)[0]
 
 
 def count_mismatches_near_insert_end(
     plasmid_bam: str, insert_region: tuple[int, int] | InsertRegionData, window_size: int = 100
 ) -> dict[str, int]:
     """Count reads with/without mismatches or clipping near the INSERT_REGION boundaries."""
-    mismatches_near_insert = {"with_mismatches_or_clipping": 0, "without_mismatches_or_clipping": 0}
-
-    with pysam.AlignmentFile(plasmid_bam, "rb") as bamfile:
-        plasmid_length = 0
-        if (
-            hasattr(bamfile, "lengths")
-            and isinstance(bamfile.lengths, (list, tuple))
-            and len(bamfile.lengths) > 0
-        ):
-            plasmid_length = bamfile.lengths[0]
-
-        for read in bamfile.fetch():
-            if read.is_unmapped:
-                continue
-
-            read_start = read.reference_start
-            read_end = read.reference_end
-            if read_start is None or read_end is None:
-                continue
-
-            if plasmid_length > 0:
-                d_start = abs(read_end - insert_region[0]) % plasmid_length
-                near_insert_start = min(d_start, plasmid_length - d_start) <= window_size
-                d_end = abs(read_start - insert_region[1]) % plasmid_length
-                near_insert_end = min(d_end, plasmid_length - d_end) <= window_size
-            else:
-                near_insert_start = (
-                    read_end >= insert_region[0] - window_size
-                    and read_end <= insert_region[0] + window_size
-                )
-                near_insert_end = (
-                    read_start >= insert_region[1] - window_size
-                    and read_start <= insert_region[1] + window_size
-                )
-
-            if near_insert_start or near_insert_end:
-                has_mismatches_or_clipping = False
-                cigartuples = read.cigartuples
-                if cigartuples is None:
-                    continue
-
-                for operation, _length in cigartuples:
-                    if operation in {1, 2, 3, 4, 5}:
-                        has_mismatches_or_clipping = True
-                        break
-
-                if has_mismatches_or_clipping:
-                    mismatches_near_insert["with_mismatches_or_clipping"] += 1
-                else:
-                    mismatches_near_insert["without_mismatches_or_clipping"] += 1
-
-    return mismatches_near_insert
+    return _scan_plasmid_bam(plasmid_bam, insert_region, window_size=window_size)[1]
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +426,7 @@ def _streaming_compare(
     *,
     insert_region: tuple[int, int] | InsertRegionData | None = None,
     score_margin: int = 0,
+    plasmid_length: int = 0,
 ) -> dict[str, int]:
     """Two-pointer merge over name-sorted BAMs.  Returns assigned counts."""
     assigned_counts: dict[str, int] = {
@@ -417,8 +455,21 @@ def _streaming_compare(
             h_reads = _primary_reads(h_item[1])
             p_read = p_reads[0]
             h_read = h_reads[0]
-            ps = sum(map(calculate_alignment_score, p_reads))
-            hs = sum(map(calculate_alignment_score, h_reads))
+            ps = sum(calculate_alignment_score(r, plasmid_length) for r in p_reads)
+            hs = sum(calculate_alignment_score(r, 0) for r in h_reads)
+            if (
+                ps > hs
+                and len(p_reads) == len(h_reads)
+                and all(
+                    pr.cigartuples == hr.cigartuples
+                    and (pr.get_tag("NM") if pr.has_tag("NM") else 0)
+                    == (hr.get_tag("NM") if hr.has_tag("NM") else 0)
+                    and pr.mapping_quality == 60
+                    and 40 <= hr.mapping_quality < 60
+                    for pr, hr in zip(p_reads, h_reads, strict=True)
+                )
+            ):
+                hs = ps
             rep_p_read = next(
                 (
                     r
@@ -445,7 +496,7 @@ def _streaming_compare(
             assert p_name is not None
             p_reads = _primary_reads(p_item[1])
             p_read = p_reads[0]
-            ps = sum(map(calculate_alignment_score, p_reads))
+            ps = sum(calculate_alignment_score(r, plasmid_length) for r in p_reads)
             rep_p_read = next(
                 (
                     r
@@ -470,7 +521,7 @@ def _streaming_compare(
             assert h_item is not None
             h_reads = _primary_reads(h_item[1])
             h_read = h_reads[0]
-            hs = sum(map(calculate_alignment_score, h_reads))
+            hs = sum(calculate_alignment_score(r, 0) for r in h_reads)
             assigned = _assign(0, max(hs, 0), score_margin=score_margin)
             assigned_counts[assigned] += 1
             _write_assignment(outfile, h_name, assigned, 0, hs, None, h_read)
@@ -511,21 +562,33 @@ def compare_alignments(
         "with_mismatches_or_clipping": 0,
         "without_mismatches_or_clipping": 0,
     }
+    splice_junction_reads = 0
+    splice_junctions_covered = 0
     if insert_region is not None:
-        coverage_outside_insert = calculate_coverage_outside_insert(plasmid_bam, insert_region)
+        (
+            coverage_outside_insert,
+            mismatches_near_insert,
+            splice_junction_reads,
+            splice_junctions_covered,
+        ) = _scan_plasmid_bam(plasmid_bam, insert_region)
         logging.debug(f"Coverage outside INSERT_REGION: {coverage_outside_insert}")
-        mismatches_near_insert = count_mismatches_near_insert_end(plasmid_bam, insert_region)
         logging.debug(f"Mismatches near INSERT_REGION: {mismatches_near_insert}")
     else:
         logging.warning("Skipping coverage/mismatch metrics (insert region unavailable).")
 
     # Compute whole-plasmid depths once if possible for sharing across metrics and genes
     plasmid_depths: Any = None
+    plasmid_length = 0
     try:
         with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
-            if hasattr(bam, "lengths") and len(bam.lengths) > 0 and bam.lengths[0] > 0:
+            if (
+                hasattr(bam, "lengths")
+                and isinstance(bam.lengths, (list, tuple))
+                and len(bam.lengths) > 0
+                and bam.lengths[0] > 0
+            ):
                 contig = bam.get_reference_name(0)
-                plasmid_length = bam.lengths[0]
+                plasmid_length = int(bam.lengths[0])
                 depth_arr = get_depth_array(plasmid_bam, contig, 0, plasmid_length)
                 if isinstance(depth_arr, np.ndarray) and len(depth_arr) > 0:
                     plasmid_depths = depth_arr
@@ -599,9 +662,21 @@ def compare_alignments(
     # Group BAMs by read name into temporary files for streaming merge
     plasmid_ns = f"{os.path.splitext(plasmid_bam)[0]}.namesorted.bam"
     human_ns = f"{os.path.splitext(human_bam)[0]}.namesorted.bam"
+    human_already_namesorted = False
+    try:
+        with pysam.AlignmentFile(human_bam, "rb") as hbam:
+            hd = hbam.header.get("HD", {}) if hasattr(hbam.header, "get") else {}
+            if isinstance(hd, dict) and hd.get("SO") == "queryname":
+                human_already_namesorted = True
+    except Exception:
+        pass
+
     logging.info("Grouping BAMs by read name for streaming comparison...")
     _namesort_bam(plasmid_bam, plasmid_ns, threads=threads)
-    _namesort_bam(human_bam, human_ns, threads=threads)
+    if human_already_namesorted:
+        human_ns = human_bam
+    else:
+        _namesort_bam(human_bam, human_ns, threads=threads)
 
     logging.debug(f"Writing alignment comparison results to {output_basename}.reads_assignment.tsv")
 
@@ -615,10 +690,12 @@ def compare_alignments(
             outfile,
             insert_region=insert_region,
             score_margin=SCORE_MARGIN,
+            plasmid_length=plasmid_length,
         )
 
     # Clean up temporary name-sorted BAMs
-    for ns_bam in (plasmid_ns, human_ns):
+    ns_to_remove = (plasmid_ns,) if human_already_namesorted else (plasmid_ns, human_ns)
+    for ns_bam in ns_to_remove:
         try:
             os.remove(ns_bam)
         except OSError:
@@ -721,9 +798,13 @@ def compare_alignments(
                 summary_file.write(f"IntronLengths\t{','.join(map(str, il))}\n")
             else:
                 summary_file.write("IntronLengths\tNA\n")
+            summary_file.write(f"SpliceJunctionReads\t{splice_junction_reads}\n")
+            summary_file.write(f"SpliceJunctionsCovered\t{splice_junctions_covered}\n")
         else:
             # Fallback for missing insert_region
             summary_file.write("SpliceJunctionCount\tNA\n")
             summary_file.write("ExonCount\tNA\n")
             summary_file.write("ExonLengths\tNA\n")
             summary_file.write("IntronLengths\tNA\n")
+            summary_file.write("SpliceJunctionReads\tNA\n")
+            summary_file.write("SpliceJunctionsCovered\tNA\n")

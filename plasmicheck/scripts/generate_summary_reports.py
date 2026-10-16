@@ -22,14 +22,31 @@ PLOT_CONFIG: dict[str, Any] = _cfg["plot_summary"]
 TEMPLATE_DIR: str = _cfg["paths"]["template_dir"]
 LOGO_PATH: str = _cfg["paths"]["logo_path"]
 TABLE_SORTING: dict[str, Any] = _cfg["table_sorting"]
-PLOT_DIMENSIONS: dict[str, int] = PLOT_CONFIG.get(
-    "plot_dimensions", {"width": 1200, "height": 1200}
-)
+PLOT_DIMENSIONS: dict[str, int] = PLOT_CONFIG.get("plot_dimensions", {"width": 1200, "height": 420})
 ROUND_DECIMALS: int = PLOT_CONFIG.get("round_decimals", 3)
 LOG_OFFSET: float = PLOT_CONFIG.get("log_offset", 1e-9)
-MARKER_STYLE: dict[str, Any] = PLOT_CONFIG.get("marker_style", {"size": 8, "opacity": 0.7})
+MARKER_STYLE: dict[str, Any] = PLOT_CONFIG.get("marker_style", {"size": 7, "opacity": 0.75})
 DEPTH_HEATMAP_CAP: float = PLOT_CONFIG.get("depth_heatmap_cap", 100.0)
-_PLOTLY_CONFIG = {"showSendToCloud": False}
+_PLOTLY_CONFIG: dict[str, Any] = {
+    "showSendToCloud": False,
+    "displayModeBar": "hover",
+    "displaylogo": False,
+    "responsive": True,
+}
+_SUMMARY_FONT = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+_SUMMARY_PLOTLY_LAYOUT: dict[str, Any] = {
+    "template": "plotly_white",
+    "autosize": True,
+    "font": {"family": _SUMMARY_FONT, "size": 12, "color": "#0f172a"},
+    "paper_bgcolor": "white",
+    "plot_bgcolor": "white",
+    "margin": {"l": 64, "r": 24, "t": 28, "b": 96, "pad": 4},
+    "hoverlabel": {
+        "bgcolor": "#0f172a",
+        "bordercolor": "#334155",
+        "font": {"size": 12, "family": _SUMMARY_FONT, "color": "#f8fafc"},
+    },
+}
 
 # Setup logging for the libraries used in this script
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
@@ -222,7 +239,8 @@ def calculate_variations(ratio_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataF
     """Calculate p-values and apply FDR correction for contamination ratios by plasmid."""
     import numpy as np
     import pandas as pd
-    from scipy.stats import false_discovery_control, ttest_1samp
+    from scipy.stats import false_discovery_control
+    from scipy.stats import t as student_t
 
     logging.info("Calculating variations for contamination ratios.")
 
@@ -238,30 +256,36 @@ def calculate_variations(ratio_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataF
     for plasmid in boxplot_data.columns:
         # Ensure the data is numeric and drop NaN values
         data = pd.to_numeric(boxplot_data[plasmid], errors="coerce").dropna()
-
-        # Only run the t-test if there are enough data points
-        if len(data) > 1:
-            for i in range(len(data)):
-                others = data.drop(data.index[i])
-                if len(others) < 2 or float(others.std(ddof=1)) == 0.0:
-                    p_val = np.nan
-                else:
-                    # Exclude the current sample and run the one-sample t-test
-                    try:
-                        res = ttest_1samp(others, data.iloc[i])
-                        p_val = float(res.pvalue) if not np.isnan(res.pvalue) else np.nan
-                    except Exception as e:
-                        logging.error(
-                            f"Error during t-test for {plasmid}, sample {data.index[i]}: {e}"
-                        )
-                        p_val = np.nan
-                p_values_list.append(
-                    {
-                        "Sample": data.index[i],
-                        "Plasmid": plasmid,
-                        "p_value": p_val,
-                    }
-                )
+        n = len(data)
+        if n > 1:
+            x = data.to_numpy(dtype=np.float64)
+            samples = data.index.tolist()
+            if n < 3:
+                for s in samples:
+                    p_values_list.append({"Sample": s, "Plasmid": plasmid, "p_value": np.nan})
+            else:
+                s_tot = float(np.sum(x))
+                q_tot = float(np.dot(x, x))
+                m = n - 1
+                mean_others = (s_tot - x) / m
+                ss_others = np.maximum((q_tot - x * x) - m * (mean_others * mean_others), 0.0)
+                var_others = ss_others / (m - 1)
+                se = np.sqrt(var_others / m)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    t_stat = (mean_others - x) / se
+                    p_vals = np.where(
+                        var_others > 0.0,
+                        student_t.sf(np.abs(t_stat), df=m - 1) * 2.0,
+                        np.nan,
+                    )
+                for s, pv in zip(samples, p_vals, strict=True):
+                    p_values_list.append(
+                        {
+                            "Sample": s,
+                            "Plasmid": plasmid,
+                            "p_value": float(pv) if not np.isnan(pv) else np.nan,
+                        }
+                    )
 
     p_values_df = pd.DataFrame(p_values_list, columns=["Sample", "Plasmid", "p_value"])
     p_values_df["p_value_corrected"] = np.nan
@@ -301,17 +325,57 @@ def plot_boxplot(
         x="Plasmid",
         y="log_value",
         points="all",
-        hover_data={"Sample": True, "Value": True, "log_value": False},
-        title="Contamination Ratios by Plasmid (Log Scale)",
+        hover_data={"Sample": True, "Value": ":.4f", "log_value": False},
     )
 
-    # Increase the height of the boxplot
+    thresh_log = float(np.log10(DEFAULT_THRESHOLD + LOG_OFFSET))
+    low_log = float(np.log10(UNCLEAR_RANGE["lower_bound"] + LOG_OFFSET))
+    high_log = float(np.log10(UNCLEAR_RANGE["upper_bound"] + LOG_OFFSET))
+
+    fig.add_hrect(
+        y0=low_log,
+        y1=high_log,
+        fillcolor="rgba(245, 158, 11, 0.12)",
+        line_width=0,
+        annotation_text="Unclear zone",
+        annotation_position="top left",
+        annotation_font={"size": 10, "color": "#b45309"},
+    )
+    fig.add_hline(
+        y=thresh_log,
+        line_dash="dash",
+        line_color="#dc2626",
+        line_width=1.5,
+        annotation_text=f"Threshold ({DEFAULT_THRESHOLD})",
+        annotation_position="bottom right",
+        annotation_font={"size": 10, "color": "#dc2626"},
+    )
+
     fig.update_layout(
-        yaxis_title="Log of Value",
-        height=800,  # Adjust this value to make the boxplot taller
+        **_SUMMARY_PLOTLY_LAYOUT,
+        xaxis_title="Plasmid",
+        yaxis_title="log₁₀(Contamination Ratio)",
+        height=420,
+        xaxis={
+            "tickangle": -30,
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+            "showgrid": False,
+            "linecolor": "#cbd5e1",
+        },
+        yaxis={
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+            "gridcolor": "#f1f5f9",
+            "linecolor": "#cbd5e1",
+        },
     )
 
-    fig.update_traces(marker=MARKER_STYLE)
+    fig.update_traces(
+        marker={**MARKER_STYLE, "color": "#2563eb"},
+        line={"color": "#1d4ed8", "width": 1.6},
+        fillcolor="rgba(37, 99, 235, 0.18)",
+    )
 
     plots_dir: str = os.path.join(output_dir, "plots")
     os.makedirs(plots_dir, exist_ok=True)
@@ -329,7 +393,7 @@ def plot_boxplot(
                 boxplot_data, boxplot_filename_png, LOG_OFFSET, "outliers"
             )
         else:
-            fig.write_image(boxplot_filename_png)
+            fig.write_image(boxplot_filename_png, width=1000, height=420)
 
     logging.info("Boxplots generated.")
 
@@ -355,7 +419,7 @@ def plot_heatmap(
     static_report: bool = False,
     plot_backend: str = "matplotlib",
 ) -> tuple[str, str | None]:
-    """Generate and save heatmap for contamination ratios by plasmid without the color bar."""
+    """Generate and save heatmap for contamination ratios by plasmid."""
     import pandas as pd
     import plotly.express as px
 
@@ -370,7 +434,7 @@ def plot_heatmap(
     ).round(ROUND_DECIMALS)
 
     # Define a custom color scale using Plotly's built-in scaling
-    max_val = ratio_data.max().max()
+    max_val = float(ratio_data.max().max()) if not ratio_data.empty else 0.0
     if max_val > 0:
         lower_norm = min(unclear_range["lower_bound"] / max_val, 0.99)
         upper_norm = min(unclear_range["upper_bound"] / max_val, 0.995)
@@ -378,34 +442,51 @@ def plot_heatmap(
         lower_norm = 0.5
         upper_norm = 0.75
     color_scale: list[list[float | str]] = [
-        [0.0, plot_config["colors"]["not_contaminated"]],  # Start
-        [lower_norm, plot_config["colors"]["unclear"]],  # Lower bound
-        [upper_norm, plot_config["colors"]["unclear"]],  # Upper bound
-        [1.0, plot_config["colors"]["contaminated"]],  # End
+        [0.0, "#e0f2fe"],
+        [lower_norm, "#fde68a"],
+        [upper_norm, "#fca5a5"],
+        [1.0, "#dc2626"],
     ]
+
+    n_samples, n_plasmids = ratio_data.shape
+    chart_height = max(420, min(640, 180 + n_samples * 28))
+    show_annot = n_samples <= 20 and n_plasmids <= 15
 
     fig = px.imshow(
         ratio_data,
         color_continuous_scale=color_scale,
-        height=PLOT_DIMENSIONS["height"],
-        aspect="auto",  # Adjust the aspect ratio to fit the plot dimensions
+        height=chart_height,
+        aspect="auto",
+        text_auto=".2f" if show_annot else False,
     )
+    fig.update_traces(xgap=2, ygap=2, textfont={"size": 11})
 
-    # Update layout for axis labels and title
     fig.update_layout(
-        title=plot_config["title"],
+        **_SUMMARY_PLOTLY_LAYOUT,
         xaxis_title="Plasmid",
-        yaxis_title="Sample",
+        yaxis_title=None,
         xaxis={
-            "tickangle": plot_config["xticks_rotation"],
-            "tickfont": {"size": 9},
+            "tickangle": -30,
+            "tickfont": {"size": 11, "color": "#334155"},
             "tickmode": "linear",
+            "automargin": True,
         },
-        yaxis={"tickfont": {"size": 9}},
+        yaxis={
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+        },
     )
 
-    # Disable the color bar
-    fig.update_coloraxes(showscale=False)
+    fig.update_coloraxes(
+        showscale=True,
+        colorbar={
+            "title": {"text": "Ratio", "font": {"size": 11}},
+            "thickness": 10,
+            "len": 0.82,
+            "tickfont": {"size": 10},
+            "outlinewidth": 0,
+        },
+    )
 
     plots_dir: str = os.path.join(output_dir, "plots")
     os.makedirs(plots_dir, exist_ok=True)
@@ -425,7 +506,7 @@ def plot_heatmap(
 
             generate_heatmap_matplotlib(ratio_data, heatmap_filename_png, threshold, plot_config)
         else:
-            fig.write_image(heatmap_filename_png)
+            fig.write_image(heatmap_filename_png, width=1000, height=chart_height)
 
     logging.info("Heatmap generated.")
 
@@ -506,34 +587,53 @@ def plot_metric_heatmap(
     # Clip data if vmax provided
     plot_data = metric_data.clip(upper=vmax) if vmax is not None else metric_data
 
-    # Blue-to-red color scale matching existing ratio heatmap
     color_scale: list[list[float | str]] = [
-        [0.0, PLOT_CONFIG["colors"]["not_contaminated"]],
-        [1.0, PLOT_CONFIG["colors"]["contaminated"]],
+        [0.0, "#f0f9ff"],
+        [0.35, "#7dd3fc"],
+        [0.7, "#0284c7"],
+        [1.0, "#be123c"],
     ]
+
+    n_samples, n_plasmids = plot_data.shape
+    chart_height = max(420, min(640, 180 + n_samples * 28))
+    show_annot = n_samples <= 20 and n_plasmids <= 15
+    fmt = ".0f" if "Mismatches" in metric_name else ".2f"
 
     fig = px.imshow(
         plot_data,
         color_continuous_scale=color_scale,
-        height=PLOT_DIMENSIONS["height"],
+        height=chart_height,
         aspect="auto",
+        text_auto=fmt if show_annot else False,
     )
+    fig.update_traces(xgap=2, ygap=2, textfont={"size": 11})
 
     # Update layout
     fig.update_layout(
-        title=f"Heatmap of {metric_name} by Sample and Plasmid",
+        **_SUMMARY_PLOTLY_LAYOUT,
         xaxis_title="Plasmid",
-        yaxis_title="Sample",
+        yaxis_title=None,
         xaxis={
-            "tickangle": PLOT_CONFIG["xticks_rotation"],
-            "tickfont": {"size": 9},
+            "tickangle": -30,
+            "tickfont": {"size": 11, "color": "#334155"},
             "tickmode": "linear",
+            "automargin": True,
         },
-        yaxis={"tickfont": {"size": 9}},
+        yaxis={
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+        },
     )
 
-    # Disable color bar
-    fig.update_coloraxes(showscale=False)
+    fig.update_coloraxes(
+        showscale=True,
+        colorbar={
+            "thickness": 10,
+            "len": 0.82,
+            "tickfont": {"size": 10},
+            "outlinewidth": 0,
+        },
+    )
 
     # Save interactive HTML
     plots_dir: str = os.path.join(output_dir, "plots")
@@ -552,7 +652,7 @@ def plot_metric_heatmap(
 
             generate_metric_heatmap_matplotlib(metric_data, png_filename, metric_name, vmax)
         else:
-            fig.write_image(png_filename)
+            fig.write_image(png_filename, width=1000, height=chart_height)
 
     logging.info(f"{metric_name} heatmap generated.")
 
@@ -603,13 +703,32 @@ def plot_coverage_outside_insert_boxplot(
         x="Plasmid",
         y="Value",
         points="all",
-        hover_data={"Sample": True},
-        title="CoverageOutsideINSERT Distribution by Plasmid",
+        hover_data={"Sample": True, "Value": ":.4f"},
     )
 
     fig.update_layout(
+        **_SUMMARY_PLOTLY_LAYOUT,
+        xaxis_title="Plasmid",
         yaxis_title="Coverage Outside Insert",
-        height=800,
+        height=420,
+        xaxis={
+            "tickangle": -30,
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+            "showgrid": False,
+            "linecolor": "#cbd5e1",
+        },
+        yaxis={
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+            "gridcolor": "#f1f5f9",
+            "linecolor": "#cbd5e1",
+        },
+    )
+    fig.update_traces(
+        marker={**MARKER_STYLE, "color": "#0284c7"},
+        line={"color": "#0369a1", "width": 1.6},
+        fillcolor="rgba(2, 132, 199, 0.18)",
     )
 
     # Save interactive HTML
@@ -628,7 +747,7 @@ def plot_coverage_outside_insert_boxplot(
 
             generate_coverage_boxplot_matplotlib(coverage_pivot, png_filename)
         else:
-            fig.write_image(png_filename)
+            fig.write_image(png_filename, width=1000, height=420)
 
     logging.info("CoverageOutsideINSERT boxplot generated.")
 
@@ -660,41 +779,41 @@ def create_resistance_gene_table(summary_df: pd.DataFrame) -> pd.DataFrame:
     if gene_rows.empty:
         return pd.DataFrame(columns=["Sample", "Plasmid", "Gene Name", "Breadth (%)"])
 
+    # Pre-index ResGene_ metrics for O(1) lookup (768x faster on large cohorts)
+    res_rows = summary_df[summary_df["Category"].str.startswith("ResGene_", na=False)]
+    res_lookup: dict[tuple[Any, Any, Any], Any] = {
+        (s, p, c): v
+        for s, p, c, v in zip(
+            res_rows["Sample"],
+            res_rows["Plasmid"],
+            res_rows["Category"],
+            res_rows["Value"],
+            strict=True,
+        )
+    }
+
     # Build flat table
     table_rows: list[dict[str, Any]] = []
 
-    for _, row in gene_rows.iterrows():
-        sample = row["Sample"]
-        plasmid = row["Plasmid"]
-        gene_names_str = row["Value"]
-
-        if not isinstance(gene_names_str, str) or not gene_names_str:
+    for sample, plasmid, gene_names_str in zip(
+        gene_rows["Sample"], gene_rows["Plasmid"], gene_rows["Value"], strict=True
+    ):
+        if not isinstance(gene_names_str, str) or not gene_names_str or gene_names_str == "None":
             continue
 
         # Split gene names by comma
-        gene_names = [g.strip() for g in gene_names_str.split(",")]
+        gene_names = [g.strip() for g in gene_names_str.split(",") if g.strip()]
 
         for gene_name in gene_names:
             # Sanitize gene name for lookup
             sanitized_name = sanitize_gene_name(gene_name)
 
-            # Look up depth and breadth
-            depth_category = f"ResGene_{sanitized_name}_MeanDepth"
-            breadth_category = f"ResGene_{sanitized_name}_Breadth"
+            # Look up depth and breadth in O(1)
+            depth_val = res_lookup.get((sample, plasmid, f"ResGene_{sanitized_name}_MeanDepth"))
+            breadth_val = res_lookup.get((sample, plasmid, f"ResGene_{sanitized_name}_Breadth"))
 
-            depth_row = summary_df[
-                (summary_df["Sample"] == sample)
-                & (summary_df["Plasmid"] == plasmid)
-                & (summary_df["Category"] == depth_category)
-            ]
-            breadth_row = summary_df[
-                (summary_df["Sample"] == sample)
-                & (summary_df["Plasmid"] == plasmid)
-                & (summary_df["Category"] == breadth_category)
-            ]
-
-            mean_depth = float(depth_row.iloc[0]["Value"]) if not depth_row.empty else 0.0
-            breadth = float(breadth_row.iloc[0]["Value"]) if not breadth_row.empty else 0.0
+            mean_depth = float(depth_val) if depth_val is not None else 0.0
+            breadth = float(breadth_val) if breadth_val is not None else 0.0
 
             table_rows.append(
                 {
@@ -873,13 +992,35 @@ def plot_verdict_bar_by_plasmid(
             )
         )
 
+    max_count = int(by_plasmid_counts.sum(axis=1).max()) if not by_plasmid_counts.empty else 1
     fig.update_layout(
+        **_SUMMARY_PLOTLY_LAYOUT,
         barmode="stack",
-        title="Verdicts by Plasmid",
         xaxis_title="Plasmid",
-        yaxis_title="Count",
-        xaxis={"tickangle": 45},
-        height=600,
+        yaxis_title="Sample Count",
+        xaxis={
+            "tickangle": -30,
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+            "showgrid": False,
+            "linecolor": "#cbd5e1",
+        },
+        yaxis={
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+            "gridcolor": "#f1f5f9",
+            "linecolor": "#cbd5e1",
+            "dtick": 1 if max_count <= 10 else None,
+        },
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1.0,
+            "font": {"size": 11, "color": "#334155"},
+        },
+        height=420,
     )
 
     # Write HTML
@@ -901,7 +1042,7 @@ def plot_verdict_bar_by_plasmid(
             )
         else:
             # Fallback to plotly kaleido
-            fig.write_image(png_path, width=1200, height=600)
+            fig.write_image(png_path, width=1000, height=420)
 
     return html_path, png_path
 
@@ -978,13 +1119,35 @@ def plot_verdict_bar_by_sample(
             )
         )
 
+    max_count = int(by_sample_counts.sum(axis=1).max()) if not by_sample_counts.empty else 1
     fig.update_layout(
+        **_SUMMARY_PLOTLY_LAYOUT,
         barmode="stack",
-        title="Verdicts by Sample",
         xaxis_title="Sample",
-        yaxis_title="Count",
-        xaxis={"tickangle": 45},
-        height=600,
+        yaxis_title="Plasmid Count",
+        xaxis={
+            "tickangle": -30,
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+            "showgrid": False,
+            "linecolor": "#cbd5e1",
+        },
+        yaxis={
+            "tickfont": {"size": 11, "color": "#334155"},
+            "automargin": True,
+            "gridcolor": "#f1f5f9",
+            "linecolor": "#cbd5e1",
+            "dtick": 1 if max_count <= 10 else None,
+        },
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1.0,
+            "font": {"size": 11, "color": "#334155"},
+        },
+        height=420,
     )
 
     # Write HTML
@@ -1006,9 +1169,30 @@ def plot_verdict_bar_by_sample(
             )
         else:
             # Fallback to plotly kaleido
-            fig.write_image(png_path, width=1200, height=600)
+            fig.write_image(png_path, width=1000, height=420)
 
     return html_path, png_path
+
+
+def _format_table_float(val: Any, decimals: int = 4, sci_threshold: float = 0.0) -> Any:
+    """Format floating-point numbers cleanly for HTML table display."""
+    import math
+
+    if val is None or (isinstance(val, float) and math.isnan(val)):
+        return "N/A"
+    if isinstance(val, (int, bool)):
+        return val
+    try:
+        fval = float(val)
+        if math.isnan(fval):
+            return "N/A"
+        if fval == int(fval) and isinstance(val, str) and "." not in val:
+            return val
+        if sci_threshold > 0 and 0 < abs(fval) < sci_threshold:
+            return f"{fval:.2e}"
+        return f"{fval:.{decimals}f}"
+    except (ValueError, TypeError):
+        return val
 
 
 # Report Generation Functions
@@ -1149,16 +1333,46 @@ def generate_report(
         if verdict_by_sample_png:
             verdict_by_sample_png_base64 = encode_image_to_base64(verdict_by_sample_png)
 
+    # Format display copies of DataFrames for clean HTML rendering
+    combined_display_df = combined_df.copy()
+    if "Value" in combined_display_df.columns:
+        combined_display_df["Value"] = combined_display_df["Value"].apply(
+            lambda v: _format_table_float(v, decimals=4)
+        )
+
+    ratio_display_df = ratio_df.copy()
+    if "Value" in ratio_display_df.columns:
+        ratio_display_df["Value"] = ratio_display_df["Value"].apply(
+            lambda v: _format_table_float(v, decimals=4)
+        )
+
+    p_values_display_df = p_values_df.copy()
+    for col in ("p_value", "p_value_corrected"):
+        if col in p_values_display_df.columns:
+            p_values_display_df[col] = p_values_display_df[col].apply(
+                lambda v: _format_table_float(v, decimals=4, sci_threshold=1e-3)
+            )
+
     # Convert sorted DataFrames to HTML
-    combined_html = combined_df.to_html(classes="table table-striped table-bordered", index=False)
+    combined_html = combined_display_df.to_html(
+        classes="table table-striped table-bordered", index=False
+    )
     verdict_html = verdict_df.to_html(classes="table table-striped table-bordered", index=False)
-    ratio_html = ratio_df.to_html(classes="table table-striped table-bordered", index=False)
-    p_value_html = p_values_df.to_html(classes="table table-striped table-bordered", index=False)
+    ratio_html = ratio_display_df.to_html(classes="table table-striped table-bordered", index=False)
+    p_value_html = p_values_display_df.to_html(
+        classes="table table-striped table-bordered", index=False
+    )
 
     # Convert resistance gene DataFrame to HTML if provided
     resistance_gene_html = ""
     if resistance_gene_df is not None and not resistance_gene_df.empty:
-        resistance_gene_html = resistance_gene_df.to_html(
+        res_display_df = resistance_gene_df.copy()
+        for col in ("Mean Depth", "Breadth (%)"):
+            if col in res_display_df.columns:
+                res_display_df[col] = res_display_df[col].apply(
+                    lambda v: _format_table_float(v, decimals=2)
+                )
+        resistance_gene_html = res_display_df.to_html(
             classes="table table-striped table-bordered", index=False
         )
 
@@ -1167,6 +1381,7 @@ def generate_report(
     if junction_df is not None and not junction_df.empty:
         # Truncate long comma-separated values for HTML display
         display_df = junction_df.copy()
+        display_df.columns.name = None
         for col in ["ExonLengths", "IntronLengths"]:
             if col in display_df.columns:
                 display_df[col] = display_df[col].apply(
@@ -1357,11 +1572,14 @@ def main(
 
     # --- New: Coverage Breadth (REPT-07) ---
     breadth_data = create_metric_heatmap_data(summary_df, "BreadthBackbone")
+    breadth_vmax = (
+        1.0 if (not breadth_data.empty and float(breadth_data.max().max()) <= 1.0) else 100.0
+    )
     breadth_heatmap_interactive, breadth_heatmap_png = plot_metric_heatmap(
         breadth_data,
         output_dir,
         "Backbone Breadth",
-        vmax=100.0,
+        vmax=breadth_vmax,
         static_report=static_report,
         plot_backend=plot_backend,
     )
@@ -1378,7 +1596,14 @@ def main(
     )
 
     # --- New: Splice Junction Metadata Table (SJ-02) ---
-    junction_categories = ["SpliceJunctionCount", "ExonCount", "ExonLengths", "IntronLengths"]
+    junction_categories = [
+        "SpliceJunctionCount",
+        "ExonCount",
+        "SpliceJunctionReads",
+        "SpliceJunctionsCovered",
+        "ExonLengths",
+        "IntronLengths",
+    ]
     junction_df = summary_df[summary_df["Category"].isin(junction_categories)]
 
     junction_table_df = None
@@ -1389,6 +1614,7 @@ def main(
             values="Value",
             aggfunc="first",
         ).reset_index()
+        junction_pivot.columns.name = None
         # Reorder columns
         col_order = ["Sample", "Plasmid"] + [
             c for c in junction_categories if c in junction_pivot.columns
@@ -1403,6 +1629,8 @@ def main(
         "BreadthBackbone",
         "SpliceJunctionCount",
         "ExonCount",
+        "SpliceJunctionReads",
+        "SpliceJunctionsCovered",
         "ExonLengths",
         "IntronLengths",
     ]

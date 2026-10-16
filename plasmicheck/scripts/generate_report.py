@@ -54,45 +54,52 @@ def downsample_data(df: pd.DataFrame, limit: int) -> tuple[pd.DataFrame, bool]:
 
 _CATEGORY_ORDER: list[str] = ["Plasmid", "Human", "Tied", "Backbone_Only", "Ambiguous"]
 
-_PLOTLY_FONT = (
-    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-)
+_PLOTLY_FONT = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 
 _PLOTLY_LAYOUT: dict[str, Any] = {
-    "font": {"family": _PLOTLY_FONT, "size": 13, "color": "#2d3436"},
+    "autosize": True,
+    "font": {"family": _PLOTLY_FONT, "size": 13, "color": "#0f172a"},
     "paper_bgcolor": "white",
     "plot_bgcolor": "white",
-    "margin": {"l": 60, "r": 30, "t": 10, "b": 50, "pad": 4},
+    "margin": {"l": 64, "r": 24, "t": 36, "b": 52, "pad": 4},
     "xaxis": {
-        "showgrid": False,
+        "showgrid": True,
+        "gridwidth": 1,
+        "gridcolor": "#f1f5f9",
         "showline": True,
         "linewidth": 1,
-        "linecolor": "#e9ecef",
+        "linecolor": "#cbd5e1",
         "zeroline": False,
-        "tickfont": {"size": 12, "color": "#636e72"},
-        "title_font": {"size": 13, "color": "#636e72"},
+        "tickfont": {"size": 12, "color": "#475569"},
+        "title_font": {"size": 13, "color": "#334155"},
     },
     "yaxis": {
         "showgrid": True,
-        "gridwidth": 0.5,
-        "gridcolor": "#f0f0f0",
+        "gridwidth": 1,
+        "gridcolor": "#f1f5f9",
         "showline": True,
         "linewidth": 1,
-        "linecolor": "#e9ecef",
+        "linecolor": "#cbd5e1",
         "zeroline": False,
-        "tickfont": {"size": 12, "color": "#636e72"},
-        "title_font": {"size": 13, "color": "#636e72"},
+        "tickfont": {"size": 12, "color": "#475569"},
+        "title_font": {"size": 13, "color": "#334155"},
     },
     "legend": {
-        "bgcolor": "rgba(255,255,255,0.9)",
-        "bordercolor": "#e9ecef",
+        "orientation": "h",
+        "yanchor": "bottom",
+        "y": 1.02,
+        "xanchor": "right",
+        "x": 1.0,
+        "bgcolor": "rgba(255,255,255,0.92)",
+        "bordercolor": "#e2e8f0",
         "borderwidth": 1,
-        "font": {"size": 12},
+        "font": {"size": 12, "color": "#334155"},
+        "title_text": "Assigned To  ",
     },
     "hoverlabel": {
-        "bgcolor": "white",
-        "bordercolor": "#dee2e6",
-        "font": {"size": 12, "family": _PLOTLY_FONT},
+        "bgcolor": "#0f172a",
+        "bordercolor": "#334155",
+        "font": {"size": 12, "family": _PLOTLY_FONT, "color": "#f8fafc"},
     },
 }
 
@@ -155,15 +162,16 @@ def generate_plots(
         category_orders=cat_order,
         labels={
             "PlasmidScore": PLOT_SAMPLE_REPORT["box_plot_y_label"],
-            "AssignedTo": "",
+            "AssignedTo": "Read Assignment Category",
         },
-        width=width,
         height=height,
     )
     fig_box.update_layout(**_PLOTLY_LAYOUT, showlegend=False, hovermode="closest")
+    fig_box.update_xaxes(showgrid=False)
+    fig_box.add_hline(y=0, line_dash="dot", line_color="#94a3b8", line_width=1)
     fig_box.update_traces(
-        marker={"size": 3, "opacity": 0.5, "line_width": 0},
-        line={"width": 1.5},
+        marker={"size": 3.5, "opacity": 0.45, "line_width": 0},
+        line={"width": 1.6},
     )
 
     # Get div HTML for embedding in main report (no plotly.js, no full HTML)
@@ -197,28 +205,39 @@ def generate_plots(
             "PlasmidScore": PLOT_SAMPLE_REPORT["scatter_plot_x_label"],
             "HumanScore": PLOT_SAMPLE_REPORT["scatter_plot_y_label"],
         },
-        width=width,
         height=height,
         render_mode="webgl",
     )
     fig_scatter.update_layout(**_PLOTLY_LAYOUT, showlegend=True, hovermode="closest")
-    fig_scatter.update_traces(marker={"size": 4, "opacity": 0.5, "line_width": 0})
+    fig_scatter.update_traces(marker={"size": 4.5, "opacity": 0.55, "line_width": 0})
 
-    # Diagonal reference line (equal scores)
+    # Diagonal reference line (equal scores y = x across full data range)
     import plotly.graph_objects as go
 
+    p_max = float(reads_df["PlasmidScore"].max()) if not reads_df.empty else 1.0
+    h_max = float(reads_df["HumanScore"].max()) if not reads_df.empty else 1.0
+    p_min = float(reads_df["PlasmidScore"].min()) if not reads_df.empty else 0.0
+    h_min = float(reads_df["HumanScore"].min()) if not reads_df.empty else 0.0
+    import math
+
     score_max = max(
-        1,
-        reads_df["PlasmidScore"].max() if not reads_df.empty else 1,
-        reads_df["HumanScore"].max() if not reads_df.empty else 1,
+        1.0,
+        0.0 if math.isnan(p_max) else p_max,
+        0.0 if math.isnan(h_max) else h_max,
+    )
+    score_min = min(
+        0.0,
+        0.0 if math.isnan(p_min) else p_min,
+        0.0 if math.isnan(h_min) else h_min,
     )
     fig_scatter.add_trace(
         go.Scattergl(
-            x=[0, score_max],
-            y=[0, score_max],
+            x=[score_min, score_max],
+            y=[score_min, score_max],
             mode="lines",
-            line={"color": "#dee2e6", "width": 1, "dash": "dash"},
-            showlegend=False,
+            name="Equal Score (y = x)",
+            line={"color": "#64748b", "width": 1.5, "dash": "dash"},
+            showlegend=True,
             hoverinfo="skip",
         )
     )
@@ -268,8 +287,8 @@ def generate_plots(
 
             kaleido.start_sync_server()
 
-            fig_box.write_image(boxplot_filename_png)
-            fig_scatter.write_image(scatter_filename_png)
+            fig_box.write_image(boxplot_filename_png, width=width, height=height)
+            fig_scatter.write_image(scatter_filename_png, width=width, height=height)
 
     logging.info("Plots generated.")
 
@@ -649,6 +668,10 @@ def main(
     junction_metrics = {
         "splice_junction_count": _get_metric(summary_df, "SpliceJunctionCount", default="N/A"),
         "exon_count": _get_metric(summary_df, "ExonCount", default="N/A"),
+        "splice_junction_reads": _get_metric(summary_df, "SpliceJunctionReads", default="N/A"),
+        "splice_junctions_covered": _get_metric(
+            summary_df, "SpliceJunctionsCovered", default="N/A"
+        ),
         "exon_lengths": _get_metric(summary_df, "ExonLengths", default="N/A"),
         "intron_lengths": _get_metric(summary_df, "IntronLengths", default="N/A"),
     }

@@ -206,9 +206,9 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
             chosen = max(
                 spliced_records,
                 key=lambda r: (
+                    r["q_end"] - r["q_start"],
                     r["junctions"],
                     1 if not r["read"].is_supplementary else 0,
-                    r["q_end"] - r["q_start"],
                 ),
             )
         else:

@@ -1436,3 +1436,98 @@ class TestVerdictAndRatio:
         content = (tmp_path / "unclear_counts.summary.tsv").read_text()
         assert "Verdict\tSample contamination status is unclear" in content
         assert "Ratio\t0.7" in content
+
+
+class TestAccuracyDiscoveriesV038:
+    """Tests for v0.38.0 accuracy improvements (boundary off-by-one, circular origin, MAPQ tie, splice junctions)."""
+
+    @pytest.mark.unit
+    def test_coverage_outside_insert_no_false_positive_at_end_boundary(
+        self, mock_pysam_read: Any
+    ) -> None:
+        """Read ending at insert_end + 1 (0-based exclusive) must have 0.0 outside-insert coverage."""
+        from plasmicheck.scripts.compare_alignments import calculate_coverage_outside_insert
+
+        # insert_region is (100, 500) inclusive -> [100, 501) half-open
+        read = mock_pysam_read(reference_start=400, reference_end=501, cigartuples=[(0, 101)])
+        mock_bam = MagicMock()
+        mock_bam.lengths = [1000]
+        mock_bam.fetch.return_value = [read]
+        mock_bam.__enter__.return_value = mock_bam
+        mock_bam.__exit__.return_value = None
+
+        with patch("pysam.AlignmentFile", return_value=mock_bam):
+            cov = calculate_coverage_outside_insert("p.bam", (100, 500))
+        assert cov == 0.0
+
+    @pytest.mark.unit
+    def test_circular_origin_boundary_clip_excused(self, mock_pysam_read: Any) -> None:
+        """Soft-clip at circular origin (reference_start == 0 or reference_end == plasmid_length) is excused."""
+        r_start0 = mock_pysam_read(
+            mapping_quality=24,
+            cigartuples=[(4, 35), (0, 66)],
+            reference_start=0,
+            reference_end=66,
+            nm_tag=0,
+            is_paired=True,
+            mate_is_unmapped=False,
+        )
+        # Without plasmid_length: 24 - 35 + 10 = -1
+        assert calculate_alignment_score(r_start0, 0) == -1
+        # With plasmid_length=12332: base score boosted to 60, origin clip excused -> 60 + 10 = 70
+        assert calculate_alignment_score(r_start0, 12332) == 70
+
+    @pytest.mark.unit
+    def test_mapq_asymmetry_identical_cigar_nm_ties(self, mock_pysam_read: Any) -> None:
+        """Identical CIGAR and NM with MAPQ=60 on plasmid vs 48..59 on human ties instead of false Plasmid win."""
+        p_read = mock_pysam_read(
+            query_name="r_sym", mapping_quality=60, cigartuples=[(0, 101)], nm_tag=0
+        )
+        h_read = mock_pysam_read(
+            query_name="r_sym", mapping_quality=53, cigartuples=[(0, 101)], nm_tag=0
+        )
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r_sym", [p_read])]), iter([("r_sym", [h_read])])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+        assert counts["Tied"] == 1
+        assert counts["Plasmid"] == 0
+
+    @pytest.mark.unit
+    def test_splice_junction_reads_counted_on_both_strands(self, mock_pysam_read: Any) -> None:
+        """_scan_plasmid_bam counts unclipped reads spanning cDNA exon-exon splice junctions."""
+        from plasmicheck.scripts.compare_alignments import _scan_plasmid_bam
+
+        # Minus-strand insert starting at 100 with exons [200, 100] -> reversed to [100, 200] -> junction at 200
+        ir = InsertRegionData(
+            start=100,
+            end=399,
+            junction_count=1,
+            exon_count=2,
+            exon_lengths=[200, 100],
+            intron_lengths=[500],
+            strand="-",
+        )
+        spanning_read = mock_pysam_read(
+            reference_start=160,
+            reference_end=260,
+            cigartuples=[(0, 100)],
+        )
+        clipped_read = mock_pysam_read(
+            reference_start=160,
+            reference_end=260,
+            cigartuples=[(4, 20), (0, 80)],
+        )
+        mock_bam = MagicMock()
+        mock_bam.lengths = [5000]
+        mock_bam.fetch.return_value = [spanning_read, clipped_read]
+        mock_bam.__enter__.return_value = mock_bam
+        mock_bam.__exit__.return_value = None
+
+        with patch("pysam.AlignmentFile", return_value=mock_bam):
+            cov, _mm, sj_reads, sj_cov = _scan_plasmid_bam("p.bam", ir)
+        assert cov == 0.0
+        assert sj_reads == 1
+        assert sj_cov == 1

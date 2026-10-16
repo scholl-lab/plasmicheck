@@ -224,7 +224,11 @@
         }
         .plot {
             width: 100%;
-            overflow-x: auto;
+            overflow: hidden;
+        }
+        .plot > div {
+            width: 100% !important;
+            height: auto !important;
         }
         .plot img {
             display: block;
@@ -236,7 +240,46 @@
         .plot .plotly-graph-div,
         .plot .js-plotly-plot {
             width: 100% !important;
+            height: 420px !important;
         }
+
+        /* -- Semantic Verdict Badges in Tables ------------- */
+        .pc-v-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.18rem 0.6rem;
+            border-radius: 9999px;
+            font-size: 0.76rem;
+            font-weight: 600;
+            line-height: 1.35;
+            white-space: nowrap;
+        }
+        .pc-v-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .pc-v-clean {
+            background: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+        .pc-v-clean::before { background: #10b981; }
+        .pc-v-unclear {
+            background: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+        .pc-v-unclear::before { background: #f59e0b; }
+        .pc-v-contam {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+        .pc-v-contam::before { background: #ef4444; }
 
         /* -- Tables & DataTables overrides ----------------- */
         .table-container {
@@ -418,31 +461,33 @@
                     </div>
                 </div>
 
-                <div class="pc-panel" style="margin-bottom: 1.25rem;">
-                    <h3>Verdicts</h3>
-                    <div class="table-container">
-                        {{ verdict_df|safe }}
+                <div class="pc-grid-2">
+                    <div class="pc-panel">
+                        <h3>Verdicts</h3>
+                        <div class="table-container">
+                            {{ verdict_df|safe }}
+                        </div>
+                    </div>
+                    <div class="pc-panel">
+                        <h3>Contamination Ratios</h3>
+                        <div class="table-container">
+                            {{ ratio_df|safe }}
+                        </div>
                     </div>
                 </div>
 
-                <div class="pc-panel" style="margin-bottom: 1.25rem;">
-                    <h3>Contamination Ratios</h3>
-                    <div class="table-container">
-                        {{ ratio_df|safe }}
+                <div class="pc-grid-2">
+                    <div class="pc-panel">
+                        <h3>P-Value Table</h3>
+                        <div class="table-container">
+                            {{ p_value_table|safe }}
+                        </div>
                     </div>
-                </div>
-
-                <div class="pc-panel" style="margin-bottom: 1.25rem;">
-                    <h3>P-Value Table</h3>
-                    <div class="table-container">
-                        {{ p_value_table|safe }}
-                    </div>
-                </div>
-
-                <div class="pc-panel">
-                    <h3>Summary Table</h3>
-                    <div class="table-container">
-                        {{ combined_df|safe }}
+                    <div class="pc-panel">
+                        <h3>Summary Table</h3>
+                        <div class="table-container">
+                            {{ combined_df|safe }}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -527,14 +572,37 @@
                 <h2>Mismatch Analysis</h2>
             </summary>
             <div class="pc-section-body">
-                <div class="pc-panel">
-                    <h3>Mismatches Near Insert Heatmap</h3>
-                    <div class="plot">
-                        {% if interactive %}
-                            {{ mismatches_heatmap_content|safe }}
-                        {% else %}
-                            <img src="{{ mismatches_heatmap_content }}" alt="MismatchesNearINSERT Heatmap">
-                        {% endif %}
+                <div class="pc-grid-2">
+                    <div class="pc-panel">
+                        <h3>Mismatches Near Insert Heatmap</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ mismatches_heatmap_content|safe }}
+                            {% else %}
+                                <img src="{{ mismatches_heatmap_content }}" alt="MismatchesNearINSERT Heatmap">
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="pc-panel" style="display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <h3>Boundary Mismatch &amp; Clipping Interpretation</h3>
+                            <p style="font-size: 0.86rem; color: var(--pc-text-secondary); line-height: 1.6; margin: 0 0 0.85rem 0;">
+                                Counts reads overlapping the <strong>cDNA insert boundaries (&plusmn;100 bp)</strong> that exhibit sequence mismatches (<code>NM &gt; 0</code>) or soft/hard clipping (<code>S</code>/<code>H</code> CIGAR operations) when aligned to the plasmid reference.
+                            </p>
+                            <div style="display: grid; gap: 0.65rem; font-size: 0.83rem; line-height: 1.5;">
+                                <div style="background: #f0f9ff; border-left: 3px solid #0284c7; padding: 0.6rem 0.85rem; border-radius: 4px;">
+                                    <strong style="color: #0369a1;">Native Genomic Reads (Clean Sample)</strong><br>
+                                    <span style="color: var(--pc-text-secondary);">Reads spanning exon&ndash;intron or UTR boundaries diverge from the plasmid vector cloning site, producing soft-clipped tails and elevated boundary mismatch counts relative to clean insert interiors.</span>
+                                </div>
+                                <div style="background: #fef2f2; border-left: 3px solid #dc2626; padding: 0.6rem 0.85rem; border-radius: 4px;">
+                                    <strong style="color: #991b1b;">Plasmid-Derived Reads (Contaminated Sample)</strong><br>
+                                    <span style="color: var(--pc-text-secondary);">Reads crossing the vector&ndash;insert junction align contiguously into the plasmid backbone without clipping, while high total read depth at the insert boundary can also elevate raw boundary counts alongside high backbone coverage.</span>
+                                </div>
+                            </div>
+                        </div>
+                        <p style="font-size: 0.78rem; color: var(--pc-text-muted); margin: 0.85rem 0 0 0; border-top: 1px solid var(--pc-border); padding-top: 0.55rem;">
+                            Evaluate alongside <strong>Coverage Outside Insert</strong> and <strong>Backbone Breadth</strong> to distinguish true vector-junction reads from native genomic boundary clipping.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -587,10 +655,27 @@
     <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
     <script src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.min.js"></script>
     <script>
+        function decorateVerdictCells() {
+            document.querySelectorAll('table.dataTable tbody td, table.table tbody td').forEach(function(td) {
+                if (td.querySelector('.pc-v-badge')) return;
+                var txt = (td.textContent || '').trim();
+                if (txt === 'Sample is contaminated with plasmid DNA' || txt === 'Contaminated') {
+                    td.innerHTML = '<span class="pc-v-badge pc-v-contam">' + txt + '</span>';
+                } else if (txt === 'Sample is not contaminated with plasmid DNA' || txt === 'Clean') {
+                    td.innerHTML = '<span class="pc-v-badge pc-v-clean">' + txt + '</span>';
+                } else if (txt === 'Sample contamination status is unclear' || txt === 'Unclear') {
+                    td.innerHTML = '<span class="pc-v-badge pc-v-unclear">' + txt + '</span>';
+                }
+            });
+        }
         $(document).ready(function() {
             $('table').DataTable({
-                pageLength: 10
+                pageLength: 10,
+                drawCallback: function() {
+                    decorateVerdictCells();
+                }
             });
+            decorateVerdictCells();
         });
         {% if interactive %}
         (function() {
@@ -599,13 +684,17 @@
                 var plots = document.querySelectorAll('.plot .js-plotly-plot');
                 plots.forEach(function(el) {
                     el.style.width = '100%';
-                    el.style.height = '460px';
-                    var w = el.parentElement ? el.parentElement.clientWidth : null;
-                    Plotly.relayout(el, { autosize: true, width: w, height: 460 });
+                    el.style.height = '420px';
+                    if (el.parentElement && !el.parentElement.classList.contains('plot')) {
+                        el.parentElement.style.height = '420px';
+                    }
+                    var plotWrap = el.closest('.plot');
+                    var w = plotWrap ? plotWrap.clientWidth : (el.parentElement ? el.parentElement.clientWidth : null);
+                    Plotly.relayout(el, { autosize: true, width: w, height: 420 });
                 });
             }
             window.addEventListener('load', function() {
-                setTimeout(resizeSummaryPlots, 120);
+                setTimeout(resizeSummaryPlots, 100);
             });
             window.addEventListener('resize', function() {
                 setTimeout(resizeSummaryPlots, 150);

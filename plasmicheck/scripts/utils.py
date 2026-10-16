@@ -25,13 +25,30 @@ def encode_image_to_base64(image_path: str) -> str:
     return f"data:image/png;base64,{encoded_string}"
 
 
+_MD5_CACHE: dict[tuple[str, int, int], str] = {}
+
+
 def calculate_md5(file_path: str) -> str:
     """Calculate and return the MD5 checksum of a file."""
-    hash_md5 = hashlib.md5()
+    cache_key: tuple[str, int, int] | None = None
+    try:
+        st = os.stat(file_path)
+        cache_key = (os.path.abspath(file_path), st.st_mtime_ns, st.st_size)
+        if cache_key in _MD5_CACHE:
+            return _MD5_CACHE[cache_key]
+    except OSError:
+        pass
     with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_md5.update(chunk)
-    return hash_md5.hexdigest()
+        if hasattr(hashlib, "file_digest"):
+            digest = hashlib.file_digest(f, "md5").hexdigest()
+        else:
+            hash_md5 = hashlib.md5()
+            for chunk in iter(lambda: f.read(1048576), b""):
+                hash_md5.update(chunk)
+            digest = hash_md5.hexdigest()
+    if cache_key is not None:
+        _MD5_CACHE[cache_key] = digest
+    return digest
 
 
 def write_md5sum(file_path: str, file_type: str, output_folder: str) -> None:
