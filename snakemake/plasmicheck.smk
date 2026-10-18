@@ -3,6 +3,7 @@
 
 import csv
 import os
+import re
 import shlex
 from pathlib import Path
 from typing import Any
@@ -380,6 +381,9 @@ CONDA_ENV = str(config.get("conda_env", "plasmicheck"))
 
 SAMPLE_BAMS = resolve_samples(config)
 SAMPLES = list(SAMPLE_BAMS.keys())
+
+# Restrict {sample} to configured IDs so it cannot match prepare_constructs/summary_reports markers.
+SAMPLE_WILDCARD_RE = "|".join(re.escape(s) for s in SAMPLES) or "(?!)"
 PLASMIDS_FILE, CONSTRUCT_FILES = resolve_plasmids(config, OUTPUT_DIR)
 bam_files = list(SAMPLE_BAMS.values())
 plasmid_files = CONSTRUCT_FILES
@@ -438,6 +442,8 @@ rule prepare_constructs:
 
 rule scan_sample:
     """Screen a single sample BAM against all plasmid constructs in one pipeline run."""
+    wildcard_constraints:
+        sample=SAMPLE_WILDCARD_RE,
     input:
         bam=lambda wildcards: SAMPLE_BAMS[wildcards.sample],
         human_fasta=HUMAN_FASTA,
