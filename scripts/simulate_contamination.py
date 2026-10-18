@@ -388,9 +388,10 @@ def extract_background(
                 seq = (
                     reverse_complement(rec.query_sequence) if rec.is_reverse else rec.query_sequence
                 )
-                quals = rec.qual or ("I" * len(seq))
-                if rec.is_reverse and rec.qual:
-                    quals = rec.qual[::-1]
+                raw_qual: str | None = getattr(rec, "qual", None)
+                quals = raw_qual or ("I" * len(seq))
+                if rec.is_reverse and raw_qual:
+                    quals = raw_qual[::-1]
                 mate_num = 1 if rec.is_read1 else 2
                 mates.setdefault(rec.query_name, {})[mate_num] = (seq, quals)
         with open_text(r1, "w") as out1, open_text(r2, "w") as out2:

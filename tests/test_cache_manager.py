@@ -161,7 +161,11 @@ def test_get_index_returns_both_files(
 
 @pytest.mark.unit
 def test_index_cache_hit_logs_info(
-    tmp_path: Path, sample_fasta: Path, sample_mmi: Path, sample_fai: Path, caplog
+    tmp_path: Path,
+    sample_fasta: Path,
+    sample_mmi: Path,
+    sample_fai: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test that cache hit logs INFO message."""
     cache_root = tmp_path / "cache"
@@ -176,7 +180,9 @@ def test_index_cache_hit_logs_info(
 
 
 @pytest.mark.unit
-def test_index_cache_miss_logs_info(tmp_path: Path, sample_fasta: Path, caplog) -> None:
+def test_index_cache_miss_logs_info(
+    tmp_path: Path, sample_fasta: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test that cache miss logs INFO message."""
     cache_root = tmp_path / "cache"
     cache = CacheManager(cache_root)
@@ -548,7 +554,9 @@ def test_evicted_files_deleted_from_disk(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_corrupted_manifest_handled_gracefully(tmp_path: Path, caplog) -> None:
+def test_corrupted_manifest_handled_gracefully(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test that corrupted manifest.json is handled gracefully."""
     cache_root = tmp_path / "cache"
     cache_root.mkdir()

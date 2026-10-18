@@ -112,6 +112,8 @@ convention = "numpy"
 [tool.mypy]
 python_version = "3.12"
 strict = true
+files = ["plasmicheck", "scripts/simulate_contamination.py", "tests"]
+mypy_path = ["scripts"]
 warn_unused_configs = true
 warn_return_any = true
 warn_unreachable = true
@@ -127,7 +129,6 @@ module = [
     "plotly",
     "plotly.*",
     "seaborn",
-    "seaborn.*",
     "scipy",
     "scipy.*",
     "rich",

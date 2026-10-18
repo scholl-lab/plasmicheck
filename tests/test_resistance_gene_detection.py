@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from Bio.Seq import Seq
@@ -27,7 +28,7 @@ from plasmicheck.scripts.resistance_gene_detection import (
 # ============================================================================
 
 
-def create_test_genbank(tmp_path: Path, features: list[dict]) -> str:
+def create_test_genbank(tmp_path: Path, features: list[dict[str, Any]]) -> str:
     """Create a minimal GenBank file for testing.
 
     Args:
@@ -53,8 +54,8 @@ def create_test_genbank(tmp_path: Path, features: list[dict]) -> str:
         if "gene" in feat_dict:
             qualifiers["gene"] = [feat_dict["gene"]]
 
-        feature = SeqFeature(
-            FeatureLocation(feat_dict["start"], feat_dict["end"]),
+        feature = SeqFeature(  # type: ignore[no-untyped-call]
+            FeatureLocation(feat_dict["start"], feat_dict["end"]),  # type: ignore[no-untyped-call]
             type=feat_dict.get("type", "CDS"),
             qualifiers=qualifiers,
         )
@@ -62,7 +63,7 @@ def create_test_genbank(tmp_path: Path, features: list[dict]) -> str:
 
     # Write to file
     gb_file = tmp_path / "test.gb"
-    SeqIO.write(record, str(gb_file), "genbank")  # type: ignore[no-untyped-call]
+    SeqIO.write(record, str(gb_file), "genbank")
     return str(gb_file)
 
 
@@ -570,12 +571,14 @@ def test_compound_location_origin_wrapping_detection(tmp_path: Path) -> None:
     record.annotations["molecule_type"] = "DNA"
 
     # Origin wrapping feature: 8500..10000 and 0..300
-    loc = CompoundLocation([FeatureLocation(8500, 10000), FeatureLocation(0, 300)])
-    feat = SeqFeature(loc, type="CDS", qualifiers={"label": ["AmpR"]})
+    loc = CompoundLocation(  # type: ignore[no-untyped-call]
+        [FeatureLocation(8500, 10000), FeatureLocation(0, 300)]  # type: ignore[no-untyped-call]
+    )
+    feat = SeqFeature(loc, type="CDS", qualifiers={"label": ["AmpR"]})  # type: ignore[no-untyped-call]
     record.features.append(feat)
 
     gb_file = tmp_path / "origin_comp.gb"
-    SeqIO.write(record, str(gb_file), "genbank")  # type: ignore[no-untyped-call]
+    SeqIO.write(record, str(gb_file), "genbank")
 
     # Non-overlapping insert region: 2000..4000
     genes = detect_resistance_genes(str(gb_file), insert_region=(2000, 4000))

@@ -1,5 +1,6 @@
 """Integration-style unit tests for verdict bar chart wiring in summary reports."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -10,7 +11,7 @@ from plasmicheck.resources import get_resource_path
 
 
 @pytest.mark.unit
-def test_template_renders_verdict_overview_interactive(tmp_path):
+def test_template_renders_verdict_overview_interactive(tmp_path: Path) -> None:
     """Test that summary template renders Verdict Overview section with interactive charts."""
     from plasmicheck.config import get_config
 
@@ -56,7 +57,7 @@ def test_template_renders_verdict_overview_interactive(tmp_path):
 
 
 @pytest.mark.unit
-def test_template_renders_verdict_overview_static(tmp_path):
+def test_template_renders_verdict_overview_static(tmp_path: Path) -> None:
     """Test that summary template renders Verdict Overview section with static PNG charts."""
     from plasmicheck.config import get_config
 
@@ -100,7 +101,7 @@ def test_template_renders_verdict_overview_static(tmp_path):
 
 
 @pytest.mark.unit
-def test_template_renders_without_verdict_data():
+def test_template_renders_without_verdict_data() -> None:
     """Test that template renders without error when verdict data is missing (backward compat)."""
     from plasmicheck.config import get_config
 
@@ -141,7 +142,7 @@ def test_template_renders_without_verdict_data():
 
 
 @pytest.mark.unit
-def test_generate_report_passes_verdict_data_to_template(tmp_path):
+def test_generate_report_passes_verdict_data_to_template(tmp_path: Path) -> None:
     """Test that generate_report() passes verdict chart data to template.render()."""
     from plasmicheck.scripts.generate_summary_reports import generate_report
 
@@ -214,7 +215,7 @@ def test_generate_report_passes_verdict_data_to_template(tmp_path):
 
 
 @pytest.mark.unit
-def test_main_calls_verdict_plot_functions(tmp_path):
+def test_main_calls_verdict_plot_functions(tmp_path: Path) -> None:
     """Test that main() calls plot_verdict_bar_by_plasmid and plot_verdict_bar_by_sample."""
     from plasmicheck.scripts.generate_summary_reports import main
 

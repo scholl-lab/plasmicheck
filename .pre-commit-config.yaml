@@ -21,3 +21,17 @@ repos:
         language: system
         types_or: [python, pyi]
         require_serial: true
+      - id: mypy
+        name: Mypy strict typecheck (uv.lock)
+        entry: uv run --locked mypy
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        require_serial: true
+      - id: pytest-fast
+        name: Portable unit tests (pre-push)
+        entry: uv run --locked pytest -m "not slow and not integration" -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

@@ -3,8 +3,17 @@ name: CI
 on:
   push:
     branches: [main, "feat/*", "fix/*"]
+    paths-ignore:
+      - ".planning/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - ".planning/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
   workflow_dispatch:
   workflow_call:
 
@@ -13,7 +22,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   UV_VERSION: "0.13.1"
@@ -21,6 +30,7 @@ env:
 jobs:
   quality:
     name: Quality & Packaging
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -32,42 +42,13 @@ jobs:
           version: ${{ env.UV_VERSION }}
           python-version: "3.12"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
       - run: uv sync --locked
-      - run: make lint format-check typecheck build
-      - name: Smoke test wheel and sdist outside the checkout
-        shell: bash
-        run: |
-          uv export --locked --no-dev --no-emit-project --format requirements-txt \
-            > "$RUNNER_TEMP/package-requirements.txt"
-          for artifact in "$GITHUB_WORKSPACE"/dist/*.whl "$GITHUB_WORKSPACE"/dist/*.tar.gz; do
-            uv venv --clear --python 3.12 "$RUNNER_TEMP/package-smoke"
-            uv pip sync --python "$RUNNER_TEMP/package-smoke/bin/python" \
-              "$RUNNER_TEMP/package-requirements.txt"
-            uv pip install --python "$RUNNER_TEMP/package-smoke/bin/python" --no-deps "$artifact"
-            (
-              cd "$RUNNER_TEMP"
-              "$RUNNER_TEMP/package-smoke/bin/plasmicheck" --version
-              "$RUNNER_TEMP/package-smoke/bin/python" - <<'PY'
-          import sys
-          from pathlib import Path
-
-          import plasmicheck
-          from plasmicheck.resources import get_resource_path
-
-          assert Path(plasmicheck.__file__).is_relative_to(Path(sys.prefix))
-          for resource in (
-              "config.json", "py.typed", "templates/report_template.html",
-              "templates/summary_template.html", "static/img/plasmicheck_ascii.txt",
-              "static/img/plasmicheck_logo.svg", "static/img/plasmicheck_logo_200px.png",
-              "static/img/plasmicheck_logo_600px.png",
-          ):
-              assert get_resource_path(resource).is_file(), resource
-          PY
-            )
-          done
+      - run: make check smoke-package
 
   test:
     name: Test (Python ${{ matrix.python-version }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -83,6 +64,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
       - run: uv sync --locked
       - name: Unit tests with branch coverage
         run: make test
@@ -103,6 +85,7 @@ jobs:
 
   docker:
     name: Docker smoke test
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -123,7 +106,7 @@ jobs:
   ci-success:
     name: CI Success
     needs: [quality, test, docker]
-    if: always()
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

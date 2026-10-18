@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -27,6 +30,36 @@ except ImportError:
 def isolate_home_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Isolate HOME directory so tests never touch ~/.plasmicheck/cache."""
     monkeypatch.setenv("HOME", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def isolate_external_aligners(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Block host minimap2/samtools in non-integration tests so CI env parity holds locally."""
+    if request.node.get_closest_marker("integration") is not None:
+        return
+
+    real_which = shutil.which
+
+    def _hermetic_which(
+        cmd: str, mode: int = os.F_OK | os.X_OK, path: str | None = None
+    ) -> str | None:
+        if os.path.basename(cmd) in ("minimap2", "samtools"):
+            return None
+        return real_which(cmd, mode=mode, path=path)
+
+    monkeypatch.setattr(shutil, "which", _hermetic_which)
+
+    guard_bin = tmp_path / "_hermetic_bin"
+    guard_bin.mkdir(exist_ok=True)
+    for tool in ("minimap2", "samtools"):
+        stub = guard_bin / tool
+        stub.write_text(
+            f"#!/bin/sh\necho 'Hermetic unit-test guard: {tool} called without @pytest.mark.integration' >&2\nexit 127\n"
+        )
+        stub.chmod(stat.S_IRWXU)
+    monkeypatch.setenv("PATH", f"{guard_bin}{os.pathsep}{os.environ.get('PATH', '')}")
 
 
 @pytest.fixture

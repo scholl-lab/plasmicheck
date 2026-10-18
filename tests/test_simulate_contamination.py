@@ -577,6 +577,40 @@ def test_extract_background_validation(tmp_path: Path) -> None:
         extract_background(fake_bam, fake_bam, r2)
 
 
+def test_extract_background_samtools_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Extract_background uses samtools collate | fastq when samtools is on PATH."""
+    import shutil
+    import subprocess
+    from unittest.mock import MagicMock
+
+    bam = tmp_path / "input.bam"
+    bam.write_text("dummy")
+    r1 = tmp_path / "out_R1.fastq"
+    r2 = tmp_path / "out_R2.fastq"
+
+    monkeypatch.setattr(shutil, "which", lambda cmd, *_a, **_kw: "/usr/bin/samtools")
+
+    calls: list[list[str]] = []
+
+    def fake_popen(cmd: list[str], **_kwargs: object) -> MagicMock:
+        calls.append(cmd)
+        proc = MagicMock()
+        proc.returncode = 0
+        proc.stdout = MagicMock()
+        proc.communicate.return_value = (b"", b"")
+        if cmd[1] == "fastq":
+            r1.write_text("@read1/1\nACGT\n+\nIIII\n")
+            r2.write_text("@read1/2\nACGT\n+\nIIII\n")
+        return proc
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    assert extract_background(bam, r1, r2) == 1
+    assert calls[0][:3] == ["samtools", "collate", "-O"]
+    assert calls[1][:3] == ["samtools", "fastq", "-n"]
+
+
 def test_valid_multi_member_fastq_gz_output(tmp_path: Path) -> None:
     """Appending plasmid reads to gzipped background FASTQ produces valid multi-member gzip."""
     bam = tmp_path / "test.bam"

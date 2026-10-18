@@ -136,7 +136,7 @@ class TestDetectFormat:
         rec = SeqRecord(Seq("ATCG" * 20), id="syn", description="synthetic")
         rec.annotations["molecule_type"] = "DNA"
         with open(xdna_file, "wb") as f:
-            XdnaWriter(f).write_file([rec])
+            XdnaWriter(f).write_file([rec])  # type: ignore[no-untyped-call]
 
         assert detect_format(str(xdna_file)) == "xdna"
 

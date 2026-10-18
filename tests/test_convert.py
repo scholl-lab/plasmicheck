@@ -43,7 +43,7 @@ def _create_synthetic_xdna(
     rec = SeqRecord(Seq(seq), id=record_id, description="synthetic plasmid")
     rec.annotations["molecule_type"] = "DNA"
     with open(path, "wb") as f:
-        XdnaWriter(f).write_file([rec])
+        XdnaWriter(f).write_file([rec])  # type: ignore[no-untyped-call]
     return path
 
 
