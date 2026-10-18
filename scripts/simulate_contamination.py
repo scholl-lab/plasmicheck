@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import random
+import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -337,42 +338,68 @@ def extract_background(
     r1.parent.mkdir(parents=True, exist_ok=True)
     r2.parent.mkdir(parents=True, exist_ok=True)
 
-    collate_cmd = ["samtools", "collate", "-O", "-u", str(bam)]
-    fastq_cmd = [
-        "samtools",
-        "fastq",
-        "-n",
-        "-F",
-        "0x900",
-        "-1",
-        str(r1),
-        "-2",
-        str(r2),
-        "-0",
-        "/dev/null",
-        "-s",
-        "/dev/null",
-        "-",
-    ]
-
-    p1 = subprocess.Popen(collate_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    p2 = subprocess.Popen(fastq_cmd, stdin=p1.stdout, stderr=subprocess.PIPE)
-    if p1.stdout is not None:
-        p1.stdout.close()
-    _, err2 = p2.communicate()
-    _, err1 = p1.communicate()
-
     def cleanup() -> None:
         for p in (r1, r2):
             if p.exists():
                 p.unlink()
 
-    if p1.returncode != 0:
-        cleanup()
-        raise RuntimeError(f"samtools collate failed: {err1.decode(errors='replace')}")
-    if p2.returncode != 0:
-        cleanup()
-        raise RuntimeError(f"samtools fastq failed: {err2.decode(errors='replace')}")
+    if shutil.which("samtools") is not None:
+        collate_cmd = ["samtools", "collate", "-O", "-u", str(bam)]
+        fastq_cmd = [
+            "samtools",
+            "fastq",
+            "-n",
+            "-F",
+            "0x900",
+            "-1",
+            str(r1),
+            "-2",
+            str(r2),
+            "-0",
+            "/dev/null",
+            "-s",
+            "/dev/null",
+            "-",
+        ]
+
+        p1 = subprocess.Popen(collate_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p2 = subprocess.Popen(fastq_cmd, stdin=p1.stdout, stderr=subprocess.PIPE)
+        if p1.stdout is not None:
+            p1.stdout.close()
+        _, err2 = p2.communicate()
+        _, err1 = p1.communicate()
+
+        if p1.returncode != 0:
+            cleanup()
+            raise RuntimeError(f"samtools collate failed: {err1.decode(errors='replace')}")
+        if p2.returncode != 0:
+            cleanup()
+            raise RuntimeError(f"samtools fastq failed: {err2.decode(errors='replace')}")
+    else:
+        import pysam
+
+        mates: dict[str, dict[int, tuple[str, str]]] = {}
+        with pysam.AlignmentFile(str(bam), "rb") as bam_in:
+            for rec in bam_in.fetch(until_eof=True):
+                if rec.is_unmapped or rec.is_secondary or rec.is_supplementary or not rec.is_paired:
+                    continue
+                if rec.is_read1 == rec.is_read2 or not rec.query_name or not rec.query_sequence:
+                    continue
+                seq = (
+                    reverse_complement(rec.query_sequence) if rec.is_reverse else rec.query_sequence
+                )
+                quals = rec.qual or ("I" * len(seq))
+                if rec.is_reverse and rec.qual:
+                    quals = rec.qual[::-1]
+                mate_num = 1 if rec.is_read1 else 2
+                mates.setdefault(rec.query_name, {})[mate_num] = (seq, quals)
+        with open_text(r1, "w") as out1, open_text(r2, "w") as out2:
+            for qname, pair_dict in mates.items():
+                if 1 in pair_dict and 2 in pair_dict:
+                    s1, q1 = pair_dict[1]
+                    s2, q2 = pair_dict[2]
+                    out1.write(f"@{qname}\n{s1}\n+\n{q1}\n")
+                    out2.write(f"@{qname}\n{s2}\n+\n{q2}\n")
 
     retained_pairs = 0
     try:

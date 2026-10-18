@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import gzip
 import random
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,10 +28,17 @@ from simulate_contamination import (  # noqa: E402
 
 
 def _make_bam_from_sam(sam_text: str, out_bam: Path) -> None:
-    """Helper to compile a SAM text into a BAM file using samtools view."""
+    """Helper to compile a SAM text into a BAM file using pysam."""
+    import pysam
+
     sam_path = out_bam.with_suffix(".sam")
     sam_path.write_text(sam_text)
-    subprocess.run(["samtools", "view", "-b", "-o", str(out_bam), str(sam_path)], check=True)
+    with (
+        pysam.AlignmentFile(str(sam_path), "r") as sam_in,
+        pysam.AlignmentFile(str(out_bam), "wb", header=sam_in.header) as bam_out,
+    ):
+        for rec in sam_in:
+            bam_out.write(rec)
     sam_path.unlink()
 
 
