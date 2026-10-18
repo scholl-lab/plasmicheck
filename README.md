@@ -148,6 +148,18 @@ plasmicheck report \
   --static-report
 ```
 
+### Snakemake Cohort Workflow (SLURM)
+
+[`snakemake/plasmicheck.smk`](snakemake/plasmicheck.smk) screens a cohort of BAMs against all plasmid constructs in a 3-rule DAG (`prepare_constructs` → `scan_sample` → `summary_reports`) with one job per sample BAM (avoiding the `N_samples × N_plasmids` cross-product) and `<2 h` per-job walltime. See [`snakemake/config.example.yaml`](snakemake/config.example.yaml), [`snakemake/config.schema.yaml`](snakemake/config.schema.yaml), and [`snakemake/README.md`](snakemake/README.md):
+
+```bash
+snakemake -s snakemake/plasmicheck.smk \
+  --configfile snakemake/config.example.yaml \
+  --use-conda \
+  --profile cubi-v1 \
+  -j 100
+```
+
 ---
 
 ## Pipeline Architecture

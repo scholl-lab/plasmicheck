@@ -1,0 +1,63 @@
+# Example configuration for the PlasmiCheck Snakemake cohort workflow (#129).
+# Screens a cohort of coordinate-sorted BAMs (e.g. 97 BQSR exome BAMs) against
+# all plasmid constructs (e.g. 21 constructs incl. KCNJ5 WT/G151R/L168R,
+# CACNA1H, CLCN2) in a single pass per sample (<2 h per-job walltime).
+
+# Human reference genome FASTA (indexed once by rule prepare_constructs)
+human_fasta: "reference/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
+
+# Sample inputs (choose one):
+#   1. Path to a TSV sample sheet ("sample\tbam" or "corrected_id" + bam_folder)
+#   2. Mapping of {sample_id: bam_path}
+#   3. Path to a newline-delimited BAM list (or legacy fallback: data/bams.txt)
+samples: "data/bams.txt"
+# bam_folder: "results/align/bqsr"
+# bam_ext: ".merged.dedup.bqsr.bam"
+
+# Plasmid construct inputs (choose one):
+#   1. plasmids_file: path to newline-delimited construct list (fallback: data/plasmids.txt)
+#   2. constructs: explicit list of construct files (.gb, .xdna, .dna, .fasta)
+plasmids_file: "data/plasmids.txt"
+# constructs:
+#   - "data/plasmids/pcDNA5_FRT_TO_KCNJ5_WT.gb"
+#   - "data/plasmids/pcDNA5_FRT_TO_KCNJ5_G151R.gb"
+#   - "data/plasmids/pcDNA5_FRT_TO_KCNJ5_L168R.gb"
+#   - "data/plasmids/pCMV6_CACNA1H.gb"
+#   - "data/plasmids/pcDNA5_CLCN2.gb"
+
+# Output, summary, log, and shared content-addressable cache directories
+output_dir: "output"
+summary_dir: "output/summary"
+log_dir: "logs"
+cache_dir: ".plasmicheck_cache"
+conda_env: "plasmicheck"
+
+# Optional extraction & cohort analysis inputs (forwarded to plasmicheck pipeline when set)
+regions_bed: null
+include_unmapped: true
+target_bed: null
+gtf: null
+vcf: null
+
+# Optional reporting and verdict settings
+threshold: 0.8
+padding: 1000
+static_report: false
+archive_output: false
+overwrite: false
+substring_to_remove: null
+
+# Per-rule SLURM resources (all rules < 120 min walltime for short partition)
+resources:
+  prepare_constructs:
+    threads: 4
+    mem_mb: 16000
+    runtime: 60
+  scan_sample:
+    threads: 4
+    mem_mb: 8000
+    runtime: 60
+  summary_reports:
+    threads: 2
+    mem_mb: 4000
+    runtime: 30
