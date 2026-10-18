@@ -508,7 +508,7 @@ def test_build_igv_context_and_embed_in_report(tmp_path: Path) -> None:
     fasta_path = ref_dir / "pTEST.fasta"
     fasta_path.write_text(">pTEST\n" + ("ACGT" * 250) + "\n")
 
-    # Write cDNA_positions.txt with 2 exons
+    # Write cDNA_positions.txt with 2 exons and human genomic coordinates
     cdna_path = data_dir / "cDNA_positions.txt"
     cdna_path.write_text(
         "cDNA start position in plasmid: 200\n"
@@ -517,35 +517,61 @@ def test_build_igv_context_and_embed_in_report(tmp_path: Path) -> None:
         "ExonCount: 2\n"
         "ExonLengths: 150,150\n"
         "IntronLengths: 1000\n"
+        "Strand: +\n"
+        "Chromosome: chr16\n"
+        "GenomicStart: 1153737\n"
+        "GenomicEnd: 1220991\n"
     )
 
     # Write igv_session.xml
     (base_dir / "igv_session.xml").write_text("<Session/>")
 
-    # Write real small BAM with 5 mapped reads
+    # Write real small BAM with 5 mapped reads (including 5' VI, J1 EE at 350, and J1 EI clipped at 350)
     bam_path = align_dir / "plasmid_alignment.bam"
     header = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "pTEST", "LN": 1000}]}
     with pysam.AlignmentFile(str(bam_path), "wb", header=header) as out_bam:
-        for i in range(5):
+        for i in range(4):
             seg = pysam.AlignedSegment(out_bam.header)
             seg.query_name = f"read_{i}"
             seg.query_sequence = "ACGT" * 25
             seg.flag = 0
             seg.reference_id = 0
-            seg.reference_start = 180 + i * 30
+            seg.reference_start = (
+                180 + i * 45
+            )  # 180..280 (5' VI), 225..325, 270..370 (J1 EE), 315..415 (J1 EE)
             seg.mapping_quality = 60
             seg.cigartuples = [(0, 100)]
             seg.query_qualities = pysam.qualitystring_to_array("I" * 100)
             out_bam.write(seg)
+        # Add 5th read soft-clipped at J1 (350) -> Human_ExonIntron (EI)
+        ei_seg = pysam.AlignedSegment(out_bam.header)
+        ei_seg.query_name = "read_ei"
+        ei_seg.query_sequence = "ACGT" * 25
+        ei_seg.flag = 0
+        ei_seg.reference_id = 0
+        ei_seg.reference_start = 350
+        ei_seg.mapping_quality = 60
+        ei_seg.cigartuples = [(4, 25), (0, 75)]  # 25S75M starting at 350
+        ei_seg.query_qualities = pysam.qualitystring_to_array("I" * 100)
+        out_bam.write(ei_seg)
 
     ctx = _build_igv_context(str(base_dir), reports_dir=str(reports_dir), max_reads=3)
     assert ctx["igv_embedded"] is True
     assert ctx["igv_downsampled"] is True
     assert ctx["igv_read_count"] == 3
+    assert ctx["igv_total_primary_reads"] == 5
+    assert ctx["igv_splice_junction_count"] == 1
+    assert ctx["igv_human_genomic_locus"] == "chr16:1,153,737-1,220,991 (+)"
     assert ctx["igv_session_relpath"] == "../igv_session.xml"
     assert len(ctx["igv_loci"]) == 5  # Full, Insert, 5', 3', Splice Junction 1
+    j1_locus = ctx["igv_loci"][4]
+    assert j1_locus["ee_count"] == 2
+    assert j1_locus["ei_count"] == 1
+    assert "Spliced human intron: 1,000 bp" in j1_locus["note"]
     assert "const IGV_GZ_B64 =" in ctx["igv_payload"]
     assert "const IGV_BROWSER_OPTIONS =" in ctx["igv_payload"]
+    assert '"format": "bedgraph"' in ctx["igv_payload"]
+    assert '"colorBy": "tag:PC"' in ctx["igv_payload"]
 
     # Also render full interactive + static report with #121/#122 metrics
     reads_file = data_dir / "reads.tsv"
@@ -585,7 +611,8 @@ def test_build_igv_context_and_embed_in_report(tmp_path: Path) -> None:
 
     interactive_html = (reports_dir / "report_interactive.html").read_text()
     assert "Est. Contamination:" in interactive_html
-    assert "0.8250" in interactive_html
+    assert "82.5% (0.8250)" in interactive_html
+    assert "chr16:1,153,737-1,220,991 (+)" in interactive_html
     assert "Splice-Junction Events:" in interactive_html
     assert "Vector Junctions:" in interactive_html
     assert "igvLociTable" in interactive_html

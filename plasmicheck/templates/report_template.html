@@ -31,6 +31,7 @@
             --pc-text-secondary: #334155;
             --pc-text-muted: #475569;
             --pc-accent: #2563eb;
+            --pc-accent-soft: #eff6ff;
             --pc-clean-bg: #ecfdf5;
             --pc-clean-border: #6ee7b7;
             --pc-clean-text: #065f46;
@@ -666,7 +667,7 @@
         /* -- Metrics grid ---------------------------------- */
         .pc-metrics-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
             gap: 0.85rem;
         }
         @media (max-width: 640px) {
@@ -796,19 +797,92 @@
             outline: 2px solid var(--pc-accent);
             outline-offset: 2px;
         }
-        .pc-loci-table-wrap {
+        .pc-igv-banner {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 0.75rem;
+            background: var(--pc-surface-subtle);
             border: 1px solid var(--pc-border);
             border-radius: 8px;
+            padding: 0.65rem 0.95rem;
+            margin-bottom: 0.65rem;
+            font-size: 0.81rem;
+            line-height: 1.45;
+            color: var(--pc-text-secondary);
+            font-variant-numeric: tabular-nums;
+        }
+        .pc-igv-banner strong {
+            color: var(--pc-text);
+            font-weight: 600;
+        }
+        .pc-igv-legend {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 1.15rem;
+            padding: 0.5rem 0.9rem;
+            border: 1px solid var(--pc-border);
+            border-radius: 8px;
+            background: var(--pc-surface);
+            margin-bottom: 0.7rem;
+            font-size: 0.79rem;
+            line-height: 1.45;
+            color: var(--pc-text-secondary);
+        }
+        .pc-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .pc-legend-swatch {
+            display: inline-block;
+            width: 11px;
+            height: 11px;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+        .pc-igv-quickbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 0.55rem;
+        }
+        .pc-igv-quick-group {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .pc-igv-quick-label {
+            font-size: 0.78rem;
+            line-height: 1.4;
+            font-weight: 600;
+            color: var(--pc-text-muted);
+            margin-right: 0.2rem;
+        }
+        .pc-loci-table-wrap {
+            max-height: 240px;
+            overflow-y: auto;
             overflow-x: auto;
-            margin-bottom: 0.9rem;
+            border: 1px solid var(--pc-border);
+            border-radius: 8px;
+            padding: 0.5rem;
+            background: var(--pc-surface);
+            margin-bottom: 0.75rem;
         }
         .pc-loci-table {
             width: 100%;
-            border-collapse: collapse;
-            font-size: 0.84rem;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.83rem;
             line-height: 1.45;
         }
         .pc-loci-table th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
             text-align: left;
             padding: 0.5rem 0.75rem;
             background: var(--pc-surface-subtle);
@@ -816,23 +890,50 @@
             font-size: 0.76rem;
             line-height: 1.4;
             font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            border-bottom: 1px solid var(--pc-border);
+            border-bottom: 1px solid var(--pc-border-strong);
+        }
+        .pc-loci-table th.pc-num {
+            text-align: right;
         }
         .pc-loci-table td {
-            padding: 0.5rem 0.75rem;
+            padding: 0.45rem 0.75rem;
             border-bottom: 1px solid var(--pc-surface-subtle);
             color: var(--pc-text);
             line-height: 1.45;
+            cursor: pointer;
+        }
+        .pc-loci-table td.pc-num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.8rem;
         }
         .pc-loci-table tr:last-child td { border-bottom: none; }
+        .pc-loci-table tbody tr:hover td {
+            background: #f8fafc;
+        }
         .pc-loci-table tr.is-selected td {
             background: var(--pc-accent-soft);
         }
+        .pc-count-ee {
+            color: #b91c1c;
+            font-weight: 700;
+        }
+        .pc-count-vi {
+            color: #6d28d9;
+            font-weight: 700;
+        }
+        .pc-count-ei {
+            color: #0369a1;
+            font-weight: 700;
+        }
+        .pc-count-zero {
+            color: var(--pc-text-muted);
+            opacity: 0.65;
+        }
         .pc-locus-coord {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            font-size: 0.8rem;
+            font-size: 0.79rem;
             line-height: 1.45;
             color: var(--pc-text-secondary);
             font-variant-numeric: tabular-nums;
@@ -842,12 +943,13 @@
             background: var(--pc-surface);
             border: 1px solid var(--pc-border);
             color: var(--pc-text);
-            font-size: 0.78rem;
+            font-size: 0.76rem;
             line-height: 1.4;
             font-weight: 600;
-            padding: 0.25rem 0.65rem;
+            padding: 0.22rem 0.6rem;
             border-radius: 6px;
             cursor: pointer;
+            font-variant-numeric: tabular-nums;
             transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
         }
         .pc-locus-btn:hover {
@@ -864,14 +966,14 @@
             color: #ffffff;
         }
         .pc-igv-state {
-            padding: 0.65rem 0.9rem;
+            padding: 0.6rem 0.9rem;
             border-radius: 8px;
             border: 1px solid var(--pc-border);
             background: var(--pc-surface-subtle);
             color: var(--pc-text-secondary);
-            font-size: 0.84rem;
+            font-size: 0.83rem;
             line-height: 1.5;
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.65rem;
         }
         .pc-igv-state.is-ready {
             background: #f0fdf4;
@@ -884,7 +986,7 @@
             color: var(--pc-contam-text);
         }
         .pc-igv-viewport {
-            min-height: 360px;
+            min-height: 440px;
             border: 1px solid var(--pc-border);
             border-radius: 8px;
             background: #ffffff;
@@ -972,7 +1074,7 @@
                 <div class="pc-evidence-pills">
                     {% if junction_metrics and junction_metrics.estimated_contamination_fraction is defined and junction_metrics.estimated_contamination_fraction not in ('N/A', 'NA', '') %}
                     <span class="pc-evidence-pill">
-                        <strong>Est. Contamination:</strong> {{ junction_metrics.estimated_contamination_fraction }}
+                        <strong>Est. Contamination:</strong> {% if junction_metrics.estimated_contamination_pct is defined and junction_metrics.estimated_contamination_pct not in ('N/A', 'NA', '') %}{{ junction_metrics.estimated_contamination_pct }} ({{ junction_metrics.estimated_contamination_fraction }}){% else %}{{ junction_metrics.estimated_contamination_fraction }}{% endif %}
                     </span>
                     {% endif %}
                     <span class="pc-evidence-pill">
@@ -1048,17 +1150,17 @@
     <div class="pc-stats-row">
         <div class="pc-stat">
             <div class="pc-stat-label">Plasmid Reads</div>
-            <div class="pc-stat-value" style="color: {{ assignment_colors.Plasmid }};">{{ "{:,}".format(plasmid_count | default(0)) }}</div>
+            <div class="pc-stat-value" style="color: #b91c1c;">{{ "{:,}".format(plasmid_count | default(0)) }}</div>
             <div class="pc-stat-sub">{{ plasmid_pct }}% of aligned reads</div>
         </div>
         <div class="pc-stat">
             <div class="pc-stat-label">Human Reads</div>
-            <div class="pc-stat-value" style="color: {{ assignment_colors.Human }};">{{ "{:,}".format(human_count | default(0)) }}</div>
+            <div class="pc-stat-value" style="color: #1d4ed8;">{{ "{:,}".format(human_count | default(0)) }}</div>
             <div class="pc-stat-sub">{{ human_pct }}% of aligned reads</div>
         </div>
         <div class="pc-stat">
             <div class="pc-stat-label">Tied Reads</div>
-            <div class="pc-stat-value" style="color: {{ assignment_colors.Tied }};">{{ "{:,}".format(tied_count | default(0)) }}</div>
+            <div class="pc-stat-value" style="color: #047857;">{{ "{:,}".format(tied_count | default(0)) }}</div>
             <div class="pc-stat-sub">{{ tied_pct }}% (shared cDNA exons)</div>
         </div>
         <div class="pc-stat">
@@ -1194,30 +1296,32 @@
     </div>
     {% endif %}
 
-    <!-- ---- Alignment Score Plots ------------------------- -->
-    <section class="pc-card">
-        <h2 class="pc-card-header">Score Distribution</h2>
-        <p class="pc-card-subtitle">Alignment score distribution per read category. Higher plasmid scores indicate stronger plasmid alignment.</p>
-        <div class="pc-plot-container" style="overflow: hidden;">
-            {% if interactive %}
-                {{ box_plot|safe }}
-            {% else %}
-                <img src="{{ box_plot }}" alt="Score Distribution" class="pc-plot-img">
-            {% endif %}
-        </div>
-    </section>
+    <!-- ---- Alignment Score Plots (Side-by-Side) ---------- -->
+    <div class="pc-grid-2">
+        <section class="pc-card">
+            <h2 class="pc-card-header">Score Distribution</h2>
+            <p class="pc-card-subtitle">Alignment score distribution per read category. Higher plasmid scores indicate stronger plasmid alignment.</p>
+            <div class="pc-plot-container" style="overflow: hidden;">
+                {% if interactive %}
+                    {{ box_plot|safe }}
+                {% else %}
+                    <img src="{{ box_plot }}" alt="Score Distribution" class="pc-plot-img">
+                {% endif %}
+            </div>
+        </section>
 
-    <section class="pc-card">
-        <h2 class="pc-card-header">Score Comparison</h2>
-        <p class="pc-card-subtitle">Plasmid vs. human alignment score per read. Points below the diagonal (x &gt; y) align better to the plasmid; points above (y &gt; x) align better to the human genome.</p>
-        <div class="pc-plot-container" style="overflow: hidden;">
-            {% if interactive %}
-                {{ scatter_plot|safe }}
-            {% else %}
-                <img src="{{ scatter_plot }}" alt="Score Comparison" class="pc-plot-img">
-            {% endif %}
-        </div>
-    </section>
+        <section class="pc-card">
+            <h2 class="pc-card-header">Score Comparison</h2>
+            <p class="pc-card-subtitle">Plasmid vs. human alignment score per read. Points below the diagonal (x &gt; y) align better to the plasmid; points above (y &gt; x) align better to the human genome.</p>
+            <div class="pc-plot-container" style="overflow: hidden;">
+                {% if interactive %}
+                    {{ scatter_plot|safe }}
+                {% else %}
+                    <img src="{{ scatter_plot }}" alt="Score Comparison" class="pc-plot-img">
+                {% endif %}
+            </div>
+        </section>
+    </div>
 
     <!-- ---- Insert Region & Splice Junction Grid ---------- -->
     <div class="pc-grid-2">
@@ -1267,6 +1371,12 @@
                     </tr>
                 </thead>
                 <tbody>
+                    {% if igv_human_genomic_locus %}
+                    <tr>
+                        <td>Human Genomic Locus (Spliced cDNA)</td>
+                        <td class="pc-num">{{ igv_human_genomic_locus }}</td>
+                    </tr>
+                    {% endif %}
                     <tr>
                         <td>Splice Junction Count</td>
                         <td class="pc-num">{{ junction_metrics.splice_junction_count }}</td>
@@ -1283,20 +1393,26 @@
                     {% endif %}
                     {% if junction_metrics.splice_junction_events is defined and junction_metrics.splice_junction_events not in ('N/A', 'NA', '') %}
                     <tr>
-                        <td>Splice-Junction Events</td>
+                        <td>Splice-Junction Events (Plasmid EE)</td>
                         <td class="pc-num">{{ junction_metrics.splice_junction_events }}</td>
                     </tr>
                     {% endif %}
                     {% if junction_metrics.exon_intron_boundary_reads is defined and junction_metrics.exon_intron_boundary_reads not in ('N/A', 'NA', '') %}
                     <tr>
-                        <td>Exon-Intron Boundary Reads</td>
+                        <td>Exon-Intron Boundary Reads (Human EI)</td>
                         <td class="pc-num">{{ junction_metrics.exon_intron_boundary_reads }}</td>
                     </tr>
                     {% endif %}
                     {% if junction_metrics.estimated_contamination_fraction is defined and junction_metrics.estimated_contamination_fraction not in ('N/A', 'NA', '') %}
                     <tr>
                         <td>Estimated Contamination Fraction</td>
-                        <td class="pc-num">{{ junction_metrics.estimated_contamination_fraction }}</td>
+                        <td class="pc-num">
+                            {% if junction_metrics.estimated_contamination_pct is defined and junction_metrics.estimated_contamination_pct not in ('N/A', 'NA', '') %}
+                                <strong>{{ junction_metrics.estimated_contamination_pct }}</strong> ({{ junction_metrics.estimated_contamination_fraction }})
+                            {% else %}
+                                {{ junction_metrics.estimated_contamination_fraction }}
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endif %}
                     {% if junction_metrics.exon_lengths not in ('N/A', 'NA', '') %}
@@ -1327,13 +1443,16 @@
             <div>
                 <h2 class="pc-card-header">Plasmid &amp; Junction Alignment Inspector</h2>
                 <p class="pc-card-subtitle" style="margin-bottom: 0;">
-                    Self-contained offline alignment viewer (<code>igv.js {{ igv_version | default('3.0.2') }}</code>) showing plasmid read pileups, soft-clips, and junction boundaries without external network calls.
+                    Self-contained offline alignment viewer (<code>igv.js {{ igv_version | default('3.0.2') }}</code>) with 100% full-BAM coverage depth, human splice-site markers, and diagnostic read classification.
                 </p>
             </div>
             <div class="pc-igv-meta-pills">
                 {% if igv_embedded %}
-                <span class="pc-igv-pill">
-                    Embedded Reads: {{ "{:,}".format(igv_read_count | default(0)) }}{% if igv_downsampled %} (subsampled){% endif %}
+                <span class="pc-igv-pill" data-tooltip="The Full-BAM Depth track displays exact 100% per-base depth across all primary alignments in plasmid_alignment.bam.">
+                    Full-BAM Coverage: {{ "{:,}".format(igv_total_primary_reads | default(igv_read_count | default(0))) }} reads (100%)
+                </span>
+                <span class="pc-igv-pill" data-tooltip="The Diagnostic Read Pileup track embeds up to 3,200 primary reads stratified across vector boundaries and human splice junctions.">
+                    Embedded Reads: {{ "{:,}".format(igv_read_count | default(0)) }}{% if igv_downsampled %} (stratified){% endif %}
                 </span>
                 {% endif %}
                 {% if igv_session_relpath %}
@@ -1345,33 +1464,135 @@
         </div>
 
         {% if igv_embedded and interactive %}
+            <div class="pc-igv-banner">
+                <div>
+                    <strong>Coverage Track (100% Full-BAM Depth):</strong> Computed across all {{ "{:,}".format(igv_total_primary_reads | default(igv_read_count | default(0))) }} primary reads (0% downsampled; matches Coverage Analysis table).
+                </div>
+                <div>
+                    <strong>Read Pileup Track:</strong>
+                    {% if igv_downsampled %}
+                        Stratified diagnostic sample of <strong>{{ "{:,}".format(igv_read_count | default(0)) }}</strong> of {{ "{:,}".format(igv_total_primary_reads | default(0)) }} reads &mdash; prioritized at 5'/3' vector boundaries &amp; {{ igv_splice_junction_count | default(0) }} human splice sites.
+                    {% else %}
+                        All <strong>{{ "{:,}".format(igv_read_count | default(0)) }}</strong> primary alignments shown (not subsampled).
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="pc-igv-legend" aria-label="Read classification color legend">
+                <span class="pc-igv-quick-label">Read Color Key (<code>PC</code> tag):</span>
+                <span class="pc-legend-item" data-tooltip="Plasmid cDNA read spanning cleanly across an exon–exon splice junction (±15 bp anchor, NM ≤ 2).">
+                    <span class="pc-legend-swatch" style="background: #dc2626;"></span>
+                    <span><strong>Plasmid Exon&ndash;Exon Span (EE)</strong></span>
+                </span>
+                <span class="pc-legend-item" data-tooltip="Plasmid read spanning cleanly across the 5' or 3' vector–insert cloning boundary (±10 bp anchor).">
+                    <span class="pc-legend-swatch" style="background: #7c3aed;"></span>
+                    <span><strong>Vector&ndash;Insert Span (VI)</strong></span>
+                </span>
+                <span class="pc-legend-item" data-tooltip="Human genomic gDNA read soft-clipped (≥15 bp) at an exon–intron splice boundary where the human intron diverges from the cDNA.">
+                    <span class="pc-legend-swatch" style="background: #0284c7;"></span>
+                    <span><strong>Human Exon&ndash;Intron Clip (EI)</strong></span>
+                </span>
+                <span class="pc-legend-item" data-tooltip="Read aligned to the plasmid vector backbone outside the cDNA insert.">
+                    <span class="pc-legend-swatch" style="background: #d97706;"></span>
+                    <span><strong>Vector Backbone</strong></span>
+                </span>
+                <span class="pc-legend-item" data-tooltip="Read aligned wholly inside a single exon (shared between plasmid cDNA and human genome).">
+                    <span class="pc-legend-swatch" style="background: #64748b;"></span>
+                    <span><strong>Shared Exon</strong></span>
+                </span>
+            </div>
+
             {% if igv_loci %}
+            <div class="pc-igv-quickbar" id="igvQuickBar">
+                <div class="pc-igv-quick-group">
+                    <span class="pc-igv-quick-label">Quick Jump:</span>
+                    {% for item in igv_loci %}
+                        {% if item.is_quick_jump is not defined or item.is_quick_jump %}
+                        <button
+                            type="button"
+                            class="pc-locus-btn pc-quick-locus-btn"
+                            data-locus="{{ item.locus }}"
+                            aria-selected="{{ 'true' if loop.index0 == (1 if igv_loci|length > 1 else 0) else 'false' }}"
+                        >
+                            {{ item.short_label | default(item.label) }}
+                        </button>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                {% if igv_loci|length > 5 %}
+                <div class="pc-igv-quick-group">
+                    <button type="button" class="pc-locus-btn" id="igvFilterActiveBtn" aria-pressed="false">
+                        Filter: All Loci ({{ igv_loci|length }})
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+
             <div class="pc-loci-table-wrap">
                 <table class="pc-loci-table" id="igvLociTable">
                     <thead>
                         <tr>
                             <th>Diagnostic Locus</th>
-                            <th>Feature Type</th>
-                            <th>Coordinates</th>
-                            <th>Description</th>
+                            <th>Feature / Human Spliced Intron</th>
+                            <th>Plasmid Coordinates</th>
+                            <th class="pc-num" data-tooltip="Full-BAM count of plasmid reads spanning this exon–exon (EE) or vector–insert (VI) boundary.">Plasmid Span (EE / VI)</th>
+                            <th class="pc-num" data-tooltip="Full-BAM count of human genomic reads soft-clipped (≥15 bp) at this exon–intron boundary.">Human Clip (EI)</th>
+                            <th class="pc-num" data-tooltip="Number of diagnostic reads embedded in the IGV pileup track for this locus.">In Pileup</th>
                             <th style="text-align: right;">View</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for item in igv_loci %}
-                        <tr class="{% if loop.index0 == (1 if igv_loci|length > 1 else 0) %}is-selected{% endif %}">
+                        {% set is_default = (loop.index0 == (1 if igv_loci|length > 1 else 0)) %}
+                        {% set has_signal = ((item.ee_count is defined and item.ee_count is not none and item.ee_count > 0) or (item.ei_count is defined and item.ei_count is not none and item.ei_count > 0) or (item.is_quick_jump is defined and item.is_quick_jump)) %}
+                        <tr
+                            class="{% if is_default %}is-selected{% endif %}"
+                            data-locus="{{ item.locus }}"
+                            data-has-signal="{{ 'true' if has_signal else 'false' }}"
+                        >
                             <td><strong>{{ item.label }}</strong></td>
-                            <td>{{ item.type }}</td>
+                            <td>
+                                <span style="color: var(--pc-text-secondary); font-weight: 600;">{{ item.type }}</span>
+                                <span style="color: var(--pc-text-muted);">&middot; {{ item.note }}</span>
+                            </td>
                             <td class="pc-locus-coord">{{ item.locus }}</td>
-                            <td>{{ item.note }}</td>
+                            <td class="pc-num">
+                                {% if item.ee_count is defined and item.ee_count is not none %}
+                                    {% if item.ee_count > 0 %}
+                                        <span class="{{ 'pc-count-vi' if item.type == 'Vector Junction' else 'pc-count-ee' }}">{{ "{:,}".format(item.ee_count) }}</span>
+                                    {% else %}
+                                        <span class="pc-count-zero">0</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="pc-count-zero">&mdash;</span>
+                                {% endif %}
+                            </td>
+                            <td class="pc-num">
+                                {% if item.ei_count is defined and item.ei_count is not none %}
+                                    {% if item.ei_count > 0 %}
+                                        <span class="pc-count-ei">{{ "{:,}".format(item.ei_count) }}</span>
+                                    {% else %}
+                                        <span class="pc-count-zero">0</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="pc-count-zero">&mdash;</span>
+                                {% endif %}
+                            </td>
+                            <td class="pc-num">
+                                {% if item.embedded_count is defined and item.embedded_count is not none %}
+                                    {{ "{:,}".format(item.embedded_count) }}
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </td>
                             <td style="text-align: right;">
                                 <button
                                     type="button"
-                                    class="pc-locus-btn"
+                                    class="pc-locus-btn pc-table-locus-btn"
                                     data-locus="{{ item.locus }}"
-                                    aria-selected="{{ 'true' if loop.index0 == (1 if igv_loci|length > 1 else 0) else 'false' }}"
+                                    aria-selected="{{ 'true' if is_default else 'false' }}"
                                 >
-                                    {{ 'Showing' if loop.index0 == (1 if igv_loci|length > 1 else 0) else 'Show' }}
+                                    {{ 'Showing' if is_default else 'Show' }}
                                 </button>
                             </td>
                         </tr>
@@ -1458,8 +1679,8 @@
             Plotly.relayout(el, {
                 autosize: true,
                 width: w,
-                height: 400,
-                margin: {l: 64, r: 24, t: 36, b: 52}
+                height: 360,
+                margin: {l: 58, r: 20, t: 32, b: 48}
             });
         });
     }
@@ -1484,7 +1705,10 @@
     var stateEl = document.getElementById('igvState');
     var igvDiv = document.getElementById('igvDiv');
     var lociTable = document.getElementById('igvLociTable');
+    var quickBar = document.getElementById('igvQuickBar');
+    var filterBtn = document.getElementById('igvFilterActiveBtn');
     var igvBrowser = null;
+    var filterActiveOnly = false;
 
     function setStatus(msg, cls) {
         if (!stateEl) return;
@@ -1492,32 +1716,50 @@
         stateEl.className = 'pc-igv-state' + (cls ? ' ' + cls : '');
     }
 
-    function selectLocusButton(btn) {
-        if (!lociTable || !btn) return;
-        var buttons = lociTable.querySelectorAll('.pc-locus-btn');
-        buttons.forEach(function(b) {
-            var active = (b === btn);
-            b.setAttribute('aria-selected', active ? 'true' : 'false');
-            b.textContent = active ? 'Showing' : 'Show';
-            var row = b.closest('tr');
-            if (row) {
-                row.classList.toggle('is-selected', active);
-            }
-        });
-        var locus = btn.getAttribute('data-locus');
-        if (locus && igvBrowser && typeof igvBrowser.search === 'function') {
+    function activateLocus(locus, scrollRowIntoView) {
+        if (!locus) return;
+        if (lociTable) {
+            var tableBtns = lociTable.querySelectorAll('.pc-table-locus-btn');
+            tableBtns.forEach(function(b) {
+                var active = (b.getAttribute('data-locus') === locus);
+                b.setAttribute('aria-selected', active ? 'true' : 'false');
+                b.textContent = active ? 'Showing' : 'Show';
+                var row = b.closest('tr');
+                if (row) {
+                    row.classList.toggle('is-selected', active);
+                    if (active && scrollRowIntoView && typeof row.scrollIntoView === 'function') {
+                        row.scrollIntoView({block: 'nearest'});
+                    }
+                }
+            });
+        }
+        if (quickBar) {
+            var quickBtns = quickBar.querySelectorAll('.pc-quick-locus-btn');
+            quickBtns.forEach(function(b) {
+                var active = (b.getAttribute('data-locus') === locus);
+                b.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+        }
+        if (igvBrowser && typeof igvBrowser.search === 'function') {
             igvBrowser.search(locus);
         }
     }
 
     if (lociTable) {
         lociTable.addEventListener('click', function(ev) {
-            var btn = ev.target.closest('.pc-locus-btn');
-            if (btn) selectLocusButton(btn);
+            var row = ev.target.closest('tr[data-locus]');
+            if (row) {
+                activateLocus(row.getAttribute('data-locus'), false);
+            } else {
+                var btn = ev.target.closest('.pc-locus-btn');
+                if (btn) activateLocus(btn.getAttribute('data-locus'), false);
+            }
         });
         lociTable.addEventListener('keydown', function(ev) {
             if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
-            var buttons = Array.prototype.slice.call(lociTable.querySelectorAll('.pc-locus-btn'));
+            var buttons = Array.prototype.slice.call(
+                lociTable.querySelectorAll('tbody tr:not([hidden]) .pc-table-locus-btn')
+            );
             var idx = buttons.indexOf(document.activeElement);
             if (idx === -1) return;
             ev.preventDefault();
@@ -1525,7 +1767,34 @@
                 ? Math.min(buttons.length - 1, idx + 1)
                 : Math.max(0, idx - 1);
             buttons[nextIdx].focus();
-            selectLocusButton(buttons[nextIdx]);
+            activateLocus(buttons[nextIdx].getAttribute('data-locus'), true);
+        });
+    }
+
+    if (quickBar) {
+        quickBar.addEventListener('click', function(ev) {
+            var btn = ev.target.closest('.pc-quick-locus-btn');
+            if (btn) {
+                activateLocus(btn.getAttribute('data-locus'), true);
+            }
+        });
+    }
+
+    if (filterBtn && lociTable) {
+        filterBtn.addEventListener('click', function() {
+            filterActiveOnly = !filterActiveOnly;
+            filterBtn.setAttribute('aria-pressed', filterActiveOnly ? 'true' : 'false');
+            filterBtn.setAttribute('aria-selected', filterActiveOnly ? 'true' : 'false');
+            var rows = lociTable.querySelectorAll('tbody tr');
+            var shown = 0;
+            rows.forEach(function(r) {
+                var keep = !filterActiveOnly || r.getAttribute('data-has-signal') === 'true';
+                r.hidden = !keep;
+                if (keep) shown += 1;
+            });
+            filterBtn.textContent = filterActiveOnly
+                ? 'Filter: Active Loci (' + shown + ')'
+                : 'Filter: All Loci (' + rows.length + ')';
         });
     }
 
@@ -1547,7 +1816,7 @@
                 throw new Error('igv.createBrowser unavailable after bundle evaluation');
             }
             igvBrowser = await window.igv.createBrowser(igvDiv, IGV_BROWSER_OPTIONS);
-            setStatus('Offline igv.js alignment browser active — click any diagnostic locus above or drag tracks to inspect reads.', 'is-ready');
+            setStatus('Offline igv.js alignment browser active — click any locus row or quick-jump button above to inspect full-BAM coverage and read pileups.', 'is-ready');
         } catch (err) {
             setStatus('Unable to initialize embedded IGV view: ' + (err && err.message ? err.message : String(err)), 'is-error');
         }

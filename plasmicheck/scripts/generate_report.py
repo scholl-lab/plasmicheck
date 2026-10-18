@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import base64
+import bisect
 import gzip
 import hashlib
 import json
 import logging
 import math
 import os
+import random
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -426,11 +428,35 @@ def _load_verified_igv_b64() -> str:
     return base64.b64encode(gz_bytes).decode("ascii")
 
 
+def _encode_bedgraph_uri(seq_name: str, depth_arr: Any) -> str:
+    """Encode a per-base depth array into a compact RLE bedGraph base64 data URI."""
+    import numpy as np
+
+    n = len(depth_arr)
+    if n == 0:
+        return ""
+    step = 5 if n > 2000 else 1
+    lines: list[str] = []
+    run_start = 0
+    first_chunk = depth_arr[0 : min(step, n)]
+    run_val = round(float(np.mean(first_chunk)))
+    for pos in range(step, n, step):
+        chunk = depth_arr[pos : min(pos + step, n)]
+        val = round(float(np.mean(chunk)))
+        if val != run_val:
+            lines.append(f"{seq_name}\t{run_start}\t{pos}\t{run_val}")
+            run_start = pos
+            run_val = val
+    lines.append(f"{seq_name}\t{run_start}\t{n}\t{run_val}")
+    raw = ("\n".join(lines) + "\n").encode("utf-8")
+    return "data:application/octet-stream;base64," + base64.b64encode(raw).decode("ascii")
+
+
 def _build_igv_context(
     output_folder: str,
     reports_dir: str | None = None,
     anonymize: bool = False,
-    max_reads: int = 300,
+    max_reads: int = 3200,
     max_raw_bam_bytes: int = 262_144,
 ) -> dict[str, Any]:
     """Build self-contained igv.js alignment inspector context from pipeline artifacts."""
@@ -454,6 +480,9 @@ def _build_igv_context(
         "igv_session_relpath": session_rel,
         "igv_downsampled": False,
         "igv_read_count": 0,
+        "igv_total_primary_reads": 0,
+        "igv_splice_junction_count": 0,
+        "igv_human_genomic_locus": "",
         "igv_payload": "",
     }
 
@@ -488,6 +517,7 @@ def _build_igv_context(
         return base_ctx
 
     try:
+        import numpy as np
         import pysam
 
         # Verify BGZF magic header before opening with pysam so mock text files fall back cleanly
@@ -514,6 +544,11 @@ def _build_igv_context(
         insert_start: int | None = None
         insert_end: int | None = None
         exon_lengths: list[int] = []
+        intron_lengths: list[int] = []
+        strand = "+"
+        chrom = ""
+        genomic_start = ""
+        genomic_end = ""
         if cdna_path is not None:
             for line in cdna_path.read_text(encoding="utf-8", errors="replace").splitlines():
                 if line.startswith("cDNA start position in plasmid:"):
@@ -528,102 +563,396 @@ def _build_igv_context(
                     val = line.split(":", 1)[1].strip()
                     if val not in ("N/A", "NA", ""):
                         exon_lengths = [int(x) for x in val.split(",") if x.strip().isdigit()]
+                elif line.startswith("IntronLengths:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val not in ("N/A", "NA", ""):
+                        intron_lengths = [int(x) for x in val.split(",") if x.strip().isdigit()]
+                elif line.startswith("Strand:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val in ("+", "-"):
+                        strand = val
+                elif line.startswith("Chromosome:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val not in ("N/A", "NA", ""):
+                        chrom = val
+                elif line.startswith("GenomicStart:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val not in ("N/A", "NA", ""):
+                        genomic_start = val
+                elif line.startswith("GenomicEnd:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val not in ("N/A", "NA", ""):
+                        genomic_end = val
 
+        human_genomic_locus = ""
+        if chrom and genomic_start.isdigit() and genomic_end.isdigit():
+            human_genomic_locus = f"{chrom}:{int(genomic_start):,}-{int(genomic_end):,} ({strand})"
+
+        # Orient exon and intron lengths along plasmid coordinate axis (5' -> 3' on plasmid)
+        exon_lengths_plasmid = exon_lengths[::-1] if strand == "-" else list(exon_lengths)
+        intron_lengths_plasmid = intron_lengths[::-1] if strand == "-" else list(intron_lengths)
+
+        has_insert = (
+            insert_start is not None and insert_end is not None and insert_end > insert_start
+        )
+        junc_positions: list[int] = []
+        junc_intron_bp: list[int | None] = []
         bed_lines: list[str] = []
-        loci: list[dict[str, str]] = [
-            {
-                "label": "Full Construct",
-                "type": "Plasmid Reference",
-                "locus": f"{seq_name}:1-{seq_len}",
-                "note": f"{seq_len:,} bp circular construct",
-            }
-        ]
 
-        if insert_start is not None and insert_end is not None and insert_end > insert_start:
+        if has_insert and insert_start is not None and insert_end is not None:
             bed_lines.append(
                 f"{seq_name}\t{insert_start}\t{insert_end + 1}\tcDNA_Insert\t1000\t+\t"
                 f"{insert_start}\t{insert_end + 1}\t37,99,235"
             )
-            b5_lo = max(0, insert_start - 15)
-            b5_hi = min(seq_len, insert_start + 15)
-            b3_lo = max(0, insert_end - 15)
-            b3_hi = min(seq_len, insert_end + 15)
+            b5_lo = max(0, insert_start - 10)
+            b5_hi = min(seq_len, insert_start + 10)
+            b3_lo = max(0, insert_end - 10)
+            b3_hi = min(seq_len, insert_end + 10)
             bed_lines.append(
-                f"{seq_name}\t{b5_lo}\t{b5_hi}\t5p_Vector_Junction\t1000\t+\t{b5_lo}\t{b5_hi}\t220,38,38"
+                f"{seq_name}\t{b5_lo}\t{b5_hi}\t5p_Vector_Junction\t1000\t+\t{b5_lo}\t{b5_hi}\t124,58,237"
             )
             bed_lines.append(
-                f"{seq_name}\t{b3_lo}\t{b3_hi}\t3p_Vector_Junction\t1000\t+\t{b3_lo}\t{b3_hi}\t220,38,38"
+                f"{seq_name}\t{b3_lo}\t{b3_hi}\t3p_Vector_Junction\t1000\t+\t{b3_lo}\t{b3_hi}\t124,58,237"
             )
-            pad_lo = max(1, insert_start - 150)
-            pad_hi = min(seq_len, insert_end + 150)
-            loci.append(
-                {
-                    "label": "cDNA Insert",
-                    "type": "Insert Region",
-                    "locus": f"{seq_name}:{pad_lo}-{pad_hi}",
-                    "note": f"{insert_end - insert_start + 1:,} bp insert (±150 bp flank)",
-                }
-            )
-            loci.append(
-                {
-                    "label": "5' Vector-Insert Boundary",
-                    "type": "Vector Junction",
-                    "locus": f"{seq_name}:{max(1, insert_start - 120)}-{min(seq_len, insert_start + 120)}",
-                    "note": f"Coordinate {insert_start:,} bp",
-                }
-            )
-            loci.append(
-                {
-                    "label": "3' Vector-Insert Boundary",
-                    "type": "Vector Junction",
-                    "locus": f"{seq_name}:{max(1, insert_end - 120)}-{min(seq_len, insert_end + 120)}",
-                    "note": f"Coordinate {insert_end:,} bp",
-                }
-            )
-            if len(exon_lengths) > 1 and sum(exon_lengths) <= (insert_end - insert_start + 5):
+            if len(exon_lengths_plasmid) > 1 and sum(exon_lengths_plasmid) <= (
+                insert_end - insert_start + 5
+            ):
                 cursor = insert_start
-                for idx, ex_len in enumerate(exon_lengths, start=1):
+                for idx, ex_len in enumerate(exon_lengths_plasmid, start=1):
                     ex_end = min(seq_len, cursor + ex_len)
+                    ex_color = "13,148,136" if idx % 2 == 1 else "15,118,110"
                     bed_lines.append(
                         f"{seq_name}\t{cursor}\t{ex_end}\tExon_{idx}\t1000\t+\t"
-                        f"{cursor}\t{ex_end}\t13,148,136"
+                        f"{cursor}\t{ex_end}\t{ex_color}"
                     )
-                    if idx < len(exon_lengths):
+                    if idx < len(exon_lengths_plasmid):
                         j_pos = ex_end
-                        loci.append(
-                            {
-                                "label": f"Splice Junction {idx} (Exon {idx}/{idx + 1})",
-                                "type": "Exon-Exon Junction",
-                                "locus": f"{seq_name}:{max(1, j_pos - 100)}-{min(seq_len, j_pos + 100)}",
-                                "note": f"Coordinate {j_pos:,} bp",
-                            }
+                        intron_bp = (
+                            intron_lengths_plasmid[idx - 1]
+                            if (idx - 1) < len(intron_lengths_plasmid)
+                            else None
+                        )
+                        junc_positions.append(j_pos)
+                        junc_intron_bp.append(intron_bp)
+                        j_lo = max(0, j_pos - 2)
+                        j_hi = min(seq_len, j_pos + 2)
+                        j_label = (
+                            f"J{idx}_Exon{idx}_{idx + 1}_Intron_{intron_bp}bp"
+                            if intron_bp is not None
+                            else f"J{idx}_Exon{idx}_{idx + 1}"
+                        )
+                        bed_lines.append(
+                            f"{seq_name}\t{j_lo}\t{j_hi}\t{j_label}\t1000\t+\t"
+                            f"{j_lo}\t{j_hi}\t220,38,38"
                         )
                     cursor = ex_end
 
-        mapped_reads = 0
-        downsampled = False
-        with pysam.AlignmentFile(str(bam_path), "rb") as in_bam:
-            primary_mapped = [
-                r for r in in_bam.fetch(until_eof=True) if not r.is_unmapped and not r.is_secondary
-            ]
-            mapped_reads = len(primary_mapped)
-            if bam_path.stat().st_size <= max_raw_bam_bytes and mapped_reads <= max_reads:
-                bam_bytes = bam_path.read_bytes()
+        n_junc = len(junc_positions)
+        n_diag_loci = n_junc + (2 if has_insert else 0)
+        if max_reads <= 20:
+            locus_quota = max(1, max_reads // max(1, n_diag_loci))
+        else:
+            locus_quota = max(24, min(120, (max_reads * 3 // 4) // max(1, n_diag_loci)))
+
+        rng = random.Random(42)
+
+        def _res_add(
+            buf: list[tuple[Any, str]], item: tuple[Any, str], seen: int, cap: int
+        ) -> None:
+            if cap <= 0:
+                return
+            if len(buf) < cap:
+                buf.append(item)
             else:
-                downsampled = mapped_reads > max_reads
-                step = max(1, mapped_reads // max_reads) if mapped_reads > max_reads else 1
-                selected = primary_mapped[::step][:max_reads]
-                mapped_reads = len(selected)
-                with tempfile.NamedTemporaryFile(suffix=".bam", delete=False) as tmp_bam:
-                    tmp_bam_name = tmp_bam.name
-                try:
-                    with pysam.AlignmentFile(tmp_bam_name, "wb", header=in_bam.header) as out_bam:
-                        for r in selected:
-                            out_bam.write(r)
-                    bam_bytes = Path(tmp_bam_name).read_bytes()
-                finally:
-                    if os.path.exists(tmp_bam_name):
-                        os.remove(tmp_bam_name)
+                j = rng.randint(0, seen - 1)
+                if j < cap:
+                    buf[j] = item
+
+        b5_vi_count = 0
+        b3_vi_count = 0
+        j_ee_counts = [0] * n_junc
+        j_ei_counts = [0] * n_junc
+        backbone_count = 0
+        shared_count = 0
+
+        b5_bucket: list[tuple[Any, str]] = []
+        b3_bucket: list[tuple[Any, str]] = []
+        j_ee_buckets: list[list[tuple[Any, str]]] = [[] for _ in range(n_junc)]
+        j_ei_buckets: list[list[tuple[Any, str]]] = [[] for _ in range(n_junc)]
+        backbone_bucket: list[tuple[Any, str]] = []
+        shared_bucket: list[tuple[Any, str]] = []
+
+        total_primary_reads = 0
+        diff_depth = np.zeros(seq_len + 1, dtype=np.int64)
+
+        with pysam.AlignmentFile(str(bam_path), "rb") as in_bam:
+            for r in in_bam.fetch(until_eof=True):
+                if r.is_unmapped or r.is_secondary or r.is_supplementary or r.is_duplicate:
+                    continue
+                total_primary_reads += 1
+                rstart = r.reference_start
+                rend = r.reference_end if r.reference_end is not None else rstart
+                if 0 <= rstart < seq_len:
+                    diff_depth[rstart] += 1
+                    diff_depth[max(rstart, min(seq_len, rend))] -= 1
+
+                matched_locus = False
+                if has_insert and insert_start is not None and insert_end is not None:
+                    cigar = r.cigartuples or []
+                    nm_val = int(r.get_tag("NM")) if r.has_tag("NM") else 0
+                    has_long_clip = any(op in (4, 5) and ln > 6 for op, ln in cigar)
+
+                    # 1. Vector-Insert boundaries (5' at insert_start, 3' at insert_end + 1)
+                    if not has_long_clip and nm_val <= 2:
+                        b5 = insert_start
+                        if (
+                            0 < b5 < seq_len
+                            and rstart + 10 <= b5 <= rend - 10
+                            and r.get_overlap(b5 - 10, b5 + 10) == 20
+                        ):
+                            b5_vi_count += 1
+                            _res_add(b5_bucket, (r, "Vector_Insert"), b5_vi_count, locus_quota)
+                            matched_locus = True
+                        b3 = insert_end + 1
+                        if (
+                            0 < b3 < seq_len
+                            and rstart + 10 <= b3 <= rend - 10
+                            and r.get_overlap(b3 - 10, b3 + 10) == 20
+                        ):
+                            b3_vi_count += 1
+                            if not matched_locus:
+                                _res_add(b3_bucket, (r, "Vector_Insert"), b3_vi_count, locus_quota)
+                                matched_locus = True
+
+                    # 2. Exon-Exon splice junction spanning reads (Plasmid_ExonExon)
+                    if n_junc > 0 and not has_long_clip and nm_val <= 2 and (rend - rstart) >= 30:
+                        idx = bisect.bisect_left(junc_positions, rstart + 15)
+                        while idx < n_junc and junc_positions[idx] <= rend - 15:
+                            jp = junc_positions[idx]
+                            if r.get_overlap(jp - 15, jp + 15) == 30:
+                                j_ee_counts[idx] += 1
+                                if not matched_locus:
+                                    _res_add(
+                                        j_ee_buckets[idx],
+                                        (r, "Plasmid_ExonExon"),
+                                        j_ee_counts[idx],
+                                        locus_quota,
+                                    )
+                                    matched_locus = True
+                            idx += 1
+
+                    # 3. Human Exon-Intron soft-clipped reads at splice junctions (Human_ExonIntron)
+                    if n_junc > 0 and cigar:
+                        if cigar[0][0] == 4 and cigar[0][1] >= 15:
+                            idx = bisect.bisect_left(junc_positions, rstart - 2)
+                            while idx < n_junc and junc_positions[idx] <= rstart + 2:
+                                jp = junc_positions[idx]
+                                if (r.get_overlap(jp, min(seq_len, jp + 15)) or 0) >= 15:
+                                    j_ei_counts[idx] += 1
+                                    if not matched_locus:
+                                        _res_add(
+                                            j_ei_buckets[idx],
+                                            (r, "Human_ExonIntron"),
+                                            j_ei_counts[idx],
+                                            locus_quota,
+                                        )
+                                        matched_locus = True
+                                idx += 1
+                        if cigar[-1][0] == 4 and cigar[-1][1] >= 15:
+                            idx = bisect.bisect_left(junc_positions, rend - 2)
+                            while idx < n_junc and junc_positions[idx] <= rend + 2:
+                                jp = junc_positions[idx]
+                                if (r.get_overlap(max(0, jp - 15), jp) or 0) >= 15:
+                                    j_ei_counts[idx] += 1
+                                    if not matched_locus:
+                                        _res_add(
+                                            j_ei_buckets[idx],
+                                            (r, "Human_ExonIntron"),
+                                            j_ei_counts[idx],
+                                            locus_quota,
+                                        )
+                                        matched_locus = True
+                                idx += 1
+
+                if not matched_locus:
+                    if (
+                        has_insert
+                        and insert_start is not None
+                        and insert_end is not None
+                        and (rend <= insert_start or rstart > insert_end)
+                    ):
+                        backbone_count += 1
+                        _res_add(backbone_bucket, (r, "Backbone"), backbone_count, max_reads)
+                    else:
+                        shared_count += 1
+                        _res_add(shared_bucket, (r, "Shared_Exon"), shared_count, max_reads)
+
+            # Assemble stratified diagnostic read sample
+            selected_pairs: list[tuple[Any, str]] = []
+            b5_sel = b5_bucket[:locus_quota]
+            b3_sel = b3_bucket[:locus_quota]
+            selected_pairs.extend(b5_sel)
+            selected_pairs.extend(b3_sel)
+
+            j_embedded_counts = [0] * n_junc
+            for idx in range(n_junc):
+                ee_list = j_ee_buckets[idx]
+                ei_list = j_ei_buckets[idx]
+                half = max(1, locus_quota // 2)
+                take_ee = min(len(ee_list), half)
+                take_ei = min(len(ei_list), locus_quota - take_ee)
+                if take_ee + take_ei < locus_quota:
+                    if len(ee_list) > take_ee:
+                        take_ee = min(len(ee_list), locus_quota - take_ei)
+                    elif len(ei_list) > take_ei:
+                        take_ei = min(len(ei_list), locus_quota - take_ee)
+                j_sel = ee_list[:take_ee] + ei_list[:take_ei]
+                j_embedded_counts[idx] = len(j_sel)
+                selected_pairs.extend(j_sel)
+
+            if len(selected_pairs) > max_reads:
+                step = max(1, len(selected_pairs) // max_reads)
+                selected_pairs = selected_pairs[::step][:max_reads]
+            elif len(selected_pairs) < max_reads:
+                rem = max_reads - len(selected_pairs)
+                half_rem = rem // 2
+                take_bb = min(len(backbone_bucket), half_rem)
+                take_sh = min(len(shared_bucket), rem - take_bb)
+                if take_bb + take_sh < rem and len(backbone_bucket) > take_bb:
+                    take_bb = min(len(backbone_bucket), rem - take_sh)
+                selected_pairs.extend(backbone_bucket[:take_bb])
+                selected_pairs.extend(shared_bucket[:take_sh])
+
+            selected_pairs.sort(key=lambda item: (item[0].reference_id, item[0].reference_start))
+            mapped_reads = len(selected_pairs)
+            downsampled = total_primary_reads > mapped_reads
+
+            with tempfile.NamedTemporaryFile(suffix=".bam", delete=False) as tmp_bam:
+                tmp_bam_name = tmp_bam.name
+            try:
+                with pysam.AlignmentFile(tmp_bam_name, "wb", header=in_bam.header) as out_bam:
+                    for r, pc_cat in selected_pairs:
+                        r.set_tag("PC", pc_cat, value_type="Z")
+                        out_bam.write(r)
+                bam_bytes = Path(tmp_bam_name).read_bytes()
+            finally:
+                if os.path.exists(tmp_bam_name):
+                    os.remove(tmp_bam_name)
+
+        # Build 100% full-BAM depth array (prefer C count_coverage when indexed, fallback to diff_depth)
+        try:
+            from .coverage_metrics import get_depth_array
+
+            def _primary_cb(read: Any) -> bool:
+                return not (
+                    read.is_unmapped
+                    or read.is_secondary
+                    or read.is_supplementary
+                    or read.is_duplicate
+                )
+
+            depth_arr = get_depth_array(
+                str(bam_path), seq_name, 0, seq_len, read_callback=_primary_cb
+            )
+            if len(depth_arr) != seq_len:
+                depth_arr = np.cumsum(diff_depth[:-1])
+        except Exception:
+            depth_arr = np.cumsum(diff_depth[:-1])
+
+        bedgraph_uri = _encode_bedgraph_uri(seq_name, depth_arr)
+
+        # Build rich diagnostic loci metadata with full-BAM and embedded read counts
+        loci: list[dict[str, Any]] = [
+            {
+                "id": "full",
+                "short_label": "Full Construct",
+                "label": "Full Construct",
+                "type": "Plasmid Reference",
+                "locus": f"{seq_name}:1-{seq_len}",
+                "note": f"{seq_len:,} bp circular construct",
+                "ee_count": None,
+                "ei_count": None,
+                "embedded_count": mapped_reads,
+                "is_quick_jump": True,
+            }
+        ]
+
+        if has_insert and insert_start is not None and insert_end is not None:
+            pad_lo = max(1, insert_start - 150)
+            pad_hi = min(seq_len, insert_end + 150)
+            insert_embedded = sum(
+                1
+                for r, _ in selected_pairs
+                if (r.reference_end or r.reference_start) > insert_start
+                and r.reference_start <= insert_end
+            )
+            loci.append(
+                {
+                    "id": "insert",
+                    "short_label": "cDNA Insert",
+                    "label": "cDNA Insert",
+                    "type": "Insert Region",
+                    "locus": f"{seq_name}:{pad_lo}-{pad_hi}",
+                    "note": (
+                        f"{insert_end - insert_start + 1:,} bp cDNA insert ({len(exon_lengths_plasmid)} exons)"
+                        if exon_lengths_plasmid
+                        else f"{insert_end - insert_start + 1:,} bp insert (±150 bp flank)"
+                    ),
+                    "ee_count": sum(j_ee_counts) if n_junc > 0 else None,
+                    "ei_count": sum(j_ei_counts) if n_junc > 0 else None,
+                    "embedded_count": insert_embedded,
+                    "is_quick_jump": True,
+                }
+            )
+            loci.append(
+                {
+                    "id": "b5",
+                    "short_label": "5' Boundary",
+                    "label": "5' Vector-Insert Boundary",
+                    "type": "Vector Junction",
+                    "locus": f"{seq_name}:{max(1, insert_start - 120)}-{min(seq_len, insert_start + 120)}",
+                    "note": f"Coordinate {insert_start:,} bp (Vector → cDNA)",
+                    "ee_count": b5_vi_count,
+                    "ei_count": None,
+                    "embedded_count": len(b5_sel),
+                    "is_quick_jump": True,
+                }
+            )
+            loci.append(
+                {
+                    "id": "b3",
+                    "short_label": "3' Boundary",
+                    "label": "3' Vector-Insert Boundary",
+                    "type": "Vector Junction",
+                    "locus": f"{seq_name}:{max(1, insert_end - 120)}-{min(seq_len, insert_end + 120)}",
+                    "note": f"Coordinate {insert_end:,} bp (cDNA → Vector)",
+                    "ee_count": b3_vi_count,
+                    "ei_count": None,
+                    "embedded_count": len(b3_sel),
+                    "is_quick_jump": True,
+                }
+            )
+            for idx, j_pos in enumerate(junc_positions, start=1):
+                intron_bp = junc_intron_bp[idx - 1]
+                note_str = (
+                    f"Coord {j_pos:,} bp · Spliced human intron: {intron_bp:,} bp"
+                    if intron_bp is not None
+                    else f"Coordinate {j_pos:,} bp"
+                )
+                loci.append(
+                    {
+                        "id": f"j{idx}",
+                        "short_label": f"J{idx}",
+                        "label": f"Splice Junction {idx} (Exon {idx}/{idx + 1})",
+                        "type": "Exon-Exon Junction",
+                        "locus": f"{seq_name}:{max(1, j_pos - 100)}-{min(seq_len, j_pos + 100)}",
+                        "note": note_str,
+                        "ee_count": j_ee_counts[idx - 1],
+                        "ei_count": j_ei_counts[idx - 1],
+                        "embedded_count": j_embedded_counts[idx - 1],
+                        "is_quick_jump": False,
+                    }
+                )
 
         igv_gz_b64 = _load_verified_igv_b64()
         fasta_uri = "data:application/octet-stream;base64," + base64.b64encode(fasta_bytes).decode(
@@ -643,26 +972,53 @@ def _build_igv_context(
         if bed_uri:
             tracks.append(
                 {
-                    "name": "Plasmid Regions & Junctions",
+                    "name": "Plasmid Construct & Human Splice Sites",
                     "type": "annotation",
                     "format": "bed",
                     "url": bed_uri,
                     "indexed": False,
                     "displayMode": "EXPANDED",
-                    "height": 68,
+                    "height": 74,
                 }
             )
+        if bedgraph_uri:
+            tracks.append(
+                {
+                    "name": f"Full-BAM Depth (100% of {total_primary_reads:,} reads)",
+                    "type": "wig",
+                    "format": "bedgraph",
+                    "url": bedgraph_uri,
+                    "indexed": False,
+                    "color": "#0f172a",
+                    "height": 72,
+                    "min": 0,
+                }
+            )
+        pileup_label = (
+            f"Diagnostic Read Pileup ({mapped_reads:,} stratified of {total_primary_reads:,} reads)"
+            if downsampled
+            else f"Diagnostic Read Pileup (all {mapped_reads:,} primary reads)"
+        )
         tracks.append(
             {
-                "name": f"Plasmid Alignments ({mapped_reads} reads)",
+                "name": pileup_label,
                 "type": "alignment",
                 "format": "bam",
                 "url": bam_uri,
                 "indexed": False,
-                "showCoverage": True,
+                "showCoverage": False,
                 "showSoftClips": True,
-                "colorBy": "strand",
-                "height": 300,
+                "colorBy": "tag:PC",
+                "tagColorTable": {
+                    "Plasmid_ExonExon": "#dc2626",
+                    "Vector_Insert": "#7c3aed",
+                    "Human_ExonIntron": "#0284c7",
+                    "Backbone": "#d97706",
+                    "Shared_Exon": "#64748b",
+                    "*": "#94a3b8",
+                },
+                "samplingDepth": 500,
+                "height": 320,
             }
         )
 
@@ -692,6 +1048,9 @@ def _build_igv_context(
             "igv_session_relpath": session_rel,
             "igv_downsampled": downsampled,
             "igv_read_count": mapped_reads,
+            "igv_total_primary_reads": total_primary_reads,
+            "igv_splice_junction_count": n_junc,
+            "igv_human_genomic_locus": human_genomic_locus,
             "igv_payload": payload_js,
         }
     except Exception as exc:
@@ -1026,6 +1385,14 @@ def main(
     }
 
     # Extract junction metrics (Phase 15 & #121/#122)
+    est_contam_raw = _get_metric(summary_df, "EstimatedContaminationFraction", default="N/A")
+    est_contam_pct = "N/A"
+    if est_contam_raw not in ("N/A", "NA", ""):
+        try:
+            est_contam_pct = f"{float(est_contam_raw) * 100:.1f}%"
+        except (ValueError, TypeError):
+            est_contam_pct = "N/A"
+
     junction_metrics = {
         "splice_junction_count": _get_metric(summary_df, "SpliceJunctionCount", default="N/A"),
         "exon_count": _get_metric(summary_df, "ExonCount", default="N/A"),
@@ -1037,9 +1404,8 @@ def main(
         "exon_intron_boundary_reads": _get_metric(
             summary_df, "ExonIntronBoundaryReads", default="N/A"
         ),
-        "estimated_contamination_fraction": _get_metric(
-            summary_df, "EstimatedContaminationFraction", default="N/A"
-        ),
+        "estimated_contamination_fraction": est_contam_raw,
+        "estimated_contamination_pct": est_contam_pct,
         "vector_insert_junction_reads": _get_metric(
             summary_df, "VectorInsertJunctionReads", default="N/A"
         ),
