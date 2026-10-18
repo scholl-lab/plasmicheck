@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import socket
 import subprocess
 
 from filelock import FileLock
@@ -58,7 +59,7 @@ def create_indexes(fasta_file: str, overwrite: bool = False, threads: int | None
 
         # Create Minimap2 index atomically via temporary file
         logging.info(f"Creating Minimap2 index for {fasta_file}")
-        tmp_mmi = f"{minimap2_index}.tmp.{os.getpid()}"
+        tmp_mmi = f"{minimap2_index}.tmp.{socket.gethostname()}.{os.getpid()}"
         minimap2_command = [
             "minimap2",
             "-t",
@@ -80,7 +81,7 @@ def create_indexes(fasta_file: str, overwrite: bool = False, threads: int | None
 
         # Create Samtools index atomically via temporary file
         logging.info(f"Creating Samtools index for {fasta_file}")
-        tmp_fai = f"{fasta_file}.fai.{os.getpid()}.tmp"
+        tmp_fai = f"{samtools_index}.tmp.{socket.gethostname()}.{os.getpid()}"
         samtools_command = [
             "samtools",
             "faidx",

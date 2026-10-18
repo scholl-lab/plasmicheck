@@ -10,14 +10,17 @@ import pytest
 from plasmicheck.scripts.generate_summary_reports import (
     PLOT_CONFIG,
     UNCLEAR_RANGE,
+    _add_plasmid_flag,
     _extract_sample_plasmid,
     _format_verdict_hover,
+    _reestimate_cohort_depth_fractions,
     _sanitize_for_excel,
     aggregate_verdicts,
     apply_sorting,
     calculate_Metrics,
     calculate_variations,
     categorize_value,
+    compute_plasmid_flag,
     create_metric_heatmap_data,
     create_resistance_gene_table,
     find_tsv_files,
@@ -1196,3 +1199,306 @@ def test_summary_report_cohort_matrix_and_links(tmp_path: Path) -> None:
     assert "../sample1_merged/plasmid1/reports/report_interactive.html" in content
     assert "Plasmid Span Events (EE)" in content
     assert "Human Intron Clips (EI)" in content
+
+
+class TestPlasmidFlagAndCohortDepth:
+    @pytest.mark.unit
+    def test_contaminated_verdict_is_positive_with_zero_f_plasmid(self) -> None:
+        """Contaminated verdict -> 'positive' even when f_plasmid == 0.0 (single-exon construct without target BED)."""
+        assert (
+            compute_plasmid_flag(
+                verdict="Sample is contaminated with plasmid DNA",
+                f_plasmid=0.0,
+            )
+            == "positive"
+        )
+        assert compute_plasmid_flag(verdict="Contaminated", f_plasmid=0.0) == "positive"
+
+    @pytest.mark.unit
+    def test_unclear_verdict_is_weak_at_low_ratio(self) -> None:
+        """Unclear verdict -> 'weak' even at ratio = 0.62 where 0.5 * ratio / (1 + ratio) < 0.20."""
+        summary_df = pd.DataFrame(
+            {
+                "Sample": ["APA25-N", "APA25-N"],
+                "Plasmid": ["CACNA1H", "CACNA1H"],
+                "Category": ["Ratio", "Verdict"],
+                "Value": ["0.62", "Sample contamination status is unclear"],
+            }
+        )
+        verdict_df = summary_df[summary_df["Category"] == "Verdict"]
+        flagged = _add_plasmid_flag(verdict_df, summary_df)
+        assert list(flagged["plasmid_flag"]) == ["weak"]
+
+    @pytest.mark.unit
+    def test_f_plasmid_thresholds(self) -> None:
+        """f_plasmid >= 0.50 -> 'positive'; 0.20 <= f_plasmid < 0.50 -> 'weak'."""
+        assert (
+            compute_plasmid_flag("Sample is not contaminated with plasmid DNA", f_plasmid=0.50)
+            == "positive"
+        )
+        assert (
+            compute_plasmid_flag("Sample is not contaminated with plasmid DNA", f_plasmid=0.75)
+            == "positive"
+        )
+        assert (
+            compute_plasmid_flag("Sample is not contaminated with plasmid DNA", f_plasmid=0.20)
+            == "weak"
+        )
+        assert (
+            compute_plasmid_flag("Sample is not contaminated with plasmid DNA", f_plasmid=0.49)
+            == "weak"
+        )
+        assert (
+            compute_plasmid_flag("Sample is not contaminated with plasmid DNA", f_plasmid=0.19)
+            == "negative"
+        )
+
+    @pytest.mark.unit
+    def test_structural_junction_and_bridge_reads_trigger_weak(self) -> None:
+        """SpliceJunctionReads > 0, VectorInsertJunctionReads > 0, VectorInsertBridgePairs > 0 -> 'weak' on NotContaminated verdict."""
+        summary_df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s1", "s2", "s2", "s3", "s3"],
+                "Plasmid": ["p1", "p1", "p1", "p1", "p1", "p1"],
+                "Category": [
+                    "Verdict",
+                    "SpliceJunctionReads",
+                    "Verdict",
+                    "VectorInsertJunctionReads",
+                    "Verdict",
+                    "VectorInsertBridgePairs",
+                ],
+                "Value": ["NotContaminated", "2", "NotContaminated", "1", "NotContaminated", "3"],
+            }
+        )
+        verdict_df = summary_df[summary_df["Category"] == "Verdict"]
+        flagged = _add_plasmid_flag(verdict_df, summary_df)
+        assert list(flagged["plasmid_flag"]) == ["weak", "weak", "weak"]
+
+    @pytest.mark.unit
+    def test_backbone_only_negative_control(self) -> None:
+        """Backbone_Only > 0 and MeanDepthBackbone > 0 with NotContaminated verdict and 0 junction/bridge reads -> 'negative'."""
+        summary_df = pd.DataFrame(
+            {
+                "Sample": ["s1"] * 7,
+                "Plasmid": ["pWPI-KCNJ5-WT"] * 7,
+                "Category": [
+                    "Verdict",
+                    "Backbone_Only",
+                    "MeanDepthBackbone",
+                    "BreadthBackbone",
+                    "SpliceJunctionReads",
+                    "VectorInsertJunctionReads",
+                    "VectorInsertBridgePairs",
+                ],
+                "Value": ["NotContaminated", "420", "85.5", "0.95", "0", "0", "0"],
+            }
+        )
+        verdict_df = summary_df[summary_df["Category"] == "Verdict"]
+        flagged = _add_plasmid_flag(verdict_df, summary_df)
+        assert list(flagged["plasmid_flag"]) == ["negative"]
+
+    @pytest.mark.unit
+    def test_variant_cooccurrence_and_cdna_artefacts(self) -> None:
+        """cooccurrence=True -> 'positive'; cdna_artefacts > 0 -> 'weak'."""
+        assert compute_plasmid_flag("NotContaminated", cooccurrence=True) == "positive"
+        assert compute_plasmid_flag("NotContaminated", cdna_artefacts=1.0) == "weak"
+
+        verdict_df = pd.DataFrame(
+            {
+                "Sample": ["s_cooc", "s_cdna", "s_clean"],
+                "Plasmid": ["p1", "p1", "p1"],
+                "Category": ["Verdict", "Verdict", "Verdict"],
+                "Value": ["NotContaminated", "NotContaminated", "NotContaminated"],
+            }
+        )
+        flagged = _add_plasmid_flag(
+            verdict_df,
+            verdict_df,
+            cooccurrence_pairs={("s_cooc", "p1")},
+            cdna_artefact_counts={("s_cdna", "p1"): 2},
+        )
+        assert list(flagged["plasmid_flag"]) == ["positive", "weak", "negative"]
+
+    @pytest.mark.unit
+    def test_verdict_table_tsv_includes_plasmid_flag_column(self, tmp_path: Path) -> None:
+        """Verify verdict_table.tsv written by save_tables_as_tsv_and_excel includes plasmid_flag and preserves columns."""
+        combined_df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "Category": ["Plasmid", "Plasmid"],
+                "Value": [100, 0],
+            }
+        )
+        verdict_df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "Category": ["Verdict", "Verdict"],
+                "Value": [
+                    "Sample is contaminated with plasmid DNA",
+                    "Sample is not contaminated with plasmid DNA",
+                ],
+            }
+        )
+        ratio_df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "Category": ["Ratio", "Ratio"],
+                "Value": [5.0, 0.0],
+            }
+        )
+        p_values_df = pd.DataFrame(
+            {
+                "Sample": ["s1", "s2"],
+                "Plasmid": ["p1", "p1"],
+                "p_value": [0.01, 0.9],
+                "p_value_corrected": [0.02, 0.9],
+            }
+        )
+
+        save_tables_as_tsv_and_excel(combined_df, verdict_df, ratio_df, p_values_df, str(tmp_path))
+
+        verdict_tsv = pd.read_csv(tmp_path / "data" / "verdict_table.tsv", sep="\t")
+        assert list(verdict_tsv.columns) == [
+            "Sample",
+            "Plasmid",
+            "Category",
+            "Value",
+            "plasmid_flag",
+        ]
+        by_sample = dict(zip(verdict_tsv["Sample"], verdict_tsv["plasmid_flag"], strict=True))
+        assert by_sample == {"s1": "positive", "s2": "negative"}
+
+    @pytest.mark.unit
+    def test_reestimate_cohort_depth_fractions_multi_sample(self) -> None:
+        """Verify _reestimate_cohort_depth_fractions updates r_cohort, f_excess, and f_plasmid across a cohort."""
+        # 3 clean samples (Ratio < 1.5) with dp_locus / dp_sample_median = [0.70, 0.80, 0.90] -> median r_cohort = 0.80
+        # 1 contaminated single-exon sample (s4, Ratio = 3.0) with dp_sample_median = 100, dp_locus = 160 (2x expected 80)
+        # -> f_excess = 1 - (0.80 * 100) / 160 = 0.50, f_plasmid = 0.50
+        rows = []
+        sample_specs = [
+            ("s1", 100.0, 70.0, 0.01, 0.60, 0.0),
+            ("s2", 100.0, 80.0, 0.02, 0.60, 0.0),
+            ("s3", 100.0, 90.0, 0.05, 0.60, 0.0),
+            ("s4", 100.0, 160.0, 3.00, 0.60, 0.0),
+        ]
+        for s, dp_med, dp_loc, ratio, r_init, f_junc in sample_specs:
+            rows.extend(
+                [
+                    {
+                        "Sample": s,
+                        "Plasmid": "KCNJ5_construct",
+                        "Category": "dp_sample_median",
+                        "Value": dp_med,
+                    },
+                    {
+                        "Sample": s,
+                        "Plasmid": "KCNJ5_construct",
+                        "Category": "dp_locus",
+                        "Value": dp_loc,
+                    },
+                    {
+                        "Sample": s,
+                        "Plasmid": "KCNJ5_construct",
+                        "Category": "Ratio",
+                        "Value": ratio,
+                    },
+                    {
+                        "Sample": s,
+                        "Plasmid": "KCNJ5_construct",
+                        "Category": "r_cohort",
+                        "Value": r_init,
+                    },
+                    {
+                        "Sample": s,
+                        "Plasmid": "KCNJ5_construct",
+                        "Category": "f_excess",
+                        "Value": 0.0,
+                    },
+                    {
+                        "Sample": s,
+                        "Plasmid": "KCNJ5_construct",
+                        "Category": "f_junction",
+                        "Value": f_junc,
+                    },
+                    {
+                        "Sample": s,
+                        "Plasmid": "KCNJ5_construct",
+                        "Category": "f_plasmid",
+                        "Value": 0.0,
+                    },
+                ]
+            )
+        summary_df = pd.DataFrame(rows)
+        updated = _reestimate_cohort_depth_fractions(summary_df)
+
+        def _val(sample: str, cat: str) -> float:
+            sub = updated[(updated["Sample"] == sample) & (updated["Category"] == cat)]
+            return float(sub["Value"].iloc[0])
+
+        for s in ("s1", "s2", "s3", "s4"):
+            assert _val(s, "r_cohort") == pytest.approx(0.80)
+
+        # Clean samples s1 (70 <= 80) and s2 (80 <= 80) have f_excess == 0.0
+        assert _val("s1", "f_excess") == pytest.approx(0.0)
+        assert _val("s2", "f_excess") == pytest.approx(0.0)
+        # Spiked sample s4 has 2x expected locus depth -> f_excess == 0.50 and f_plasmid == 0.50
+        assert _val("s4", "f_excess") == pytest.approx(0.50)
+        assert _val("s4", "f_plasmid") == pytest.approx(0.50)
+
+    @pytest.mark.unit
+    def test_main_with_vcf_file_writes_flagged_variants(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify main(..., vcf_file=...) writes plasmid_flagged_variants.tsv and feeds variant evidence into plasmid_flag."""
+        from plasmicheck.scripts.generate_summary_reports import main
+
+        for s, p, cvar in (
+            ("s1-T", "p_g151r", "128911724:G>A"),
+            ("s1-T", "p_l168r", "128911776:T>G"),
+            ("s2-T", "p_cacna1h", "NA"),
+        ):
+            sdir = tmp_path / "input" / s / p / "data"
+            sdir.mkdir(parents=True)
+            (sdir / "comparison_result.summary.tsv").write_text(
+                "Category\tCount\n"
+                "Plasmid\t0\n"
+                "Human\t500\n"
+                "Tied\t10\n"
+                "Ratio\t0.0\n"
+                "Threshold\t0.8\n"
+                "Verdict\tSample is not contaminated with plasmid DNA\n"
+                "SpliceJunctionReads\t1\n"
+                f"Chromosome\t{'chr11' if 's1' in s else 'chr16'}\n"
+                f"GenomicStart\t{128910000 if 's1' in s else 1200000}\n"
+                f"GenomicEnd\t{128920000 if 's1' in s else 1220000}\n"
+                f"GenomicIntrons\t{'NA' if 's1' in s else '1207118-1207210'}\n"
+                f"ConstructVariants\t{cvar}\n"
+                "f_plasmid\t0.10\n"
+            )
+
+        vcf_tsv_path = tmp_path / "cohort_variants.tsv"
+        vcf_tsv_path.write_text(
+            "sample\tchr\tpos\tref\talt\tad\tdp\tvaf\n"
+            "s1_To\tchr11\t128911724\tG\tA\t15\t100\t0.15\n"
+            "s1_To\tchr11\t128911776\tT\tG\t49\t100\t0.49\n"
+            "s2_To\tchr16\t1207114\tACGTACGTACGTACG\tA\t8\t100\t0.08\n"
+        )
+        out_dir = tmp_path / "summary_out"
+        out_dir.mkdir()
+
+        main(str(tmp_path / "input"), str(out_dir), vcf_file=str(vcf_tsv_path))
+
+        flagged_variants_tsv = out_dir / "data" / "plasmid_flagged_variants.tsv"
+        assert flagged_variants_tsv.exists()
+        verdict_tsv = pd.read_csv(out_dir / "data" / "verdict_table.tsv", sep="\t")
+        by_pair = {
+            (str(r["Sample"]), str(r["Plasmid"])): str(r["plasmid_flag"])
+            for _, r in verdict_tsv.iterrows()
+        }
+        assert by_pair[("s1-T", "p_g151r")] == "positive"
+        assert by_pair[("s1-T", "p_l168r")] == "positive"
+        assert by_pair[("s2-T", "p_cacna1h")] == "weak"

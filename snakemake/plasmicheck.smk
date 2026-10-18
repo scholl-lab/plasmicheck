@@ -8,8 +8,19 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-from plasmicheck.output_paths import OutputPaths
-from plasmicheck.scripts.utils import sanitize_filename
+try:
+    from plasmicheck.output_paths import OutputPaths
+    from plasmicheck.scripts.utils import sanitize_filename
+except ImportError:  # pragma: no cover — cluster head-node without plasmicheck installed
+
+    def sanitize_filename(name: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_-]", "_", name)
+
+    class OutputPaths:  # type: ignore[no-redef]
+        def __init__(self, output_root: Path, sample_name: str, plasmid_name: str) -> None:
+            self.comparison_prefix = str(
+                Path(output_root) / sample_name / plasmid_name / "data" / "comparison_result"
+            )
 
 DEFAULT_HUMAN_FASTA = "reference/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
 DEFAULT_BAMS_FILE = "data/bams.txt"
@@ -337,6 +348,14 @@ def build_pipeline_flags(cfg: dict[str, Any]) -> str:
     elif cfg.get("include_unmapped") is True and "regions_bed" not in cfg:
         flags.append("--include-unmapped")
 
+    if cfg.get("target_bed"):
+        flags.append(f"--target-bed {shlex.quote(str(cfg['target_bed']))}")
+    gtf_val = cfg.get("gtf_file") or cfg.get("gtf") or cfg.get("mane_gtf")
+    if gtf_val:
+        flags.append(f"--gtf {shlex.quote(str(gtf_val))}")
+    vcf_val = cfg.get("vcf_file") or cfg.get("vcf")
+    if vcf_val:
+        flags.append(f"--vcf {shlex.quote(str(vcf_val))}")
     if cfg.get("threshold") is not None:
         flags.append(f"--threshold {shlex.quote(str(cfg['threshold']))}")
     if cfg.get("padding") is not None:
@@ -362,6 +381,9 @@ def build_summary_flags(cfg: dict[str, Any]) -> str:
         flags.append("--static-report")
     if cfg.get("substring_to_remove"):
         flags.append(f"--substring_to_remove {shlex.quote(str(cfg['substring_to_remove']))}")
+    vcf_val = cfg.get("vcf_file") or cfg.get("vcf")
+    if vcf_val:
+        flags.append(f"--vcf {shlex.quote(str(vcf_val))}")
     return " ".join(flags)
 
 

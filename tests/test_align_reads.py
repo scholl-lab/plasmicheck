@@ -8,7 +8,12 @@ from pathlib import Path
 import pysam
 import pytest
 
-from plasmicheck.scripts.align_reads import align_reads
+from plasmicheck.scripts.align_reads import (
+    align_reads,
+    bam_to_fastq_cmd,
+    has_bam_index,
+    parse_bed_regions,
+)
 from plasmicheck.scripts.spliced_alignment import spliced_alignment
 from plasmicheck.scripts.utils import run_command
 
@@ -64,6 +69,7 @@ def test_alignment_preserves_shell_metacharacters(
             "fastq",
             "-@",
             "1",
+            "-n",
             "-F",
             "0x900",
             "-",
@@ -118,3 +124,101 @@ def test_spliced_alignment_preserves_shell_metacharacters(command_log: Path) -> 
     assert (command_log / "samtools-sort").read_text().splitlines()[-2:] == ["-o", output]
     assert (command_log / "samtools-index").read_text().splitlines() == ["index", output]
     assert not (command_log / "injected").exists()
+
+
+@pytest.mark.unit
+def test_parse_bed_regions(tmp_path: Path) -> None:
+    bed = tmp_path / "regions.bed"
+    bed.write_text(
+        "# comment line\n"
+        "track name=test\n"
+        "browser position chr1:1-100\n"
+        "\n"
+        "chr1\t0\t100\tgeneA\n"
+        "chr11\t128890000\t128920000\n"
+        "chr2 -5 50\n"
+    )
+    assert parse_bed_regions(str(bed)) == [
+        "chr1:1-100",
+        "chr11:128890001-128920000",
+        "chr2:1-50",
+    ]
+
+    empty_bed = tmp_path / "empty.bed"
+    empty_bed.write_text("# only comments\n\ntrack name=empty\n")
+    with pytest.raises(ValueError, match="No valid BED intervals found"):
+        parse_bed_regions(str(empty_bed))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "index_name", ["sample.bam.bai", "sample.bai", "sample.bam.csi", "sample.csi"]
+)
+def test_has_bam_index(tmp_path: Path, index_name: str) -> None:
+    bam = tmp_path / "sample.bam"
+    bam.write_bytes(b"")
+    assert not has_bam_index(str(bam))
+    (tmp_path / index_name).write_bytes(b"")
+    assert has_bam_index(str(bam))
+
+
+@pytest.mark.unit
+def test_bam_to_fastq_cmd(tmp_path: Path) -> None:
+    bam = tmp_path / "sample.bam"
+    bam.write_bytes(b"")
+
+    assert bam_to_fastq_cmd(str(bam), 4) == (
+        f"samtools collate -@ 4 -u -O {bam} | samtools fastq -@ 4 -n -F 0x900 -"
+    )
+
+    with pytest.raises(FileNotFoundError, match="BAM index"):
+        bam_to_fastq_cmd(str(bam), 4, regions=["chr1:101-200"])
+
+    (tmp_path / "sample.bam.bai").write_bytes(b"")
+    assert bam_to_fastq_cmd(
+        str(bam), 2, regions=["chr1:101-200", "chr1:101-200", "chr2:1-50", "*"]
+    ) == (
+        f"samtools view -@ 2 -u -M {bam} chr1:101-200 chr2:1-50 '*' "
+        f"| samtools collate -@ 2 -u -O - "
+        f"| samtools fastq -@ 2 -n -F 0x900 -"
+    )
+
+    bed = tmp_path / "targets.bed"
+    bed.write_text("chr1\t100\t200\n")
+    assert bam_to_fastq_cmd(str(bam), 2, regions=str(bed)) == (
+        f"samtools view -@ 2 -u -M {bam} chr1:101-200 '*' "
+        f"| samtools collate -@ 2 -u -O - "
+        f"| samtools fastq -@ 2 -n -F 0x900 -"
+    )
+
+
+@pytest.mark.unit
+def test_align_reads_with_regions_on_indexed_bam(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bam = tmp_path / "sample.bam"
+    bam.write_bytes(b"")
+    (tmp_path / "sample.bam.bai").write_bytes(b"")
+    commands: list[str] = []
+    monkeypatch.setattr("plasmicheck.scripts.align_reads.run_command", commands.append)
+
+    align_reads(
+        "ref.mmi",
+        str(bam),
+        "out.bam",
+        "plasmid",
+        minimap2_threads=2,
+        samtools_threads=1,
+        samtools_sort_memory="2G",
+        regions=["chr1:101-200"],
+        include_unmapped=True,
+    )
+
+    assert len(commands) == 2
+    assert commands[0].startswith(
+        f"samtools view -@ 1 -u -M {bam} chr1:101-200 '*' "
+        f"| samtools collate -@ 1 -u -O - "
+        f"| samtools fastq -@ 1 -n -F 0x900 - "
+        f"| minimap2 -t 2 -ax sr ref.mmi -"
+    )
+    assert commands[1] == "samtools index out.bam"

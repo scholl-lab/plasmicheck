@@ -108,9 +108,9 @@ class CacheManager:
         Returns:
             Dict with "mmi" and "fai" keys pointing to cached files, or None on miss
         """
+        cache_key = calculate_md5(input_fasta)
         with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
             self.manifest = self._load_manifest()
-            cache_key = calculate_md5(input_fasta)
 
             if cache_key in self.manifest:
                 entry = self.manifest[cache_key]
@@ -124,10 +124,9 @@ class CacheManager:
                     and mmi_path.stat().st_size == entry["mmi_size"]
                     and fai_path.stat().st_size == entry["fai_size"]
                 ):
-                    # Cache hit: update access time and move to end (LRU)
+                    # Cache hit: update in-memory LRU without rewriting manifest on disk
                     self.manifest.move_to_end(cache_key)
                     self.manifest[cache_key]["last_access"] = time.time()
-                    self._save_manifest()
                     logger.info(f"Cache HIT for index: {input_fasta}")
                     return {"mmi": mmi_path, "fai": fai_path}
                 else:
@@ -149,9 +148,9 @@ class CacheManager:
             mmi_path: Path to minimap2 index file (.mmi)
             fai_path: Path to samtools index file (.fai)
         """
+        cache_key = calculate_md5(input_fasta)
         with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
             self.manifest = self._load_manifest()
-            cache_key = calculate_md5(input_fasta)
             cached_mmi = self.indexes_dir / f"{cache_key}.mmi"
             cached_fai = self.indexes_dir / f"{cache_key}.fai"
 
@@ -180,7 +179,11 @@ class CacheManager:
             logger.info(f"Cached index for {input_fasta} ({cache_key[:8]}...)")
 
     def get_spliced(
-        self, plasmid_md5: str, human_md5: str, padding: int = DEFAULT_PADDING
+        self,
+        plasmid_md5: str,
+        human_md5: str,
+        padding: int | str = DEFAULT_PADDING,
+        gtf_md5: str | None = "",
     ) -> dict[str, Path] | None:
         """Get cached spliced alignment artifacts.
 
@@ -188,14 +191,19 @@ class CacheManager:
             plasmid_md5: Plasmid MD5 hex digest or path to plasmid FASTA file
             human_md5: Human reference MD5 hex digest or path to human reference FASTA file
             padding: Padding bases used for spliced alignment
+            gtf_md5: Optional GTF MD5 hex digest or path to GTF file
 
         Returns:
             Dict with "bam", "fasta", "cdna_positions" keys pointing to cached files,
             or None on miss
         """
+        if isinstance(padding, str):
+            gtf_md5 = padding
+            padding = DEFAULT_PADDING
         p_md5 = _resolve_md5(plasmid_md5)
         h_md5 = _resolve_md5(human_md5)
-        key = f"{p_md5}:{h_md5}:{padding}:v3"
+        g_md5 = _resolve_md5(gtf_md5) if gtf_md5 else ""
+        key = f"{p_md5}:{h_md5}:{padding}:{g_md5}:v4" if g_md5 else f"{p_md5}:{h_md5}:{padding}:v4"
         cache_key = hashlib.md5(key.encode()).hexdigest()
 
         with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
@@ -215,10 +223,9 @@ class CacheManager:
                     and fasta_path.stat().st_size == entry["fasta_size"]
                     and cdna_path.stat().st_size == entry["cdna_size"]
                 ):
-                    # Cache hit: update access time and move to end (LRU)
+                    # Cache hit: update in-memory LRU without rewriting manifest on disk
                     self.manifest.move_to_end(cache_key)
                     self.manifest[cache_key]["last_access"] = time.time()
-                    self._save_manifest()
                     logger.info(f"Cache HIT for spliced alignment: {p_md5} + {h_md5}")
                     return {"bam": bam_path, "fasta": fasta_path, "cdna_positions": cdna_path}
                 else:
@@ -239,7 +246,8 @@ class CacheManager:
         bam_path: str,
         fasta_path: str,
         cdna_path: str,
-        padding: int = DEFAULT_PADDING,
+        padding: int | str = DEFAULT_PADDING,
+        gtf_md5: str | None = "",
     ) -> None:
         """Store spliced alignment artifacts in cache.
 
@@ -250,10 +258,15 @@ class CacheManager:
             fasta_path: Path to spliced reference FASTA file
             cdna_path: Path to cDNA positions file
             padding: Padding bases used for spliced alignment
+            gtf_md5: Optional GTF MD5 hex digest or path to GTF file
         """
+        if isinstance(padding, str):
+            gtf_md5 = padding
+            padding = DEFAULT_PADDING
         p_md5 = _resolve_md5(plasmid_md5)
         h_md5 = _resolve_md5(human_md5)
-        key = f"{p_md5}:{h_md5}:{padding}:v3"
+        g_md5 = _resolve_md5(gtf_md5) if gtf_md5 else ""
+        key = f"{p_md5}:{h_md5}:{padding}:{g_md5}:v4" if g_md5 else f"{p_md5}:{h_md5}:{padding}:v4"
         cache_key = hashlib.md5(key.encode()).hexdigest()
 
         cached_bam = self.spliced_dir / f"{cache_key}.bam"

@@ -85,7 +85,19 @@ def test_compare_forwards_threshold(
         patch("plasmicheck.scripts.compare_alignments.compare_alignments") as compare,
     ):
         cli.main(default_threshold=0.42)
-    compare.assert_called_once_with("p.bam", "h.bam", "out", expected, anonymize=False)
+    compare.assert_called_once_with(
+        "p.bam",
+        "h.bam",
+        "out",
+        expected,
+        anonymize=False,
+        vcf_file=None,
+        target_bed=None,
+        dp_sample_median=None,
+        dp_locus=None,
+        r_cohort=0.60,
+        sample_bam=None,
+    )
 
 
 @pytest.mark.unit
@@ -101,7 +113,19 @@ def test_compare_forwards_anonymize(monkeypatch: pytest.MonkeyPatch) -> None:
         patch("plasmicheck.scripts.compare_alignments.compare_alignments") as compare,
     ):
         cli.main()
-    compare.assert_called_once_with("p.bam", "h.bam", "out", cli.DEFAULT_THRESHOLD, anonymize=True)
+    compare.assert_called_once_with(
+        "p.bam",
+        "h.bam",
+        "out",
+        cli.DEFAULT_THRESHOLD,
+        anonymize=True,
+        vcf_file=None,
+        target_bed=None,
+        dp_sample_median=None,
+        dp_locus=None,
+        r_cohort=0.60,
+        sample_bam=None,
+    )
 
 
 @pytest.mark.unit
@@ -179,6 +203,14 @@ def test_pipeline_forwards_run_options(
         cache_dir="custom-cache",
         no_cache=True,
         anonymize=False,
+        regions=None,
+        include_unmapped=False,
+        gtf_file=None,
+        vcf_file=None,
+        target_bed=None,
+        dp_sample_median=None,
+        dp_locus=None,
+        r_cohort=0.60,
     )
 
 
@@ -278,9 +310,209 @@ def test_spliced_optional_cdna_output(
     align.assert_called_once_with("human.mmi", "plasmid.fa", "spliced.bam", 1000)
     extract.assert_called_once_with("human.fa", [], "regions.fa")
     if cdna_output:
-        cdna.assert_called_once_with("plasmid.fa", "spliced.bam", "positions.txt")
+        cdna.assert_called_once_with("plasmid.fa", "spliced.bam", "positions.txt", gtf_file=None)
     else:
         cdna.assert_not_called()
+
+
+@pytest.mark.unit
+def test_align_forwards_regions_and_include_unmapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "plasmicheck",
+            "align",
+            "-r",
+            "ref.mmi",
+            "-i",
+            "sample.bam",
+            "-o",
+            "out.bam",
+            "-a",
+            "plasmid",
+            "--regions",
+            "targets.bed",
+            "--include-unmapped",
+        ],
+    )
+    with (
+        patch.object(cli, "setup_logging"),
+        patch.object(cli, "check_requirements"),
+        patch("plasmicheck.scripts.align_reads.align_reads") as align,
+    ):
+        cli.main()
+    align.assert_called_once_with(
+        "ref.mmi",
+        "sample.bam",
+        "out.bam",
+        "plasmid",
+        regions="targets.bed",
+        include_unmapped=True,
+    )
+
+
+@pytest.mark.unit
+def test_spliced_forwards_gtf(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "plasmicheck",
+            "spliced",
+            "-i",
+            "human.mmi",
+            "-p",
+            "plasmid.fa",
+            "-o",
+            "regions.fa",
+            "-b",
+            "spliced.bam",
+            "-hf",
+            "human.fa",
+            "--cDNA_output",
+            "positions.txt",
+            "--gtf",
+            "mane.gtf.gz",
+        ],
+    )
+    with (
+        patch.object(cli, "setup_logging"),
+        patch.object(cli, "check_requirements"),
+        patch("plasmicheck.scripts.spliced_alignment.spliced_alignment", return_value=[]),
+        patch("plasmicheck.scripts.spliced_alignment.extract_human_reference"),
+        patch("plasmicheck.scripts.spliced_alignment.extract_plasmid_cdna_positions") as cdna,
+    ):
+        cli.main()
+    cdna.assert_called_once_with(
+        "plasmid.fa", "spliced.bam", "positions.txt", gtf_file="mane.gtf.gz"
+    )
+
+
+@pytest.mark.unit
+def test_compare_forwards_vcf_and_depth_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "plasmicheck",
+            "compare",
+            "-p",
+            "p.bam",
+            "-m",
+            "h.bam",
+            "-o",
+            "out",
+            "--vcf",
+            "calls.vcf.gz",
+            "--target-bed",
+            "exome.bed",
+            "--dp-sample-median",
+            "120.5",
+            "--dp-locus",
+            "250.0",
+            "--r-cohort",
+            "0.65",
+            "--sample-bam",
+            "sample.bam",
+        ],
+    )
+    with (
+        patch.object(cli, "setup_logging"),
+        patch.object(cli, "check_requirements"),
+        patch("plasmicheck.scripts.compare_alignments.compare_alignments") as compare,
+    ):
+        cli.main()
+    compare.assert_called_once_with(
+        "p.bam",
+        "h.bam",
+        "out",
+        cli.DEFAULT_THRESHOLD,
+        anonymize=False,
+        vcf_file="calls.vcf.gz",
+        target_bed="exome.bed",
+        dp_sample_median=120.5,
+        dp_locus=250.0,
+        r_cohort=0.65,
+        sample_bam="sample.bam",
+    )
+
+
+@pytest.mark.unit
+def test_summary_reports_forwards_vcf(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "plasmicheck",
+            "summary_reports",
+            "-i",
+            "in_dir",
+            "-o",
+            "out_dir",
+            "--vcf",
+            "cohort.tsv",
+        ],
+    )
+    with (
+        patch.object(cli, "setup_logging"),
+        patch.object(cli, "check_requirements"),
+        patch("plasmicheck.scripts.generate_summary_reports.main") as summary_reports,
+    ):
+        cli.main()
+    assert summary_reports.call_args.kwargs["vcf_file"] == "cohort.tsv"
+
+
+@pytest.mark.unit
+def test_pipeline_forwards_regions_gtf_vcf_and_depth_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "plasmicheck",
+            "pipeline",
+            "-hf",
+            "human.fa",
+            "-pf",
+            "plasmid.gb",
+            "-sf1",
+            "sample.bam",
+            "-o",
+            "output",
+            "--regions",
+            "targets.bed",
+            "--include-unmapped",
+            "--gtf",
+            "mane.gtf.gz",
+            "--vcf",
+            "variants.vcf",
+            "--target-bed",
+            "exome.bed",
+            "--dp-sample-median",
+            "95.0",
+            "--dp-locus",
+            "180.0",
+            "--r-cohort",
+            "0.55",
+        ],
+    )
+    with (
+        patch.object(cli, "setup_logging"),
+        patch.object(cli, "check_requirements"),
+        patch("plasmicheck.scripts.run_pipeline.run_pipeline") as pipeline,
+    ):
+        cli.main()
+    kwargs = pipeline.call_args.kwargs
+    assert kwargs["regions"] == "targets.bed"
+    assert kwargs["include_unmapped"] is True
+    assert kwargs["gtf_file"] == "mane.gtf.gz"
+    assert kwargs["vcf_file"] == "variants.vcf"
+    assert kwargs["target_bed"] == "exome.bed"
+    assert kwargs["dp_sample_median"] == 95.0
+    assert kwargs["dp_locus"] == 180.0
+    assert kwargs["r_cohort"] == 0.55
 
 
 class TestCLI:

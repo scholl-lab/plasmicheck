@@ -13,16 +13,18 @@ import xml.etree.ElementTree as ET
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from pathlib import Path
+from shlex import quote
 from typing import Any
 
 import pysam
 
-from ..cache_manager import CacheManager
+from ..cache_manager import CacheManager, _resolve_md5
 from ..config import get_config
 from ..output_paths import OutputPaths
 from ..thread_config import allocate_threads, detect_cpu_count
-from .align_reads import _bam_to_fastq_cmd, align_reads
-from .compare_alignments import compare_alignments
+from . import utils as _utils
+from .align_reads import align_reads, bam_to_fastq_cmd, has_bam_index
+from .compare_alignments import compare_alignments, compute_bed_median_depth
 from .convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta
 from .create_indexes import create_indexes
 from .generate_report import DEFAULT_THRESHOLD
@@ -36,9 +38,12 @@ from .utils import (
     archive_output_folder,
     calculate_md5,
     quality_control,
+    run_command,
     sanitize_filename,
     write_md5sum,
 )
+
+_orig_run_command = _utils.run_command
 
 
 def write_igv_session(paths: OutputPaths) -> None:
@@ -63,6 +68,10 @@ class SequencingInput:
 
     file1: str
     file2: str | None = None
+
+    @property
+    def is_paired(self) -> bool:
+        return self.file2 is not None
 
 
 @dataclass
@@ -444,6 +453,22 @@ def _progress_context(enabled: bool, total: int) -> Generator[_ProgressTracker, 
 # ---------------------------------------------------------------------------
 
 
+def _extract_spliced_fasta_regions(prepared_plasmids: dict[str, dict[str, Any]]) -> list[str]:
+    """Extract deduplicated 'chrom:start-end' region strings from prepared spliced FASTA headers."""
+    regions: list[str] = []
+    for info in prepared_plasmids.values():
+        spliced_fasta = info.get("spliced_fasta")
+        if not spliced_fasta or not os.path.exists(spliced_fasta):
+            continue
+        with open(spliced_fasta) as fh:
+            for line in fh:
+                if line.startswith(">"):
+                    header = line[1:].strip().split()[0]
+                    if ":" in header and "-" in header and header not in regions:
+                        regions.append(header)
+    return regions
+
+
 def _prepare_plasmid_in_dir(
     plasmid_file: str,
     p_dir: Path,
@@ -459,7 +484,9 @@ def _prepare_plasmid_in_dir(
     padding: int = 1000,
     mm2_threads: int = 2,
     sam_threads: int = 2,
-) -> None:
+    gtf_file: str | None = None,
+    gtf_md5: str = "",
+) -> str:
     """Convert, index, and spliced-align a single plasmid into p_dir with CacheManager backing."""
     p_dir.mkdir(parents=True, exist_ok=True)
     from .format_detection import detect_format
@@ -514,7 +541,9 @@ def _prepare_plasmid_in_dir(
         try:
             plasmid_md5 = get_md5(str(staged_fasta))
             human_md5 = get_md5(human_fasta)
-            cached_spliced = cache.get_spliced(plasmid_md5, human_md5, padding=padding)
+            cached_spliced = cache.get_spliced(
+                plasmid_md5, human_md5, padding=padding, gtf_md5=gtf_md5
+            )
         except (OSError, PermissionError) as e:
             logging.warning(f"Cache read error: {e}")
 
@@ -538,7 +567,18 @@ def _prepare_plasmid_in_dir(
         extract_human_reference(human_fasta, spanned_regions, str(staged_spliced_fasta))
 
         logging.info("Extracting cDNA positions from spliced alignment...")
-        extract_plasmid_cdna_positions(str(staged_fasta), str(staged_spliced_bam), str(staged_cdna))
+        if gtf_file is not None:
+            extract_plasmid_cdna_positions(
+                str(staged_fasta),
+                str(staged_spliced_bam),
+                str(staged_cdna),
+                padding=padding,
+                gtf_file=gtf_file,
+            )
+        else:
+            extract_plasmid_cdna_positions(
+                str(staged_fasta), str(staged_spliced_bam), str(staged_cdna)
+            )
 
         if cache:
             try:
@@ -549,6 +589,7 @@ def _prepare_plasmid_in_dir(
                     str(staged_spliced_fasta),
                     str(staged_cdna),
                     padding=padding,
+                    gtf_md5=gtf_md5,
                 )
             except (OSError, PermissionError) as e:
                 logging.warning(f"Cache write error: {e}")
@@ -578,6 +619,8 @@ def _prepare_plasmid_in_dir(
             except (OSError, PermissionError) as e:
                 logging.warning(f"Cache write error: {e}")
 
+    return str(staged_spliced_fasta)
+
 
 def prepare_references(
     human_fasta: str,
@@ -589,6 +632,7 @@ def prepare_references(
     overwrite: bool = False,
     padding: int = 1000,
     threads: int | None = None,
+    gtf_file: str | None = None,
 ) -> None:
     """Build human reference index and populate CacheManager for all plasmid constructs."""
     plasmid_file_list = (
@@ -628,6 +672,8 @@ def prepare_references(
                 md5_cache[path] = hashlib.md5(path.encode()).hexdigest()
         return md5_cache[path]
 
+    gtf_md5 = _resolve_md5(gtf_file) if gtf_file else ""
+
     with tempfile.TemporaryDirectory(prefix="plasmicheck_prep_") as tmp_dir:
         prep_dir = Path(tmp_dir)
         prepared: set[str] = set()
@@ -649,6 +695,8 @@ def prepare_references(
                 padding=padding,
                 mm2_threads=mm2_threads,
                 sam_threads=sam_threads,
+                gtf_file=gtf_file,
+                gtf_md5=gtf_md5,
             )
             prepared.add(plasmid_file)
 
@@ -677,14 +725,23 @@ def run_pipeline(
     cache_dir: str | None = None,
     no_cache: bool = False,
     anonymize: bool = False,
-    regions_bed: str | None = None,
+    regions: str | list[str] | None = None,
     include_unmapped: bool = False,
+    gtf_file: str | None = None,
+    vcf_file: str | None = None,
+    target_bed: str | None = None,
+    dp_sample_median: float | None = None,
+    dp_locus: float | None = None,
+    r_cohort: float = 0.60,
+    regions_bed: str | None = None,
     sample_name: str | None = None,
 ) -> None:
     if sequencing_files_r1 is None:
         raise ValueError("-sf1 (sequencing_files_r1) is required.")
-    if regions_bed is not None and not os.path.isfile(regions_bed):
-        raise FileNotFoundError(f"Regions BED file not found: {regions_bed}")
+    if regions is None and regions_bed is not None:
+        if not os.path.isfile(regions_bed):
+            raise FileNotFoundError(f"Regions BED file not found: {regions_bed}")
+        regions = regions_bed
 
     anonymize_key = secrets.token_bytes(16) if anonymize else None
     if anonymize and keep_intermediate:
@@ -790,7 +847,44 @@ def run_pipeline(
         prep_dir = Path(
             cleanup_stack.enter_context(tempfile.TemporaryDirectory(prefix="plasmicheck_prep_"))
         )
-        prepared_plasmids: set[str] = set()
+        gtf_md5 = _resolve_md5(gtf_file) if gtf_file else ""
+        prepared_plasmids: dict[str, dict[str, Any]] = {}
+        prep_errors: dict[str, Exception] = {}
+
+        # Hoist plasmid preparation before the sample loop so all plasmid spliced
+        # references are ready before extracting region-restricted BAM reads.
+        for plasmid_file in plan.plasmid_files:
+            if plasmid_file in prepared_plasmids or plasmid_file in prep_errors:
+                continue
+            file_basename = sanitize_filename(os.path.splitext(os.path.basename(plasmid_file))[0])
+            p_dir = prep_dir / file_basename
+            try:
+                staged_spliced_fasta = _prepare_plasmid_in_dir(
+                    plasmid_file,
+                    p_dir,
+                    file_basename,
+                    human_fasta,
+                    human_index_path,
+                    cache=cache,
+                    get_md5=_get_md5,
+                    shift_bases=shift_bases,
+                    generate_shifted=generate_shifted,
+                    overwrite=overwrite,
+                    padding=padding,
+                    mm2_threads=mm2_threads,
+                    sam_threads=sam_threads,
+                    gtf_file=gtf_file,
+                    gtf_md5=gtf_md5,
+                )
+                prepared_plasmids[plasmid_file] = {
+                    "p_dir": p_dir,
+                    "file_basename": file_basename,
+                    "spliced_fasta": staged_spliced_fasta,
+                }
+            except Exception as e:
+                prep_errors[plasmid_file] = e
+
+        auto_spliced_regions = _extract_spliced_fasta_regions(prepared_plasmids)
 
         for seq_input in plan.sequencing_inputs:
             sequencing_file = seq_input.file1
@@ -801,39 +895,46 @@ def run_pipeline(
                 else sanitize_filename(os.path.splitext(os.path.basename(sequencing_file))[0])
             )
             sample_temp_fastq: str | None = None
+            eff_regions: str | list[str] | None = None
             try:
+                if not seq_input.is_paired and sequencing_file.endswith(".bam"):
+                    if regions is not None:
+                        eff_regions = regions
+                    elif has_bam_index(sequencing_file) and auto_spliced_regions:
+                        eff_regions = auto_spliced_regions
+
+                    if os.path.exists(sequencing_file) and (
+                        bool(eff_regions)
+                        or (len(plan.plasmid_files) > 1 and os.path.getsize(sequencing_file) > 64)
+                    ):
+                        sample_temp_fastq = str(
+                            prep_dir
+                            / f".tmp_{sanitize_filename(os.path.basename(sequencing_file))}_{os.getpid()}.fastq"
+                        )
+                        logging.info(
+                            f"Pre-collating paired reads from BAM once for {sequencing_file}..."
+                        )
+                        collate_cmd = (
+                            f"{bam_to_fastq_cmd(sequencing_file, sam_threads, eff_regions)} "
+                            f"> {quote(sample_temp_fastq)}"
+                        )
+                        _cmd_runner = (
+                            run_command
+                            if run_command is not _orig_run_command
+                            else _utils.run_command
+                        )
+                        _cmd_runner(collate_cmd)
+
+                sample_median_dp = dp_sample_median
                 if (
-                    (len(plan.plasmid_files) > 1 or regions_bed is not None)
+                    sample_median_dp is None
+                    and target_bed is not None
                     and sequencing_file.endswith(".bam")
-                    and os.path.exists(sequencing_file)
-                    and os.path.getsize(sequencing_file) > 64
                 ):
-                    os.makedirs(output_folder, exist_ok=True)
-                    sample_temp_fastq = os.path.join(
-                        output_folder,
-                        f".tmp_{bam_basename}_{os.getpid()}.fastq",
-                    )
-                    logging.info(
-                        f"Pre-collating paired reads from BAM once for {sequencing_file}..."
-                    )
-                    from shlex import quote as _quote
-
-                    from .utils import run_command as _run_cmd
-
-                    extract_cmd = _bam_to_fastq_cmd(
-                        sequencing_file,
-                        sam_threads,
-                        regions_bed=regions_bed,
-                        include_unmapped=include_unmapped,
-                    )
-                    _run_cmd(f"{extract_cmd} > {_quote(sample_temp_fastq)}")
+                    sample_median_dp = compute_bed_median_depth(sequencing_file, target_bed)
 
                 align_input = sample_temp_fastq if sample_temp_fastq else sequencing_file
-                align_extra_kwargs: dict[str, Any] = (
-                    {"regions_bed": regions_bed, "include_unmapped": include_unmapped}
-                    if (regions_bed is not None and not sample_temp_fastq)
-                    else {}
-                )
+                align_regions = eff_regions if not sample_temp_fastq else None
 
                 for plasmid_file in plan.plasmid_files:
                     combo_label = (
@@ -857,24 +958,10 @@ def run_pipeline(
                         paths.ensure_directories()
                         output_subfolder = str(paths.base)
 
+                        if plasmid_file in prep_errors:
+                            raise prep_errors[plasmid_file]
+
                         p_dir = prep_dir / file_basename
-                        if plasmid_file not in prepared_plasmids:
-                            _prepare_plasmid_in_dir(
-                                plasmid_file,
-                                p_dir,
-                                file_basename,
-                                human_fasta,
-                                human_index_path,
-                                cache=cache,
-                                get_md5=_get_md5,
-                                shift_bases=shift_bases,
-                                generate_shifted=generate_shifted,
-                                overwrite=overwrite,
-                                padding=padding,
-                                mm2_threads=mm2_threads,
-                                sam_threads=sam_threads,
-                            )
-                            prepared_plasmids.add(plasmid_file)
 
                         # Copy staged artifacts into OutputPaths
                         plasmid_fasta = str(paths.plasmid_fasta)
@@ -951,7 +1038,8 @@ def run_pipeline(
                                     minimap2_threads=half_mm2,
                                     samtools_threads=half_sam,
                                     samtools_sort_memory=sort_memory,
-                                    **align_extra_kwargs,
+                                    regions=align_regions,
+                                    include_unmapped=include_unmapped,
                                 )
                                 f2 = pool.submit(
                                     align_reads,
@@ -963,7 +1051,8 @@ def run_pipeline(
                                     minimap2_threads=half_mm2,
                                     samtools_threads=half_sam,
                                     samtools_sort_memory=sort_memory,
-                                    **align_extra_kwargs,
+                                    regions=align_regions,
+                                    include_unmapped=include_unmapped,
                                 )
                                 f1.result()
                                 f2.result()
@@ -977,7 +1066,8 @@ def run_pipeline(
                                 minimap2_threads=mm2_threads,
                                 samtools_threads=sam_threads,
                                 samtools_sort_memory=sort_memory,
-                                **align_extra_kwargs,
+                                regions=align_regions,
+                                include_unmapped=include_unmapped,
                             )
                             align_reads(
                                 spliced_index,
@@ -988,7 +1078,8 @@ def run_pipeline(
                                 minimap2_threads=mm2_threads,
                                 samtools_threads=sam_threads,
                                 samtools_sort_memory=sort_memory,
-                                **align_extra_kwargs,
+                                regions=align_regions,
+                                include_unmapped=include_unmapped,
                             )
                         if md5_level in ["all", "intermediate"]:
                             if os.path.exists(plasmid_bam):
@@ -1022,6 +1113,14 @@ def run_pipeline(
                             threads=sam_threads,
                             anonymize=anonymize,
                             anonymize_key=anonymize_key,
+                            vcf_file=vcf_file,
+                            target_bed=target_bed,
+                            dp_sample_median=sample_median_dp,
+                            dp_locus=dp_locus,
+                            r_cohort=r_cohort,
+                            sample_bam=sequencing_file
+                            if sequencing_file.endswith(".bam")
+                            else None,
                         )
                         prog.advance()
 

@@ -209,14 +209,15 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     )
     parser_align.add_argument(
         "--regions",
+        type=str,
         default=None,
-        help="Optional BED file restricting BAM read extraction to target regions",
+        help="BED file or region string to restrict BAM extraction",
     )
     parser_align.add_argument(
         "--include-unmapped",
         action="store_true",
         default=False,
-        help="Include unmapped reads alongside --regions during BAM extraction",
+        help="Include unmapped reads when extracting regions",
     )
 
     # Compare Command
@@ -239,6 +240,48 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         action="store_true",
         default=False,
         help="Anonymize read IDs in output TSV",
+    )
+    parser_compare.add_argument(
+        "--vcf",
+        dest="vcf_file",
+        type=str,
+        default=None,
+        help="Optional VCF/BCF/TSV file to flag variants at construct-insert positions",
+    )
+    parser_compare.add_argument(
+        "--target-bed",
+        dest="target_bed",
+        type=str,
+        default=None,
+        help="Optional exome target BED for sample median depth",
+    )
+    parser_compare.add_argument(
+        "--dp-sample-median",
+        dest="dp_sample_median",
+        type=float,
+        default=None,
+        help="Explicit sample median target depth",
+    )
+    parser_compare.add_argument(
+        "--dp-locus",
+        dest="dp_locus",
+        type=float,
+        default=None,
+        help="Explicit locus depth",
+    )
+    parser_compare.add_argument(
+        "--r-cohort",
+        dest="r_cohort",
+        type=float,
+        default=0.60,
+        help="Cohort depth ratio (default: 0.60)",
+    )
+    parser_compare.add_argument(
+        "--sample-bam",
+        dest="sample_bam",
+        type=str,
+        default=None,
+        help="Optional sample BAM for target BED depth calculation",
     )
 
     # Spliced Command
@@ -276,6 +319,13 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         "--cDNA_output",
         help="Output file for cDNA start and end positions in the plasmid reference",
         default=None,
+    )
+    parser_spliced.add_argument(
+        "--gtf",
+        dest="gtf_file",
+        type=str,
+        default=None,
+        help="Optional GTF/MANE annotation file to resolve exon-exon junctions",
     )
 
     # Pipeline Command
@@ -395,14 +445,57 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     )
     parser_pipeline.add_argument(
         "--regions",
+        type=str,
         default=None,
-        help="Optional BED file restricting BAM read extraction to target regions",
+        help="BED file or region string to restrict BAM extraction",
     )
     parser_pipeline.add_argument(
         "--include-unmapped",
         action="store_true",
         default=False,
-        help="Include unmapped reads alongside --regions during BAM extraction",
+        help="Include unmapped reads when extracting regions",
+    )
+    parser_pipeline.add_argument(
+        "--gtf",
+        dest="gtf_file",
+        type=str,
+        default=None,
+        help="Optional GTF/MANE annotation file to resolve exon-exon junctions",
+    )
+    parser_pipeline.add_argument(
+        "--vcf",
+        dest="vcf_file",
+        type=str,
+        default=None,
+        help="Optional VCF/BCF/TSV file to flag variants at construct-insert positions",
+    )
+    parser_pipeline.add_argument(
+        "--target-bed",
+        dest="target_bed",
+        type=str,
+        default=None,
+        help="Optional exome target BED for sample median depth",
+    )
+    parser_pipeline.add_argument(
+        "--dp-sample-median",
+        dest="dp_sample_median",
+        type=float,
+        default=None,
+        help="Explicit sample median target depth",
+    )
+    parser_pipeline.add_argument(
+        "--dp-locus",
+        dest="dp_locus",
+        type=float,
+        default=None,
+        help="Explicit locus depth",
+    )
+    parser_pipeline.add_argument(
+        "--r-cohort",
+        dest="r_cohort",
+        type=float,
+        default=0.60,
+        help="Cohort depth ratio (default: 0.60)",
     )
     parser_pipeline.add_argument(
         "--sample-name",
@@ -449,6 +542,13 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     )
     parser_summary_reports.add_argument(
         "--substring_to_remove", help="Substring to remove from sample names", default=None
+    )
+    parser_summary_reports.add_argument(
+        "--vcf",
+        dest="vcf_file",
+        type=str,
+        default=None,
+        help="Optional VCF/BCF/TSV file for cohort variant flagging",
     )
 
     # Cache Management Command
@@ -531,12 +631,6 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     elif args.command == "align":
         from .scripts.align_reads import align_reads
 
-        align_kwargs: dict[str, object] = {}
-        if args.regions is not None:
-            align_kwargs["regions_bed"] = args.regions
-        if args.include_unmapped:
-            align_kwargs["include_unmapped"] = True
-
         input_files: list[str] = args.input_files
         if len(input_files) == 1:
             align_reads(
@@ -544,7 +638,8 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
                 input_files[0],
                 args.output_bam,
                 args.alignment_type,
-                **align_kwargs,  # type: ignore[arg-type]
+                regions=args.regions,
+                include_unmapped=args.include_unmapped,
             )
         elif len(input_files) == 2:
             align_reads(
@@ -553,7 +648,8 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
                 args.output_bam,
                 args.alignment_type,
                 fastq2=input_files[1],
-                **align_kwargs,  # type: ignore[arg-type]
+                regions=args.regions,
+                include_unmapped=args.include_unmapped,
             )
         else:
             parser.error(f"align expects 1 or 2 input files, got {len(input_files)}")
@@ -566,6 +662,12 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             args.output_basename,
             args.threshold,
             anonymize=args.anonymize,
+            vcf_file=args.vcf_file,
+            target_bed=args.target_bed,
+            dp_sample_median=args.dp_sample_median,
+            dp_locus=args.dp_locus,
+            r_cohort=args.r_cohort,
+            sample_bam=args.sample_bam,
         )
     elif args.command == "spliced":
         from .scripts.spliced_alignment import (
@@ -583,18 +685,16 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         )
         extract_human_reference(args.human_fasta, spanned_regions, args.output_fasta)
         if args.cDNA_output:
-            extract_plasmid_cdna_positions(args.plasmid_fasta, args.output_bam, args.cDNA_output)
+            extract_plasmid_cdna_positions(
+                args.plasmid_fasta,
+                args.output_bam,
+                args.cDNA_output,
+                gtf_file=args.gtf_file,
+            )
     elif args.command == "pipeline":
         from .scripts.run_pipeline import run_pipeline
 
         progress_enabled = sys.stderr.isatty() and not args.no_progress
-        pipeline_kwargs: dict[str, object] = {}
-        if args.regions is not None:
-            pipeline_kwargs["regions_bed"] = args.regions
-        if args.include_unmapped:
-            pipeline_kwargs["include_unmapped"] = True
-        if args.sample_name is not None:
-            pipeline_kwargs["sample_name"] = args.sample_name
 
         run_pipeline(
             args.human_fasta,
@@ -620,7 +720,15 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             cache_dir=args.cache_dir,
             no_cache=args.no_cache,
             anonymize=args.anonymize,
-            **pipeline_kwargs,  # type: ignore[arg-type]
+            regions=args.regions,
+            include_unmapped=args.include_unmapped,
+            gtf_file=args.gtf_file,
+            vcf_file=args.vcf_file,
+            target_bed=args.target_bed,
+            dp_sample_median=args.dp_sample_median,
+            dp_locus=args.dp_locus,
+            r_cohort=args.r_cohort,
+            **({"sample_name": args.sample_name} if args.sample_name is not None else {}),
         )
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
@@ -648,6 +756,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             static_report=args.static_report,
             plotly_mode=args.plotly_mode,
             plot_backend=args.plot_backend,
+            vcf_file=args.vcf_file,
         )
     elif args.command == "cache":
         from pathlib import Path

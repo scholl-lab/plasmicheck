@@ -181,12 +181,30 @@ def save_tables_as_tsv_and_excel(
     extended_metrics_df: pd.DataFrame | None = None,
     resistance_gene_df: pd.DataFrame | None = None,
     junction_df: pd.DataFrame | None = None,
+    summary_df: pd.DataFrame | None = None,
 ) -> None:
     """Save the combined, verdict, ratio, and p-value dataframes as TSV and Excel files."""
     import pandas as pd
 
     data_dir: str = os.path.join(output_dir, "data")
     os.makedirs(data_dir, exist_ok=True)
+
+    if summary_df is not None and not summary_df.empty:
+        summary_df = _reestimate_cohort_depth_fractions(summary_df)
+    if "plasmid_flag" not in verdict_df.columns:
+        source_summary = summary_df
+        if source_summary is None:
+            parts = [
+                df
+                for df in (combined_df, verdict_df, ratio_df, extended_metrics_df)
+                if df is not None
+                and not df.empty
+                and {"Sample", "Plasmid", "Category", "Value"}.issubset(df.columns)
+            ]
+            source_summary = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+            if not source_summary.empty:
+                source_summary = _reestimate_cohort_depth_fractions(source_summary)
+        verdict_df = _add_plasmid_flag(verdict_df, source_summary)
 
     # Apply sorting to each DataFrame
     combined_df = apply_sorting(combined_df, TABLE_SORTING.get("combined"))
@@ -1232,13 +1250,217 @@ def _short_verdict(val: Any) -> tuple[str, str, int]:
     """Map full or short verdict string to (short_label, css_suffix, sort_rank)."""
     txt = str(val or "").strip()
     lower = txt.lower()
-    if "not contaminated" in lower or lower == "clean":
+    if "not contaminated" in lower or "notcontaminated" in lower or lower == "clean":
         return ("Clean", "clean", 2)
     if "contaminated" in lower:
         return ("Contaminated", "contam", 0)
     if "unclear" in lower:
         return ("Unclear", "unclear", 1)
     return (txt or "No Result", "unclear", 3)
+
+
+def compute_plasmid_flag(
+    verdict: Any,
+    f_plasmid: float = 0.0,
+    spliced_reads: float = 0.0,
+    vi_reads: float = 0.0,
+    bridge_pairs: float = 0.0,
+    cooccurrence: bool = False,
+    cdna_artefacts: float = 0.0,
+) -> str:
+    """Combine read-scoring verdict, depth/junction fraction, structural junction reads, and variant evidence into a single risk flag."""
+    v_short, _, _ = _short_verdict(verdict)
+    if v_short == "Contaminated" or f_plasmid >= 0.50 or cooccurrence:
+        return "positive"
+    if (
+        v_short == "Unclear"
+        or f_plasmid >= 0.20
+        or spliced_reads > 0.0
+        or vi_reads > 0.0
+        or bridge_pairs > 0.0
+        or cdna_artefacts > 0.0
+    ):
+        return "weak"
+    return "negative"
+
+
+def _add_plasmid_flag(
+    verdict_df: pd.DataFrame,
+    summary_df: pd.DataFrame | None = None,
+    cooccurrence_pairs: set[tuple[str, str]] | None = None,
+    cdna_artefact_counts: dict[tuple[str, str], int] | None = None,
+) -> pd.DataFrame:
+    """Attach a 5th 'plasmid_flag' column to a copy of long-format verdict_df in O(N) time."""
+    import math
+
+    result = verdict_df.copy()
+    if result.empty or not {"Sample", "Plasmid", "Value"}.issubset(result.columns):
+        result["plasmid_flag"] = []
+        return result
+
+    lookup: dict[tuple[str, str, str], Any] = {}
+    if (
+        summary_df is not None
+        and not summary_df.empty
+        and {"Sample", "Plasmid", "Category", "Value"}.issubset(summary_df.columns)
+    ):
+        lookup = {
+            (str(s), str(p), str(c)): v
+            for s, p, c, v in zip(
+                summary_df["Sample"],
+                summary_df["Plasmid"],
+                summary_df["Category"],
+                summary_df["Value"],
+                strict=True,
+            )
+        }
+
+    def _num(sample: str, plasmid: str, category: str) -> float:
+        raw = lookup.get((sample, plasmid, category))
+        if raw is None:
+            return 0.0
+        try:
+            fval = float(raw)
+            return 0.0 if math.isnan(fval) else fval
+        except (ValueError, TypeError):
+            return 0.0
+
+    flags: list[str] = []
+    for s, p, v in zip(result["Sample"], result["Plasmid"], result["Value"], strict=True):
+        sample_str = str(s)
+        plasmid_str = str(p)
+        key = (sample_str, plasmid_str)
+        f_plasmid = max(
+            _num(sample_str, plasmid_str, "f_plasmid"),
+            _num(sample_str, plasmid_str, "f_excess"),
+            _num(sample_str, plasmid_str, "f_junction"),
+            _num(sample_str, plasmid_str, "EstimatedContaminationFraction"),
+        )
+        spliced_reads = _num(sample_str, plasmid_str, "SpliceJunctionReads")
+        vi_reads = _num(sample_str, plasmid_str, "VectorInsertJunctionReads")
+        bridge_pairs = _num(sample_str, plasmid_str, "VectorInsertBridgePairs")
+        cooc = bool(cooccurrence_pairs and key in cooccurrence_pairs)
+        cdna_art = float(cdna_artefact_counts.get(key, 0)) if cdna_artefact_counts else 0.0
+        flags.append(
+            compute_plasmid_flag(
+                verdict=v,
+                f_plasmid=f_plasmid,
+                spliced_reads=spliced_reads,
+                vi_reads=vi_reads,
+                bridge_pairs=bridge_pairs,
+                cooccurrence=cooc,
+                cdna_artefacts=cdna_art,
+            )
+        )
+
+    result["plasmid_flag"] = flags
+    return result
+
+
+def _reestimate_cohort_depth_fractions(summary_df: pd.DataFrame) -> pd.DataFrame:
+    """Re-estimate r_cohort, f_excess, and f_plasmid across a multi-sample cohort per plasmid."""
+    import math
+
+    import numpy as np
+
+    if (
+        summary_df is None
+        or summary_df.empty
+        or not {"Sample", "Plasmid", "Category", "Value"}.issubset(summary_df.columns)
+    ):
+        return summary_df
+
+    categories_present = set(summary_df["Category"].astype(str).unique())
+    if "dp_locus" not in categories_present or "dp_sample_median" not in categories_present:
+        return summary_df
+
+    summary_df["Value"] = summary_df["Value"].astype(object)
+
+    lookup: dict[tuple[str, str, str], Any] = {
+        (str(s), str(p), str(c)): v
+        for s, p, c, v in zip(
+            summary_df["Sample"],
+            summary_df["Plasmid"],
+            summary_df["Category"],
+            summary_df["Value"],
+            strict=True,
+        )
+    }
+
+    def _get_float(sample: str, plasmid: str, category: str, default: float) -> float:
+        raw = lookup.get((sample, plasmid, category))
+        if raw is None:
+            return default
+        try:
+            fval = float(raw)
+            return default if (math.isnan(fval) or not math.isfinite(fval)) else fval
+        except (ValueError, TypeError):
+            return default
+
+    plasmids = [str(p) for p in summary_df["Plasmid"].unique()]
+    samples_by_plasmid: dict[str, list[str]] = {}
+    for s, p in zip(summary_df["Sample"], summary_df["Plasmid"], strict=True):
+        s_str, p_str = str(s), str(p)
+        if p_str not in samples_by_plasmid:
+            samples_by_plasmid[p_str] = []
+        if s_str not in samples_by_plasmid[p_str]:
+            samples_by_plasmid[p_str].append(s_str)
+
+    for plasmid in plasmids:
+        p_samples = samples_by_plasmid.get(plasmid, [])
+        clean_depth_ratios: list[float] = []
+        for sample in p_samples:
+            dp_locus = _get_float(sample, plasmid, "dp_locus", -1.0)
+            dp_med = _get_float(sample, plasmid, "dp_sample_median", -1.0)
+            ratio = _get_float(sample, plasmid, "Ratio", 0.0)
+            if ratio < 1.5 and dp_med > 0.0 and dp_locus > 0.0:
+                clean_depth_ratios.append(dp_locus / dp_med)
+
+        cohort_r: float | None = (
+            float(np.median(clean_depth_ratios)) if len(clean_depth_ratios) >= 3 else None
+        )
+
+        for sample in p_samples:
+            dp_locus = _get_float(sample, plasmid, "dp_locus", -1.0)
+            dp_med = _get_float(sample, plasmid, "dp_sample_median", -1.0)
+            if dp_locus < 0.0 or dp_med < 0.0:
+                continue
+            r_c = (
+                cohort_r if cohort_r is not None else _get_float(sample, plasmid, "r_cohort", 0.60)
+            )
+            if dp_locus > 0.0 and dp_med > 0.0 and r_c > 0.0:
+                f_exc = max(0.0, 1.0 - (r_c * dp_med) / dp_locus)
+            else:
+                f_exc = 0.0
+            f_junc = _get_float(
+                sample,
+                plasmid,
+                "f_junction",
+                _get_float(sample, plasmid, "EstimatedContaminationFraction", 0.0),
+            )
+            f_plas = max(f_exc, f_junc)
+
+            for cat_name, new_val in (
+                ("r_cohort", r_c),
+                ("f_excess", f_exc),
+                ("f_plasmid", f_plas),
+            ):
+                mask = (
+                    (summary_df["Sample"].astype(str) == sample)
+                    & (summary_df["Plasmid"].astype(str) == plasmid)
+                    & (summary_df["Category"].astype(str) == cat_name)
+                )
+                if mask.any():
+                    summary_df.loc[mask, "Value"] = new_val
+                else:
+                    summary_df.loc[len(summary_df)] = {
+                        "Category": cat_name,
+                        "Value": new_val,
+                        "Sample": sample,
+                        "Plasmid": plasmid,
+                    }
+
+    return summary_df
 
 
 def _find_sample_report_relpaths(
@@ -1366,12 +1588,26 @@ def _build_cohort_overview(
 
     backbone_depth_lookup: dict[tuple[str, str], float] = {}
     backbone_breadth_lookup: dict[tuple[str, str], float] = {}
+    depth_fraction_lookup: dict[tuple[str, str, str], float] = {}
     if (
         summary_df is not None
         and not summary_df.empty
         and {"Sample", "Plasmid", "Category", "Value"}.issubset(summary_df.columns)
     ):
-        bb_rows = summary_df[summary_df["Category"].isin(["MeanDepthBackbone", "BreadthBackbone"])]
+        bb_rows = summary_df[
+            summary_df["Category"].isin(
+                [
+                    "MeanDepthBackbone",
+                    "BreadthBackbone",
+                    "dp_sample_median",
+                    "dp_locus",
+                    "r_cohort",
+                    "f_excess",
+                    "f_junction",
+                    "f_plasmid",
+                ]
+            )
+        ]
         for _, r in bb_rows.iterrows():
             key = (str(r["Sample"]), str(r["Plasmid"]))
             cat = str(r["Category"])
@@ -1382,6 +1618,8 @@ def _build_cohort_overview(
                         backbone_depth_lookup[key] = fval
                     elif cat == "BreadthBackbone":
                         backbone_breadth_lookup[key] = fval
+                    else:
+                        depth_fraction_lookup[(key[0], key[1], cat)] = fval
             except (ValueError, TypeError):
                 pass
 
@@ -1448,6 +1686,8 @@ def _build_cohort_overview(
         est_contam_raw = ""
         est_contam_sort = -1.0
         raw_ecf = jrow.get("EstimatedContaminationFraction")
+        if raw_ecf is None or str(raw_ecf).strip() in ("", "NA", "N/A", "nan"):
+            raw_ecf = depth_fraction_lookup.get((sample, plasmid, "f_plasmid"))
         if raw_ecf is not None and str(raw_ecf).strip() not in ("", "NA", "N/A", "nan"):
             try:
                 ecf_val = float(raw_ecf)
@@ -1500,6 +1740,14 @@ def _build_cohort_overview(
                 "est_contam_str": est_contam_str,
                 "est_contam_raw": est_contam_raw,
                 "est_contam_sort": est_contam_sort,
+                "dp_sample_median": depth_fraction_lookup.get(
+                    (sample, plasmid, "dp_sample_median")
+                ),
+                "dp_locus": depth_fraction_lookup.get((sample, plasmid, "dp_locus")),
+                "r_cohort": depth_fraction_lookup.get((sample, plasmid, "r_cohort")),
+                "f_excess": depth_fraction_lookup.get((sample, plasmid, "f_excess")),
+                "f_junction": depth_fraction_lookup.get((sample, plasmid, "f_junction")),
+                "f_plasmid": depth_fraction_lookup.get((sample, plasmid, "f_plasmid")),
                 "plasmid_reads_str": _format_int_comma(p_reads),
                 "plasmid_reads_sort": p_reads if p_reads is not None else -1.0,
                 "human_reads_str": _format_int_comma(h_reads),
@@ -2007,6 +2255,91 @@ def generate_report(
             f.write(html_content_non_interactive)
 
 
+def _run_cohort_vcf_flagging(
+    vcf_file: str,
+    input_dir: str,
+    output_dir: str,
+    summary_df: pd.DataFrame,
+    substring_to_remove: str | None = None,
+) -> tuple[set[tuple[str, str]], dict[tuple[str, str], int]]:
+    """Run VCF variant flagging across cohort compare outputs and extract co-occurrence / cDNA artefact counts."""
+    from .compare_alignments import (
+        _norm_tumour,
+        flag_vcf_variants,
+        load_summary_rows_for_flagging,
+    )
+
+    cooccurrence_pairs: set[tuple[str, str]] = set()
+    cdna_artefact_counts: dict[tuple[str, str], int] = {}
+
+    data_dir = os.path.join(output_dir, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    flagged_tsv = os.path.join(data_dir, "plasmid_flagged_variants.tsv")
+
+    summary_files = find_tsv_files(input_dir, ".summary.tsv")
+    summary_rows = load_summary_rows_for_flagging(summary_files)
+    if substring_to_remove:
+        for row in summary_rows:
+            row["sample"] = str(row.get("sample", "")).replace(substring_to_remove, "")
+
+    records = flag_vcf_variants(vcf_file, flagged_tsv, summary_rows)
+
+    plasmids_by_sample: dict[str, list[str]] = {}
+    samples_by_norm: dict[str, list[str]] = {}
+    if not summary_df.empty and {"Sample", "Plasmid"}.issubset(summary_df.columns):
+        for s, p in zip(summary_df["Sample"], summary_df["Plasmid"], strict=True):
+            s_str, p_str = str(s), str(p)
+            plasmids_by_sample.setdefault(s_str, [])
+            if p_str not in plasmids_by_sample[s_str]:
+                plasmids_by_sample[s_str].append(p_str)
+            norm_s = _norm_tumour(s_str)
+            samples_by_norm.setdefault(norm_s, [])
+            if s_str not in samples_by_norm[norm_s]:
+                samples_by_norm[norm_s].append(s_str)
+
+    for rec in records:
+        raw_sample = str(rec.get("Sample", rec.get("sample", rec.get("SAMPLE", ""))) or "").strip()
+        if not raw_sample:
+            continue
+        if substring_to_remove:
+            raw_sample = raw_sample.replace(substring_to_remove, "")
+
+        matched_samples = (
+            [raw_sample]
+            if raw_sample in plasmids_by_sample
+            else samples_by_norm.get(_norm_tumour(raw_sample), [raw_sample])
+        )
+
+        raw_plasmid = str(
+            rec.get("matching_constructs", rec.get("Plasmid", rec.get("plasmid", ""))) or ""
+        ).strip()
+        explicit_plasmids = [
+            part.strip()
+            for part in raw_plasmid.replace(";", ",").split(",")
+            if part.strip() and part.strip() not in ("*", "NA", "N/A", "nan")
+        ]
+
+        artefact = str(rec.get("plasmid_artefact", rec.get("flag", "")) or "").strip().lower()
+        cooc_val = (
+            str(rec.get("construct_allele_cooccurrence", rec.get("cooccurrence", "")) or "")
+            .strip()
+            .lower()
+        )
+        is_cdna = artefact == "cdna_junction_artefact"
+        is_cooc = cooc_val in ("yes", "true", "1") or artefact == "construct_allele_cooccurrence"
+
+        for s_name in matched_samples:
+            target_plasmids = explicit_plasmids or plasmids_by_sample.get(s_name, [])
+            for p_name in target_plasmids:
+                pair = (s_name, p_name)
+                if is_cdna:
+                    cdna_artefact_counts[pair] = cdna_artefact_counts.get(pair, 0) + 1
+                if is_cooc:
+                    cooccurrence_pairs.add(pair)
+
+    return cooccurrence_pairs, cdna_artefact_counts
+
+
 def main(
     input_dir: str,
     output_dir: str,
@@ -2016,6 +2349,7 @@ def main(
     static_report: bool = False,
     plotly_mode: str = "directory",
     plot_backend: str = "matplotlib",
+    vcf_file: str | None = None,
 ) -> None:
     # Initialize kaleido once before plotting if static_report is True and using plotly backend
     if static_report and plot_backend == "plotly":
@@ -2089,6 +2423,26 @@ def main(
             summary_df.loc[verdict_mask, "Value"] = summary_df.loc[verdict_mask].apply(
                 _recalc_verdict, axis=1
             )
+
+    summary_df = _reestimate_cohort_depth_fractions(summary_df)
+
+    cooccurrence_pairs: set[tuple[str, str]] = set()
+    cdna_artefact_counts: dict[tuple[str, str], int] = {}
+    if vcf_file:
+        cooccurrence_pairs, cdna_artefact_counts = _run_cohort_vcf_flagging(
+            vcf_file=vcf_file,
+            input_dir=input_dir,
+            output_dir=output_dir,
+            summary_df=summary_df,
+            substring_to_remove=substring_to_remove,
+        )
+
+    verdict_df = _add_plasmid_flag(
+        summary_df[summary_df["Category"] == "Verdict"],
+        summary_df,
+        cooccurrence_pairs=cooccurrence_pairs,
+        cdna_artefact_counts=cdna_artefact_counts,
+    )
 
     # Calculate variations
     boxplot_data, p_values_df = calculate_variations(summary_df[summary_df["Category"] == "Ratio"])
@@ -2219,25 +2573,32 @@ def main(
         "EstimatedContaminationFraction",
         "ExonLengths",
         "IntronLengths",
+        "dp_sample_median",
+        "dp_locus",
+        "r_cohort",
+        "f_excess",
+        "f_junction",
+        "f_plasmid",
     ]
     extended_metrics_df = summary_df[summary_df["Category"].isin(extended_categories)]
 
     # Save tables
     save_tables_as_tsv_and_excel(
         summary_df[summary_df["Category"].isin(["Plasmid", "Human", "Tied"])],
-        summary_df[summary_df["Category"] == "Verdict"],
+        verdict_df,
         summary_df[summary_df["Category"] == "Ratio"],
         p_values_df,
         output_dir,
         extended_metrics_df=extended_metrics_df,
         resistance_gene_df=resistance_gene_df,
         junction_df=junction_table_df,
+        summary_df=summary_df,
     )
 
     # Generate report
     generate_report(
         summary_df[summary_df["Category"].isin(["Plasmid", "Human", "Tied"])],
-        summary_df[summary_df["Category"] == "Verdict"],
+        verdict_df,
         summary_df[summary_df["Category"] == "Ratio"],
         heatmap_filename_interactive,
         heatmap_filename_png,

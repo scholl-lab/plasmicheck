@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -136,9 +137,9 @@ class TestCreateIndexes:
         assert fai_file.read_text() == "fake_fai_content"
 
         # Verify no leftover .tmp files
-        tmp_mmi = tmp_path / f"ref.mmi.tmp.{os.getpid()}"
+        tmp_mmi = tmp_path / f"ref.mmi.tmp.{socket.gethostname()}.{os.getpid()}"
         assert not tmp_mmi.exists()
-        tmp_fai = tmp_path / f"ref.fasta.fai.{os.getpid()}.tmp"
+        tmp_fai = tmp_path / f"ref.fasta.fai.tmp.{socket.gethostname()}.{os.getpid()}"
         assert not tmp_fai.exists()
 
     @pytest.mark.unit
@@ -164,5 +165,24 @@ class TestCreateIndexes:
         ):
             create_indexes(str(fasta), overwrite=True)
 
-        tmp_fai = tmp_path / f"ref.fasta.fai.{os.getpid()}.tmp"
+        tmp_fai = tmp_path / f"ref.fasta.fai.tmp.{socket.gethostname()}.{os.getpid()}"
         assert not tmp_fai.exists()
+
+    @pytest.mark.unit
+    @patch("plasmicheck.scripts.create_indexes.subprocess.run")
+    def test_temp_filenames_include_hostname_and_pid(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """Temporary index filenames include socket.gethostname() and os.getpid()."""
+        fasta = tmp_path / "ref.fasta"
+        fasta.write_text(">seq\nATCG")
+        with (
+            patch("plasmicheck.scripts.create_indexes.socket.gethostname", return_value="node42"),
+            patch("plasmicheck.scripts.create_indexes.os.getpid", return_value=1),
+        ):
+            create_indexes(str(fasta), overwrite=True)
+
+        mm_cmd = mock_run.call_args_list[0][0][0]
+        st_cmd = mock_run.call_args_list[1][0][0]
+        assert mm_cmd[-2] == str(tmp_path / "ref.mmi.tmp.node42.1")
+        assert st_cmd[st_cmd.index("-o") + 1] == str(tmp_path / "ref.fasta.fai.tmp.node42.1")

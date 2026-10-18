@@ -9,34 +9,71 @@ from plasmicheck.config import get_config
 from .utils import run_command
 
 
-def _bam_to_fastq_cmd(
-    input_file: str,
-    samtools_threads: int,
-    regions_bed: str | None = None,
-    include_unmapped: bool = False,
-) -> str:
-    """Build shell command that extracts collated FASTQ records from a BAM file."""
-    t_arg = quote(str(samtools_threads))
-    bam_arg = quote(input_file)
-    if not regions_bed:
-        return f"samtools collate -@ {t_arg} -u -O {bam_arg} | samtools fastq -@ {t_arg} -F 0x900 -"
-    if not os.path.isfile(regions_bed):
-        raise FileNotFoundError(f"Regions BED file not found: {regions_bed}")
-    bed_arg = quote(regions_bed)
-    if not include_unmapped:
-        return (
-            f"samtools view -@ {t_arg} -u -F 4 -L {bed_arg} {bam_arg} "
-            f"| samtools collate -@ {t_arg} -u -O - "
-            f"| samtools fastq -@ {t_arg} -F 0x904 -"
-        )
-    return (
-        f"{{ samtools view -@ {t_arg} -u -F 4 -L {bed_arg} {bam_arg} "
-        f"| samtools collate -@ {t_arg} -u -O - "
-        f"| samtools fastq -@ {t_arg} -F 0x904 -; "
-        f"samtools view -@ {t_arg} -u -f 4 {bam_arg} "
-        f"| samtools collate -@ {t_arg} -u -O - "
-        f"| samtools fastq -@ {t_arg} -f 4 -F 0x900 -; }}"
+def parse_bed_regions(bed_path: str) -> list[str]:
+    if not os.path.isfile(bed_path):
+        s_arg = bed_path.strip()
+        if (
+            s_arg
+            and not s_arg.endswith(".bed")
+            and ":" in s_arg
+            and "-" in s_arg
+            and "/" not in s_arg
+        ):
+            return [r.strip() for r in s_arg.split(",") if r.strip()]
+        raise FileNotFoundError(f"Regions BED file not found: {bed_path}")
+    regions: list[str] = []
+    with open(bed_path, encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith(("#", "track", "browser")):
+                continue
+            parts = s.split("\t")
+            if len(parts) < 3:
+                parts = s.split()
+            chrom, start, end = parts[:3]
+            regions.append(f"{chrom}:{max(1, int(start) + 1)}-{int(end)}")
+    if not regions:
+        raise ValueError(f"No valid BED intervals found in {bed_path}")
+    return regions
+
+
+def has_bam_index(bam_path: str) -> bool:
+    stem = bam_path[:-4] if bam_path.endswith(".bam") else bam_path
+    return any(
+        os.path.exists(p)
+        for p in (f"{bam_path}.bai", f"{stem}.bai", f"{bam_path}.csi", f"{stem}.csi")
     )
+
+
+def bam_to_fastq_cmd(
+    input_bam: str,
+    samtools_threads: int,
+    regions: str | list[str] | None = None,
+    *,
+    regions_bed: str | None = None,
+    include_unmapped: bool = True,
+) -> str:
+    eff_regions = regions if regions is not None else regions_bed
+    reg_list = (
+        parse_bed_regions(eff_regions) if isinstance(eff_regions, str) else list(eff_regions or [])
+    )
+    t = quote(str(samtools_threads))
+    if reg_list:
+        if not has_bam_index(input_bam):
+            raise FileNotFoundError(
+                f"BAM index (.bai/.csi) required for region extraction: {input_bam}"
+            )
+        targets = [*reg_list, "*"] if include_unmapped else reg_list
+        reg_args = " ".join(quote(r) for r in dict.fromkeys(targets))
+        return (
+            f"samtools view -@ {t} -u -M {quote(input_bam)} {reg_args} "
+            f"| samtools collate -@ {t} -u -O - "
+            f"| samtools fastq -@ {t} -n -F 0x900 -"
+        )
+    return f"samtools collate -@ {t} -u -O {quote(input_bam)} | samtools fastq -@ {t} -n -F 0x900 -"
+
+
+_bam_to_fastq_cmd = bam_to_fastq_cmd
 
 
 def align_reads(
@@ -48,8 +85,9 @@ def align_reads(
     minimap2_threads: int | None = None,
     samtools_threads: int | None = None,
     samtools_sort_memory: str | None = None,
+    regions: str | list[str] | None = None,
+    include_unmapped: bool = True,
     regions_bed: str | None = None,
-    include_unmapped: bool = False,
 ) -> None:
     # Resolve defaults from config when not provided
     cfg = get_config()
@@ -71,13 +109,11 @@ def align_reads(
 
     fastq_extensions = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
     sort_flag = "-N " if alignment_type == "human" else ""
+    eff_regions = regions if regions is not None else regions_bed
 
     if input_file.endswith(".bam"):
-        extract_cmd = _bam_to_fastq_cmd(
-            input_file, samtools_threads, regions_bed=regions_bed, include_unmapped=include_unmapped
-        )
         command = (
-            f"{extract_cmd} "
+            f"{bam_to_fastq_cmd(input_file, samtools_threads, regions=eff_regions, include_unmapped=include_unmapped)} "
             f"| minimap2 -t {quote(str(minimap2_threads))} -ax sr {quote(reference_index)} - "
             f"| samtools view -@ {quote(str(samtools_threads))} -u -F 4 - "
             f"| samtools sort {sort_flag}-@ {quote(str(samtools_threads))} "

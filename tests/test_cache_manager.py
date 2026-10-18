@@ -732,3 +732,93 @@ def test_clean_all_recreates_directories(
 
     assert (cache_root / "indexes").exists()
     assert (cache_root / "spliced").exists()
+
+
+@pytest.mark.unit
+def test_spliced_cache_v4_differentiates_gtf_md5_and_rejects_v3(
+    tmp_path: Path,
+    sample_bam: Path,
+    sample_spliced_fasta: Path,
+    sample_cdna_positions: Path,
+) -> None:
+    """Test that spliced cache uses :v4 key, differentiates gtf_md5, and rejects :v3 entries."""
+    cache = CacheManager(tmp_path / "cache")
+    plasmid = tmp_path / "plasmid.fasta"
+    plasmid.write_text(">plasmid\nACGT\n")
+    human = tmp_path / "human.fasta"
+    human.write_text(">chr1\nATGC\n")
+    gtf = tmp_path / "mane.gtf"
+    gtf.write_text('chr1\tHAVANA\texon\t1\t10\t.\t+\t.\ttranscript_id "tx1";\n')
+
+    p_md5 = _resolve_md5(str(plasmid))
+    h_md5 = _resolve_md5(str(human))
+    v3_raw = f"{p_md5}:{h_md5}:1000:v3"
+    v3_key = hashlib.md5(v3_raw.encode()).hexdigest()
+    cache.manifest[v3_key] = {
+        "bam_path": str(sample_bam),
+        "fasta_path": str(sample_spliced_fasta),
+        "cdna_path": str(sample_cdna_positions),
+        "bam_size": sample_bam.stat().st_size,
+        "fasta_size": sample_spliced_fasta.stat().st_size,
+        "cdna_size": sample_cdna_positions.stat().st_size,
+        "created": 0,
+        "last_access": 0,
+        "type": "spliced",
+    }
+    cache._save_manifest()
+
+    # v3 entry is ignored
+    assert cache.get_spliced(str(plasmid), str(human)) is None
+
+    # Store with gtf_md5
+    cache.put_spliced(
+        str(plasmid),
+        str(human),
+        str(sample_bam),
+        str(sample_spliced_fasta),
+        str(sample_cdna_positions),
+        gtf_md5=str(gtf),
+    )
+
+    assert cache.get_spliced(str(plasmid), str(human), gtf_md5=str(gtf)) is not None
+    assert cache.get_spliced(str(plasmid), str(human), gtf_md5="") is None
+    assert cache.get_spliced(str(plasmid), str(human), gtf_md5="other_md5") is None
+
+
+@pytest.mark.unit
+def test_cache_hits_do_not_rewrite_manifest(
+    tmp_path: Path,
+    sample_fasta: Path,
+    sample_mmi: Path,
+    sample_fai: Path,
+    sample_bam: Path,
+    sample_spliced_fasta: Path,
+    sample_cdna_positions: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that get_index and get_spliced do not call _save_manifest on read-only cache hits."""
+    cache = CacheManager(tmp_path / "cache")
+    human = tmp_path / "human.fasta"
+    human.write_text(">chr1\nATGC\n")
+
+    cache.put_index(str(sample_fasta), str(sample_mmi), str(sample_fai))
+    cache.put_spliced(
+        str(sample_fasta),
+        str(human),
+        str(sample_bam),
+        str(sample_spliced_fasta),
+        str(sample_cdna_positions),
+    )
+
+    save_calls: list[int] = []
+    orig_save = cache._save_manifest
+
+    def _track_save() -> None:
+        save_calls.append(1)
+        orig_save()
+
+    monkeypatch.setattr(cache, "_save_manifest", _track_save)
+
+    assert cache.get_index(str(sample_fasta)) is not None
+    assert cache.get_spliced(str(sample_fasta), str(human)) is not None
+    assert save_calls == []

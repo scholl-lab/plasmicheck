@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import csv
 import hashlib
 import itertools
 import logging
+import math
 import os
 import secrets
 import subprocess
@@ -121,6 +123,8 @@ class InsertRegionData:
     chromosome: str | None = None
     genomic_start: int | None = None
     genomic_end: int | None = None
+    genomic_introns: list[tuple[int, int]] | None = None
+    construct_variants: list[str] | None = None
 
     def __iter__(self) -> Iterator[int]:
         """Support tuple unpacking: start, end = parse_insert_region(file)"""
@@ -134,6 +138,30 @@ class InsertRegionData:
             return self.end
         else:
             raise IndexError(f"InsertRegionData index out of range: {index}")
+
+
+def _parse_intron_list(introns_str: str | None) -> list[tuple[int, int]] | None:
+    """Parse 'start-end,start-end' string into a list of 1-based (start, end) tuples."""
+    if not introns_str or introns_str == "NA":
+        return None
+    parsed: list[tuple[int, int]] = []
+    for item in introns_str.split(","):
+        item = item.strip()
+        if "-" in item:
+            s_part, e_part = item.split("-", 1)
+            try:
+                parsed.append((int(s_part), int(e_part)))
+            except ValueError:
+                continue
+    return parsed if parsed else None
+
+
+def _parse_variant_list(variants_str: str | None) -> list[str] | None:
+    """Parse comma-separated 'pos:ref>alt' construct variant descriptors."""
+    if not variants_str or variants_str == "NA":
+        return None
+    parsed = [v.strip() for v in variants_str.split(",") if v.strip() and v.strip() != "NA"]
+    return parsed if parsed else None
 
 
 def parse_insert_region(cdna_positions_file: str) -> InsertRegionData:
@@ -197,6 +225,9 @@ def parse_insert_region(cdna_positions_file: str) -> InsertRegionData:
     genomic_end_str = _get_field("GenomicEnd:")
     genomic_end = int(genomic_end_str) if genomic_end_str is not None else None
 
+    genomic_introns = _parse_intron_list(_get_field("GenomicIntrons:"))
+    construct_variants = _parse_variant_list(_get_field("ConstructVariants:"))
+
     return InsertRegionData(
         start=cdna_start,
         end=cdna_end,
@@ -208,6 +239,8 @@ def parse_insert_region(cdna_positions_file: str) -> InsertRegionData:
         chromosome=chromosome,
         genomic_start=genomic_start,
         genomic_end=genomic_end,
+        genomic_introns=genomic_introns,
+        construct_variants=construct_variants,
     )
 
 
@@ -879,6 +912,786 @@ def _streaming_compare(
     return assigned_counts
 
 
+def compute_f_excess(dp_locus: float, dp_sample_median: float, r_cohort: float = 0.60) -> float:
+    """Compute depth-normalised plasmid excess fraction at the construct locus."""
+    if (
+        math.isfinite(dp_locus)
+        and math.isfinite(dp_sample_median)
+        and math.isfinite(r_cohort)
+        and dp_locus > 0
+        and dp_sample_median > 0
+        and r_cohort > 0
+    ):
+        return max(0.0, 1.0 - (r_cohort * dp_sample_median) / dp_locus)
+    return 0.0
+
+
+def compute_f_junction(
+    spliced_junction_reads: float,
+    dp_locus: float,
+    plasmid_ratio: float,
+    is_contaminated: bool,
+    is_unclear: bool = False,
+    read_len: int = 101,
+    min_overlap: int = 15,
+) -> float:
+    """Compute splice-junction and ratio-based plasmid fraction estimate."""
+    scale = read_len / max(1, read_len - 2 * min_overlap)
+    if (
+        math.isfinite(dp_locus)
+        and math.isfinite(spliced_junction_reads)
+        and dp_locus > 0
+        and spliced_junction_reads > 0
+    ):
+        f_junc_dp = min(1.0, max(0.0, (spliced_junction_reads * scale) / dp_locus))
+    else:
+        f_junc_dp = 0.0
+
+    if plasmid_ratio > 0 and not math.isnan(plasmid_ratio):
+        base_ratio = 1.0 if math.isinf(plasmid_ratio) else plasmid_ratio / (1.0 + plasmid_ratio)
+        if is_contaminated:
+            f_ratio = base_ratio
+        elif is_unclear:
+            f_ratio = 0.5 * base_ratio
+        else:
+            f_ratio = 0.0
+    else:
+        f_ratio = 0.0
+
+    return max(f_junc_dp, f_ratio)
+
+
+def compute_f_plasmid(f_excess: float, f_junction: float) -> float:
+    """Combine depth-excess and junction-based plasmid fraction estimates."""
+    fe = f_excess if math.isfinite(f_excess) else 0.0
+    fj = f_junction if math.isfinite(f_junction) else 0.0
+    return min(1.0, max(0.0, fe, fj))
+
+
+def compute_bed_median_depth(bam_path: str, bed_path: str) -> float:
+    """Compute median per-target mean depth across BED intervals from an indexed BAM."""
+    if not os.path.exists(bam_path) or not os.path.exists(bed_path):
+        return 0.0
+    intervals: list[tuple[str, int, int]] = []
+    try:
+        with open(bed_path) as bf:
+            for raw in bf:
+                line = raw.strip()
+                if not line or line.startswith(("#", "track", "browser")):
+                    continue
+                parts = line.split("\t") if "\t" in line else line.split()
+                if len(parts) < 3:
+                    continue
+                try:
+                    s0 = int(parts[1])
+                    e0 = int(parts[2])
+                except ValueError:
+                    continue
+                if e0 > s0 >= 0:
+                    intervals.append((parts[0], s0, e0))
+    except OSError:
+        return 0.0
+    if not intervals:
+        return 0.0
+
+    depths: list[float] = []
+    try:
+        with pysam.AlignmentFile(bam_path, "rb") as af:
+            refs = set(getattr(af, "references", ()) or ())
+            for chrom, s0, e0 in intervals:
+                contig = chrom
+                if refs and contig not in refs:
+                    alt_contig = contig[3:] if contig.startswith("chr") else f"chr{contig}"
+                    if alt_contig in refs:
+                        contig = alt_contig
+                    else:
+                        continue
+                cov = af.count_coverage(contig, s0, e0)
+                total_bases = sum(float(np.sum(arr)) for arr in cov)
+                depths.append(total_bases / (e0 - s0))
+    except Exception:
+        return 0.0
+    return float(np.median(depths)) if depths else 0.0
+
+
+def _norm_chrom(chrom: str) -> str:
+    """Normalize chromosome name by stripping 'chr' and mapping RefSeq NC_000001..24."""
+    c = str(chrom).strip()
+    if not c or c == "NA":
+        return ""
+    if c.upper().startswith("NC_"):
+        base = c.split(".")[0].upper()
+        if len(base) == 9 and base[3:].isdigit():
+            num = int(base[3:])
+            if 1 <= num <= 22:
+                return str(num)
+            if num == 23:
+                return "X"
+            if num == 24:
+                return "Y"
+    if c.lower().startswith("chr"):
+        c = c[3:]
+    return c
+
+
+def _norm_tumour(sample_name: str) -> str:
+    """Normalize tumour/somatic sample prefix without ever stripping normal '-N'."""
+    s = str(sample_name).strip()
+    for ext in (".bam", ".cram"):
+        if s.lower().endswith(ext):
+            s = s[: -len(ext)]
+    for suffix in ("_To", "_TvsN", "-TS", "-NF", "-T", "-F"):
+        if s.endswith(suffix):
+            return s[: -len(suffix)]
+    return s
+
+
+def _safe_float(val: Any, default: float = 0.0) -> float:
+    if val is None or val in ("", "NA", "."):
+        return default
+    try:
+        res = float(val)
+        return res if not math.isnan(res) else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_int(val: Any, default: int = 0) -> int:
+    if val is None or val in ("", "NA", "."):
+        return default
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return default
+
+
+def _coerce_introns(raw: Any) -> list[tuple[int, int]]:
+    if not raw or raw == "NA":
+        return []
+    if isinstance(raw, str):
+        return _parse_intron_list(raw) or []
+    result: list[tuple[int, int]] = []
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                result.append((int(item[0]), int(item[1])))
+            elif isinstance(item, str) and "-" in item:
+                s_p, e_p = item.split("-", 1)
+                result.append((int(s_p), int(e_p)))
+    return result
+
+
+def _coerce_construct_variants(raw: Any) -> list[tuple[int, str, str]]:
+    if not raw or raw == "NA":
+        return []
+    items: list[Any]
+    if isinstance(raw, str):
+        items = _parse_variant_list(raw) or []
+    elif isinstance(raw, (list, tuple)):
+        items = list(raw)
+    else:
+        return []
+    parsed: list[tuple[int, str, str]] = []
+    for item in items:
+        if isinstance(item, (list, tuple)) and len(item) >= 3:
+            parsed.append((int(item[0]), str(item[1]).upper(), str(item[2]).upper()))
+        elif isinstance(item, str) and ":" in item and ">" in item:
+            pos_str, alleles = item.strip().split(":", 1)
+            ref_s, alt_s = alleles.split(">", 1)
+            try:
+                parsed.append((int(pos_str), ref_s.strip().upper(), alt_s.strip().upper()))
+            except ValueError:
+                continue
+    return parsed
+
+
+def load_summary_rows_for_flagging(summary_tsv_paths: list[str]) -> list[dict[str, Any]]:
+    """Load per-sample, per-construct summary TSV files into dicts for flag_vcf_variants."""
+    rows: list[dict[str, Any]] = []
+    for path in summary_tsv_paths:
+        if not path or not os.path.exists(path):
+            continue
+        kv: dict[str, str] = {}
+        try:
+            with open(path) as f:
+                for line in f:
+                    parts = line.rstrip("\r\n").split("\t", 1)
+                    if len(parts) == 2 and parts[0] != "Category":
+                        kv[parts[0]] = parts[1]
+        except OSError:
+            continue
+
+        abs_path = os.path.abspath(path)
+        fname = os.path.basename(abs_path)
+        stem = (
+            fname[: -len(".summary.tsv")]
+            if fname.endswith(".summary.tsv")
+            else os.path.splitext(fname)[0]
+        )
+        parent_dir = os.path.dirname(abs_path)
+        actual_parent = (
+            os.path.dirname(parent_dir) if os.path.basename(parent_dir) == "data" else parent_dir
+        )
+        plasmid_dir = os.path.basename(actual_parent)
+        sample_dir = os.path.basename(os.path.dirname(actual_parent))
+        if stem == "comparison_result":
+            sample = sample_dir
+            plasmid = plasmid_dir
+        else:
+            sample = stem
+            plasmid = plasmid_dir or stem
+
+        chrom = kv.get("Chromosome", "NA")
+        g_start = _safe_int(kv.get("GenomicStart"), 0)
+        g_end = _safe_int(kv.get("GenomicEnd"), 0)
+        introns = _coerce_introns(kv.get("GenomicIntrons"))
+        c_vars = kv.get("ConstructVariants", "NA")
+
+        cdna_fallback = os.path.join(parent_dir, "cDNA_positions.txt")
+        if (chrom == "NA" or not g_start) and os.path.exists(cdna_fallback):
+            with contextlib.suppress(Exception):
+                ir = parse_insert_region(cdna_fallback)
+                if chrom == "NA" and ir.chromosome:
+                    chrom = ir.chromosome
+                if not g_start and ir.genomic_start:
+                    g_start = ir.genomic_start
+                if not g_end and ir.genomic_end:
+                    g_end = ir.genomic_end
+                if not introns and ir.genomic_introns:
+                    introns = ir.genomic_introns
+                if c_vars == "NA" and ir.construct_variants:
+                    c_vars = ",".join(ir.construct_variants)
+
+        rows.append(
+            {
+                "sample": sample,
+                "plasmid": plasmid,
+                "chrom": "" if chrom == "NA" else chrom,
+                "genomic_start": g_start,
+                "genomic_end": g_end,
+                "introns": introns,
+                "construct_variants": [] if c_vars == "NA" else _parse_variant_list(c_vars) or [],
+                "verdict": kv.get("Verdict", ""),
+                "ratio": _safe_float(kv.get("Ratio"), 0.0),
+                "spliced_reads": _safe_int(kv.get("SpliceJunctionReads"), 0),
+                "f_plasmid": _safe_float(kv.get("f_plasmid"), 0.0),
+                "f_excess": _safe_float(kv.get("f_excess"), 0.0),
+                "f_junction": _safe_float(kv.get("f_junction"), 0.0),
+                "dp_locus": _safe_float(kv.get("dp_locus") or kv.get("MeanDepthInsert"), 0.0),
+                "dp_sample_median": _safe_float(kv.get("dp_sample_median"), 0.0),
+                "r_cohort": _safe_float(kv.get("r_cohort"), 0.60),
+            }
+        )
+    return rows
+
+
+def _read_variant_records(
+    vcf_path: str,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Read variant records from a .tsv/.txt table or a .vcf/.vcf.gz/.bcf file."""
+    lower = vcf_path.lower()
+    if lower.endswith((".tsv", ".txt")):
+        with open(vcf_path, newline="") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            fieldnames = list(reader.fieldnames or [])
+            records: list[dict[str, Any]] = []
+            for raw_row in reader:
+                row = {k: (v if v is not None else "") for k, v in raw_row.items() if k is not None}
+                sample = (row.get("sample") or row.get("Sample") or row.get("SAMPLE") or "").strip()
+                chrom = (
+                    row.get("chr")
+                    or row.get("chrom")
+                    or row.get("CHROM")
+                    or row.get("#CHROM")
+                    or ""
+                ).strip()
+                pos = _safe_int(row.get("pos") or row.get("POS"), 0)
+                ref = str(row.get("ref") or row.get("REF") or "").strip()
+                alt = str(row.get("alt") or row.get("ALT") or "").strip()
+                vaf = _safe_float(
+                    row.get("vaf") or row.get("VAF") or row.get("af") or row.get("AF"), 0.0
+                )
+                dp = _safe_float(row.get("dp") or row.get("DP"), 0.0)
+                ad_raw = (
+                    row.get("ad")
+                    or row.get("AD")
+                    or row.get("ad_alt")
+                    or row.get("alt_depth")
+                    or ""
+                ).strip()
+                if ad_raw and ad_raw not in ("NA", "."):
+                    if "," in ad_raw:
+                        parts = ad_raw.split(",")
+                        ad_alt = _safe_float(parts[1] if len(parts) > 1 else parts[0], 0.0)
+                    else:
+                        ad_alt = _safe_float(ad_raw, 0.0)
+                else:
+                    ad_alt = float(round(vaf * dp)) if (vaf > 0 and dp > 0) else 0.0
+                if ad_alt == 0.0 and vaf > 0 and dp > 0:
+                    ad_alt = float(round(vaf * dp))
+                records.append(
+                    {
+                        "raw": row,
+                        "sample": sample,
+                        "chrom": chrom,
+                        "pos": pos,
+                        "ref": ref,
+                        "alt": alt,
+                        "vaf": vaf,
+                        "dp": dp,
+                        "ad_alt": ad_alt,
+                        "ref_ctx_in": str(row.get("ref_ctx_in") or "").strip(),
+                        "alt_ctx_in": str(row.get("alt_ctx_in") or "").strip(),
+                    }
+                )
+            return fieldnames, records
+
+    def _vcf_get(mapping: Any, key: str) -> Any:
+        try:
+            return mapping[key]
+        except (KeyError, ValueError, TypeError):
+            return None
+
+    fieldnames = ["sample", "chr", "pos", "ref", "alt", "dp", "ad", "vaf"]
+    records = []
+    with pysam.VariantFile(vcf_path) as vf:
+        for rec in vf:
+            chrom = str(rec.chrom or "")
+            pos = int(rec.pos or 0)
+            ref = str(rec.ref or "")
+            alts = list(rec.alts or ())
+            if not alts:
+                continue
+            if len(rec.samples) == 0:
+                stem = os.path.basename(vcf_path).split(".")[0]
+                for alt in alts:
+                    row_dict = {
+                        "sample": stem,
+                        "chr": chrom,
+                        "pos": str(pos),
+                        "ref": ref,
+                        "alt": str(alt),
+                        "dp": "0",
+                        "ad": "0",
+                        "vaf": "0.000000",
+                    }
+                    records.append(
+                        {
+                            "raw": row_dict,
+                            "sample": stem,
+                            "chrom": chrom,
+                            "pos": pos,
+                            "ref": ref,
+                            "alt": str(alt),
+                            "vaf": 0.0,
+                            "dp": 0.0,
+                            "ad_alt": 0.0,
+                            "ref_ctx_in": "",
+                            "alt_ctx_in": "",
+                        }
+                    )
+                continue
+
+            for sample_name, sdata in rec.samples.items():
+                gt = _vcf_get(sdata, "GT")
+                if gt is not None and len(gt) > 0 and all(a in (0, None) for a in gt):
+                    continue
+                dp_val = _safe_float(_vcf_get(sdata, "DP") or _vcf_get(rec.info, "DP"), 0.0)
+                ad_field = _vcf_get(sdata, "AD")
+                if ad_field is None:
+                    ad_field = _vcf_get(rec.info, "AD")
+                vaf_field = _vcf_get(sdata, "VAF")
+                if vaf_field is None:
+                    vaf_field = _vcf_get(sdata, "AF")
+                if vaf_field is None:
+                    vaf_field = _vcf_get(rec.info, "AF")
+
+                for alt_idx, alt in enumerate(alts, start=1):
+                    if gt is not None and any(a is not None for a in gt) and alt_idx not in gt:
+                        continue
+                    ad_alt = 0.0
+                    if isinstance(ad_field, (tuple, list)):
+                        if len(ad_field) > alt_idx:
+                            ad_alt = _safe_float(ad_field[alt_idx], 0.0)
+                        elif len(ad_field) == 1:
+                            ad_alt = _safe_float(ad_field[0], 0.0)
+                        if dp_val <= 0:
+                            dp_val = sum(_safe_float(x, 0.0) for x in ad_field)
+                    elif ad_field is not None:
+                        ad_alt = _safe_float(ad_field, 0.0)
+
+                    vaf_val = 0.0
+                    if isinstance(vaf_field, (tuple, list)):
+                        idx = min(alt_idx - 1, len(vaf_field) - 1)
+                        if idx >= 0:
+                            vaf_val = _safe_float(vaf_field[idx], 0.0)
+                    elif vaf_field is not None:
+                        vaf_val = _safe_float(vaf_field, 0.0)
+                    elif dp_val > 0 and ad_alt > 0:
+                        vaf_val = ad_alt / dp_val
+
+                    if ad_alt == 0.0 and vaf_val > 0 and dp_val > 0:
+                        ad_alt = float(round(vaf_val * dp_val))
+                    if ad_field is not None and ad_alt <= 0 and vaf_val <= 0:
+                        continue
+
+                    row_dict = {
+                        "sample": str(sample_name),
+                        "chr": chrom,
+                        "pos": str(pos),
+                        "ref": ref,
+                        "alt": str(alt),
+                        "dp": str(int(dp_val)),
+                        "ad": str(round(ad_alt)),
+                        "vaf": f"{vaf_val:.6f}",
+                    }
+                    records.append(
+                        {
+                            "raw": row_dict,
+                            "sample": str(sample_name),
+                            "chrom": chrom,
+                            "pos": pos,
+                            "ref": ref,
+                            "alt": str(alt),
+                            "vaf": vaf_val,
+                            "dp": dp_val,
+                            "ad_alt": ad_alt,
+                            "ref_ctx_in": "",
+                            "alt_ctx_in": "",
+                        }
+                    )
+    return fieldnames, records
+
+
+def flag_vcf_variants(
+    vcf_path: str,
+    output_tsv: str,
+    summary_rows: list[dict[str, Any]],
+    max_breakpoint_shift: int = 5,
+) -> list[dict[str, str]]:
+    """Flag variants inside construct inserts as construct_allele, cdna_junction_artefact, or none."""
+    fieldnames, records = _read_variant_records(vcf_path)
+
+    # Parse summary_rows into normalized construct entries and construct-level metadata
+    norm_rows: list[dict[str, Any]] = []
+    # Map (chrom_norm, pos, ref, alt) -> set of carrying construct names
+    allele_to_constructs: dict[tuple[str, int, str, str], set[str]] = {}
+    # Map (plasmid, chrom_norm) -> merged introns, variants, bounds across rows
+    construct_meta: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for idx, sr in enumerate(summary_rows):
+        raw_sample = str(sr.get("sample") or sr.get("Sample") or "").strip()
+        is_wildcard = raw_sample in ("", "*", "comparison_result")
+        s_norm = "*" if is_wildcard else _norm_tumour(raw_sample)
+        plasmid = str(
+            sr.get("plasmid") or sr.get("Plasmid") or sr.get("construct") or f"construct_{idx}"
+        ).strip()
+        c_norm = _norm_chrom(
+            str(sr.get("chrom") or sr.get("chromosome") or sr.get("Chromosome") or "")
+        )
+        if not c_norm:
+            continue
+        g_start = _safe_int(sr.get("genomic_start") or sr.get("GenomicStart"), 0)
+        g_end = _safe_int(sr.get("genomic_end") or sr.get("GenomicEnd"), 0)
+        introns = _coerce_introns(
+            sr.get("introns") or sr.get("genomic_introns") or sr.get("GenomicIntrons")
+        )
+        c_vars = _coerce_construct_variants(
+            sr.get("construct_variants") or sr.get("ConstructVariants")
+        )
+
+        verdict = str(sr.get("verdict") or sr.get("Verdict") or "")
+        v_lower = verdict.lower()
+        is_contaminated = (
+            bool(sr.get("is_contaminated"))
+            or ("is contaminated" in v_lower and "not contaminated" not in v_lower)
+            or v_lower.strip() == "contaminated"
+        )
+        is_unclear = bool(sr.get("is_unclear")) or ("unclear" in v_lower)
+        ratio = _safe_float(
+            sr.get("ratio") if sr.get("ratio") is not None else sr.get("Ratio"), 0.0
+        )
+        spliced_reads = _safe_float(
+            sr.get("spliced_reads")
+            if sr.get("spliced_reads") is not None
+            else sr.get("SpliceJunctionReads"),
+            0.0,
+        )
+        dp_locus = _safe_float(
+            sr.get("dp_locus") if sr.get("dp_locus") is not None else sr.get("MeanDepthInsert"),
+            0.0,
+        )
+        f_excess = _safe_float(sr.get("f_excess"), 0.0)
+        if "f_plasmid" in sr and sr["f_plasmid"] is not None and sr["f_plasmid"] != "":
+            f_plasmid = _safe_float(sr["f_plasmid"], 0.0)
+        else:
+            f_junc = compute_f_junction(
+                spliced_reads,
+                dp_locus,
+                ratio,
+                is_contaminated=is_contaminated,
+                is_unclear=is_unclear,
+            )
+            f_plasmid = compute_f_plasmid(f_excess, f_junc)
+
+        has_evidence = (
+            is_contaminated or is_unclear or f_plasmid > 0 or f_excess > 0 or spliced_reads > 0
+        )
+
+        meta_key = (plasmid, c_norm)
+        if meta_key not in construct_meta:
+            construct_meta[meta_key] = {
+                "g_start": g_start,
+                "g_end": g_end,
+                "introns": list(introns),
+                "variants": set(c_vars),
+            }
+        else:
+            if g_start and not construct_meta[meta_key]["g_start"]:
+                construct_meta[meta_key]["g_start"] = g_start
+            if g_end and not construct_meta[meta_key]["g_end"]:
+                construct_meta[meta_key]["g_end"] = g_end
+            for intr in introns:
+                if intr not in construct_meta[meta_key]["introns"]:
+                    construct_meta[meta_key]["introns"].append(intr)
+            construct_meta[meta_key]["variants"].update(c_vars)
+
+        for v_pos, v_ref, v_alt in c_vars:
+            allele_to_constructs.setdefault((c_norm, v_pos, v_ref, v_alt), set()).add(plasmid)
+
+        norm_rows.append(
+            {
+                "s_norm": s_norm,
+                "plasmid": plasmid,
+                "c_norm": c_norm,
+                "g_start": g_start,
+                "g_end": g_end,
+                "introns": introns,
+                "variants": set(c_vars),
+                "has_evidence": has_evidence,
+                "f_plasmid": f_plasmid,
+                "f_excess": f_excess,
+            }
+        )
+
+    # Backfill shared construct metadata onto each norm_row
+    for nr in norm_rows:
+        meta = construct_meta[(nr["plasmid"], nr["c_norm"])]
+        if not nr["g_start"]:
+            nr["g_start"] = meta["g_start"]
+        if not nr["g_end"]:
+            nr["g_end"] = meta["g_end"]
+        if not nr["introns"]:
+            nr["introns"] = meta["introns"]
+        if not nr["variants"]:
+            nr["variants"] = meta["variants"]
+
+    def _rows_for_sample_chrom(s_norm: str, c_norm: str) -> list[dict[str, Any]]:
+        matched = [
+            nr
+            for nr in norm_rows
+            if nr["c_norm"] == c_norm and (nr["s_norm"] == s_norm or nr["s_norm"] == "*")
+        ]
+        return matched
+
+    def _overlaps_bounds(pos: int, end_pos: int, g_start: int, g_end: int) -> bool:
+        if g_start <= 0 or g_end <= 0:
+            return True
+        lo = min(g_start, g_end) - max_breakpoint_shift
+        hi = max(g_start, g_end) + max_breakpoint_shift
+        return pos <= hi and end_pos >= lo
+
+    # Pre-compute disjoint construct-allele co-occurrence per (s_norm, c_norm)
+    # Group candidate construct-allele calls with AD_alt >= 4
+    cand_by_sc: dict[tuple[str, str], dict[tuple[str, int, str, str], float]] = {}
+    for rec in records:
+        s_norm = _norm_tumour(rec["sample"])
+        c_norm = _norm_chrom(rec["chrom"])
+        pos = rec["pos"]
+        ref_u = rec["ref"].upper()
+        alt_u = rec["alt"].upper()
+        ad_alt = rec["ad_alt"]
+        akey = (c_norm, pos, ref_u, alt_u)
+        if akey in allele_to_constructs and ad_alt >= 4.0:
+            sc_map = cand_by_sc.setdefault((s_norm, c_norm), {})
+            if ad_alt > sc_map.get(akey, 0.0):
+                sc_map[akey] = ad_alt
+
+    cooccurrence_by_sc: dict[tuple[str, str], tuple[str, str, set[tuple[str, int, str, str]]]] = {}
+    for (s_norm, c_norm), allele_ads in cand_by_sc.items():
+        if len(allele_ads) < 2:
+            continue
+        # Only evaluate co-occurrence if sample is not mismatched (either matches norm_rows or no conflicting sample)
+        items_sorted = sorted(allele_ads.items(), key=lambda kv: kv[1], reverse=True)
+        disjoint_alleles: set[tuple[str, int, str, str]] = set()
+        best_ratio_str = "NA"
+        for i in range(len(items_sorted)):
+            a1, ad1 = items_sorted[i]
+            cset1 = allele_to_constructs.get(a1, set())
+            for j in range(i + 1, len(items_sorted)):
+                a2, ad2 = items_sorted[j]
+                cset2 = allele_to_constructs.get(a2, set())
+                if cset1 and cset2 and cset1.isdisjoint(cset2):
+                    disjoint_alleles.add(a1)
+                    disjoint_alleles.add(a2)
+                    if best_ratio_str == "NA" and max(ad1, ad2) > 0:
+                        best_ratio_str = f"{min(ad1, ad2) / max(ad1, ad2):.6f}"
+        if disjoint_alleles:
+            cooccurrence_by_sc[(s_norm, c_norm)] = ("yes", best_ratio_str, disjoint_alleles)
+
+    extra_cols = [
+        "plasmid_artefact",
+        "plasmid_flag",
+        "f_plasmid",
+        "f_excess",
+        "construct_allele_cooccurrence",
+        "construct_allele_ad_ratio",
+        "plasmid_explainable_vaf",
+        "matching_constructs",
+    ]
+    out_fieldnames = list(fieldnames) + [c for c in extra_cols if c not in fieldnames]
+    output_rows: list[dict[str, str]] = []
+
+    for rec in records:
+        s_norm = _norm_tumour(rec["sample"])
+        c_norm = _norm_chrom(rec["chrom"])
+        pos = rec["pos"]
+        ref = rec["ref"]
+        alt = rec["alt"]
+        ref_u = ref.upper()
+        alt_u = alt.upper()
+        ref_ctx_in = rec["ref_ctx_in"]
+        alt_ctx_in = rec["alt_ctx_in"]
+        end_pos = pos + max(0, len(ref) - 1)
+
+        sample_chrom_rows = _rows_for_sample_chrom(s_norm, c_norm)
+        locus_rows = [
+            nr
+            for nr in sample_chrom_rows
+            if _overlaps_bounds(pos, end_pos, nr["g_start"], nr["g_end"])
+            or (pos, ref_u, alt_u) in nr["variants"]
+        ]
+        active_rows = [nr for nr in locus_rows if nr["has_evidence"]]
+
+        akey = (c_norm, pos, ref_u, alt_u)
+        cooc_flag, cooc_ratio, cooc_alleles = cooccurrence_by_sc.get(
+            (s_norm, c_norm), ("no", "NA", set())
+        )
+        # Ensure co-occurrence does not fire when sample only exists in summary_rows as a normal (-N) sample
+        if (
+            cooc_flag == "yes"
+            and not sample_chrom_rows
+            and any(nr["c_norm"] == c_norm for nr in norm_rows)
+        ):
+            cooc_flag, cooc_ratio, cooc_alleles = ("no", "NA", set())
+
+        # 1. Check cdna_junction_artefact on active constructs
+        junc_matched_constructs: list[str] = []
+        for nr in active_rows:
+            chrom_introns: list[tuple[int, int]] = nr["introns"]
+            is_junc = False
+            if len(ref) > len(alt) and chrom_introns:
+                del_start = pos + 1
+                del_end = pos + len(ref) - len(alt)
+                for j_s, j_e in chrom_introns:
+                    if (
+                        abs(del_start - j_s) <= max_breakpoint_shift
+                        and abs(del_end - j_e) <= max_breakpoint_shift
+                    ) or (
+                        len(ref) == 15
+                        and len(alt) == 1
+                        and abs(del_start - j_s) <= max_breakpoint_shift
+                        and del_end == pos + 14
+                        and (j_e - j_s) >= 14
+                    ):
+                        is_junc = True
+                        break
+            if (
+                not is_junc
+                and len(ref) != len(alt)
+                and (
+                    (alt_ctx_in not in ("", "-") and ref_ctx_in in ("", "-"))
+                    or (
+                        len(alt) >= len(ref) + 3
+                        and chrom_introns
+                        and any(
+                            abs(pos - (j_s - 1)) <= max_breakpoint_shift
+                            or abs(pos - j_e) <= max_breakpoint_shift
+                            for j_s, j_e in chrom_introns
+                        )
+                    )
+                )
+            ):
+                is_junc = True
+            if is_junc and nr["plasmid"] not in junc_matched_constructs:
+                junc_matched_constructs.append(nr["plasmid"])
+
+        # 2. Check construct_allele
+        allele_matched_constructs: list[str] = []
+        for nr in active_rows:
+            if (pos, ref_u, alt_u) in nr["variants"] and nr[
+                "plasmid"
+            ] not in allele_matched_constructs:
+                allele_matched_constructs.append(nr["plasmid"])
+        if not allele_matched_constructs and akey in cooc_alleles and sample_chrom_rows:
+            for p_name in sorted(allele_to_constructs.get(akey, set())):
+                if p_name not in allele_matched_constructs:
+                    allele_matched_constructs.append(p_name)
+
+        if junc_matched_constructs:
+            artefact = "cdna_junction_artefact"
+            matched_names = junc_matched_constructs
+        elif allele_matched_constructs:
+            artefact = "construct_allele"
+            matched_names = allele_matched_constructs
+        else:
+            artefact = "none"
+            matched_names = []
+
+        max_f_plasmid = max((nr["f_plasmid"] for nr in active_rows), default=0.0)
+        max_f_excess = max((nr["f_excess"] for nr in active_rows), default=0.0)
+
+        k_total = len(active_rows)
+        k_alt = sum(1 for nr in active_rows if (pos, ref_u, alt_u) in nr["variants"])
+        if artefact == "cdna_junction_artefact":
+            frac_alt = 1.0
+        elif k_alt > 0 and k_total > 0:
+            frac_alt = k_alt / k_total
+        elif artefact == "construct_allele" and sample_chrom_rows:
+            k_all = len(sample_chrom_rows)
+            k_c = sum(1 for nr in sample_chrom_rows if (pos, ref_u, alt_u) in nr["variants"])
+            frac_alt = k_c / k_all if k_all > 0 else 0.0
+        else:
+            frac_alt = 0.0
+
+        explainable_vaf = min(1.0, max_f_plasmid * frac_alt) if max_f_plasmid > 0 else 0.0
+
+        has_locus_context = bool(locus_rows or artefact != "none")
+        row_cooc = cooc_flag if has_locus_context else "no"
+        row_ratio = cooc_ratio if (has_locus_context and cooc_flag == "yes") else "NA"
+
+        out_row: dict[str, str] = {k: str(v) for k, v in rec["raw"].items()}
+        out_row["plasmid_artefact"] = artefact
+        out_row["plasmid_flag"] = artefact
+        out_row["f_plasmid"] = f"{max_f_plasmid:.6f}"
+        out_row["f_excess"] = f"{max_f_excess:.6f}"
+        out_row["construct_allele_cooccurrence"] = row_cooc
+        out_row["construct_allele_ad_ratio"] = row_ratio
+        out_row["plasmid_explainable_vaf"] = f"{explainable_vaf:.6f}"
+        out_row["matching_constructs"] = ",".join(matched_names) if matched_names else "none"
+        output_rows.append(out_row)
+
+    out_dir = os.path.dirname(output_tsv)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    with open(output_tsv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=out_fieldnames, delimiter="\t", extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(output_rows)
+
+    return output_rows
+
+
 def compare_alignments(
     plasmid_bam: str,
     human_bam: str,
@@ -890,6 +1703,12 @@ def compare_alignments(
     threads: int = SAMTOOLS_THREADS,
     anonymize: bool = False,
     anonymize_key: bytes | None = None,
+    vcf_file: str | None = None,
+    target_bed: str | None = None,
+    dp_sample_median: float | None = None,
+    dp_locus: float | None = None,
+    r_cohort: float = 0.60,
+    sample_bam: str | None = None,
 ) -> None:
     logging.info("Starting comparison of alignments")
     logging.debug(f"Processing BAM files: {plasmid_bam} (plasmid), {human_bam} (human)")
@@ -1143,20 +1962,46 @@ def compare_alignments(
         else (float("inf") if plasmid_num > 0 else 0.0)
     )
 
-    category = categorize_value(ratio, threshold, UNCLEAR_RANGE)
-    if category == "Contaminated":
+    verdict_category = categorize_value(ratio, threshold, UNCLEAR_RANGE)
+    if verdict_category == "Contaminated":
         verdict = "Sample is contaminated with plasmid DNA"
-    elif category == "Unclear":
+    elif verdict_category == "Unclear":
         verdict = "Sample contamination status is unclear"
     else:
         verdict = "Sample is not contaminated with plasmid DNA"
 
+    # Depth-normalised plasmid excess fraction (Issue #126)
+    if dp_sample_median is not None and dp_sample_median > 0:
+        eff_dp_sample_median = float(dp_sample_median)
+    elif target_bed is not None and (sample_bam or human_bam):
+        eff_dp_sample_median = compute_bed_median_depth(sample_bam or human_bam, target_bed)
+    else:
+        eff_dp_sample_median = 0.0
+
+    if dp_locus is not None and dp_locus > 0:
+        eff_dp_locus = float(dp_locus)
+    else:
+        eff_dp_locus = float(insert_metrics.get("mean_depth", 0.0) or 0.0)
+
+    eff_read_len = round(mean_read_length) if mean_read_length > 0 else 101
+    f_excess = compute_f_excess(eff_dp_locus, eff_dp_sample_median, r_cohort)
+    f_junction = compute_f_junction(
+        float(splice_junction_reads),
+        eff_dp_locus,
+        ratio,
+        is_contaminated=(verdict_category == "Contaminated"),
+        is_unclear=(verdict_category == "Unclear"),
+        read_len=eff_read_len,
+    )
+    f_plasmid = compute_f_plasmid(f_excess, f_junction)
+
     logging.info(f"Comparison completed. Verdict: {verdict}, Ratio: {ratio}")
 
-    with open(f"{output_basename}.summary.tsv", "w") as summary_file:
+    summary_tsv_path = f"{output_basename}.summary.tsv"
+    with open(summary_tsv_path, "w") as summary_file:
         summary_file.write("Category\tCount\n")
-        for category, count in assigned_counts.items():
-            summary_file.write(f"{category}\t{count}\n")
+        for cat_name, count in assigned_counts.items():
+            summary_file.write(f"{cat_name}\t{count}\n")
         summary_file.write(f"Verdict\t{verdict}\n")
         summary_file.write(f"Ratio\t{ratio}\n")
         summary_file.write(f"CoverageOutsideINSERT\t{coverage_outside_insert:.4f}\n")
@@ -1216,12 +2061,31 @@ def compare_alignments(
         else:
             summary_file.write("ResistanceGenesAvailable\tfalse\n")
 
-        # Junction metadata (Phase 15)
+        # Junction metadata (Phase 15) and construct genomic coordinates/variants (Issue #127)
         if insert_region is not None:
             jc = insert_region.junction_count
             ec = insert_region.exon_count
             el = insert_region.exon_lengths
             il = insert_region.intron_lengths
+            chrom_str = insert_region.chromosome if insert_region.chromosome is not None else "NA"
+            g_start_str = (
+                str(insert_region.genomic_start)
+                if insert_region.genomic_start is not None
+                else "NA"
+            )
+            g_end_str = (
+                str(insert_region.genomic_end) if insert_region.genomic_end is not None else "NA"
+            )
+            g_introns_str = (
+                ",".join(f"{s}-{e}" for s, e in insert_region.genomic_introns)
+                if insert_region.genomic_introns
+                else "NA"
+            )
+            c_vars_str = (
+                ",".join(insert_region.construct_variants)
+                if insert_region.construct_variants
+                else "NA"
+            )
 
             summary_file.write(f"SpliceJunctionCount\t{jc if jc is not None else 'NA'}\n")
             summary_file.write(f"ExonCount\t{ec if ec is not None else 'NA'}\n")
@@ -1242,6 +2106,11 @@ def compare_alignments(
             summary_file.write(
                 f"EstimatedContaminationFraction\t{estimated_contamination_fraction}\n"
             )
+            summary_file.write(f"Chromosome\t{chrom_str}\n")
+            summary_file.write(f"GenomicStart\t{g_start_str}\n")
+            summary_file.write(f"GenomicEnd\t{g_end_str}\n")
+            summary_file.write(f"GenomicIntrons\t{g_introns_str}\n")
+            summary_file.write(f"ConstructVariants\t{c_vars_str}\n")
         else:
             # Fallback for missing insert_region
             summary_file.write("SpliceJunctionCount\tNA\n")
@@ -1253,3 +2122,23 @@ def compare_alignments(
             summary_file.write("SpliceJunctionsCovered\tNA\n")
             summary_file.write("ExonIntronBoundaryReads\tNA\n")
             summary_file.write("EstimatedContaminationFraction\tNA\n")
+            summary_file.write("Chromosome\tNA\n")
+            summary_file.write("GenomicStart\tNA\n")
+            summary_file.write("GenomicEnd\tNA\n")
+            summary_file.write("GenomicIntrons\tNA\n")
+            summary_file.write("ConstructVariants\tNA\n")
+
+        summary_file.write(f"dp_sample_median\t{eff_dp_sample_median:.6f}\n")
+        summary_file.write(f"dp_locus\t{eff_dp_locus:.6f}\n")
+        summary_file.write(f"r_cohort\t{r_cohort:.6f}\n")
+        summary_file.write(f"f_excess\t{f_excess:.6f}\n")
+        summary_file.write(f"f_junction\t{f_junction:.6f}\n")
+        summary_file.write(f"f_plasmid\t{f_plasmid:.6f}\n")
+
+    if vcf_file is not None:
+        summary_rows = load_summary_rows_for_flagging([summary_tsv_path])
+        if sample_bam:
+            for sr in summary_rows:
+                if not sr.get("sample") or sr.get("sample") in ("data", "comparison_result"):
+                    sr["sample"] = os.path.basename(sample_bam)
+        flag_vcf_variants(vcf_file, f"{output_basename}.flagged_variants.tsv", summary_rows)

@@ -2423,3 +2423,453 @@ def test_streaming_compare_anonymize(mock_pysam_read: Any) -> None:
     assert "read1" not in buf_anon.getvalue()
     hashed = _read_id("read1", b"k" * 16)
     assert hashed in buf_anon.getvalue()
+
+
+class TestDepthNormalisedPlasmidExcess:
+    """Tests for Issue #126 depth-normalised plasmid excess fraction helpers."""
+
+    @pytest.mark.unit
+    def test_compute_f_excess_clean_and_excess(self) -> None:
+        from plasmicheck.scripts.compare_alignments import (
+            compute_f_excess,
+            compute_f_junction,
+            compute_f_plasmid,
+        )
+
+        # Clean sample where dp_locus / dp_sample_median <= r_cohort -> f_excess == 0.0
+        assert compute_f_excess(55.0, 100.0, r_cohort=0.60) == 0.0
+        assert compute_f_excess(60.0, 100.0, r_cohort=0.60) == 0.0
+
+        # Invalid/zero/non-finite inputs -> 0.0
+        assert compute_f_excess(0.0, 100.0, r_cohort=0.60) == 0.0
+        assert compute_f_excess(100.0, 0.0, r_cohort=0.60) == 0.0
+        assert compute_f_excess(100.0, 100.0, r_cohort=0.0) == 0.0
+        assert compute_f_excess(float("nan"), 100.0, r_cohort=0.60) == 0.0
+        assert compute_f_excess(float("inf"), 100.0, r_cohort=0.60) == 0.0
+
+        # Single-exon construct (0 splice junctions) with 2x locus depth excess (120 vs expected 60)
+        f_ex = compute_f_excess(120.0, 100.0, r_cohort=0.60)
+        assert f_ex == pytest.approx(0.5)
+        f_junc = compute_f_junction(
+            0.0, 120.0, plasmid_ratio=0.1, is_contaminated=False, is_unclear=False
+        )
+        assert f_junc == 0.0
+        f_pl = compute_f_plasmid(f_ex, f_junc)
+        assert f_pl > 0.0
+        assert f_pl == pytest.approx(f_ex)
+
+    @pytest.mark.unit
+    def test_compute_f_junction_and_f_plasmid(self) -> None:
+        from plasmicheck.scripts.compare_alignments import compute_f_junction, compute_f_plasmid
+
+        # Junction reads driven
+        fj = compute_f_junction(
+            35.5, 101.0, plasmid_ratio=0.5, is_contaminated=False, read_len=101, min_overlap=15
+        )
+        # scale = 101 / 71; 35.5 * (101/71) / 101 = 0.5
+        assert fj == pytest.approx(0.5)
+
+        # Ratio fallback when contaminated vs unclear
+        fj_contam = compute_f_junction(
+            0.0, 100.0, plasmid_ratio=3.0, is_contaminated=True, is_unclear=False
+        )
+        assert fj_contam == pytest.approx(3.0 / 4.0)
+
+        fj_unclear = compute_f_junction(
+            0.0, 100.0, plasmid_ratio=3.0, is_contaminated=False, is_unclear=True
+        )
+        assert fj_unclear == pytest.approx(0.5 * (3.0 / 4.0))
+
+        assert compute_f_plasmid(0.2, 0.75) == pytest.approx(0.75)
+        assert compute_f_plasmid(1.5, 0.3) == pytest.approx(1.0)
+
+    @pytest.mark.unit
+    def test_compute_bed_median_depth(self, tmp_path: Path) -> None:
+        import numpy as np
+
+        from plasmicheck.scripts.compare_alignments import compute_bed_median_depth
+
+        bed_path = tmp_path / "targets.bed"
+        bed_path.write_text("# header comment\nchr11\t100\t200\nchr16\t300\t400\nchr3\t500\t600\n")
+        bam_path = tmp_path / "sample.bam"
+        bam_path.write_text("dummy")
+
+        mock_af = MagicMock()
+        mock_af.references = ("11", "16", "3")
+        # Return depths 80, 100, 140 across the 3 100-bp intervals -> median 100.0
+        mock_af.count_coverage.side_effect = [
+            (np.full(100, 80), np.zeros(100), np.zeros(100), np.zeros(100)),
+            (np.full(100, 100), np.zeros(100), np.zeros(100), np.zeros(100)),
+            (np.full(100, 140), np.zeros(100), np.zeros(100), np.zeros(100)),
+        ]
+        mock_af.__enter__.return_value = mock_af
+        mock_af.__exit__.return_value = None
+
+        with patch("pysam.AlignmentFile", return_value=mock_af):
+            med = compute_bed_median_depth(str(bam_path), str(bed_path))
+        assert med == pytest.approx(100.0)
+
+
+class TestFlagVcfVariantsEngine:
+    """Tests for Issue #127 VCF / TSV variant flagging engine."""
+
+    @pytest.fixture
+    def apa_summary_rows(self) -> list[dict[str, Any]]:
+        return [
+            # APA18-T: contaminated with KCNJ5 G151R and L168R constructs
+            {
+                "sample": "APA18-T",
+                "plasmid": "pcDNA5_FRT_TO_KCNJ5_G151R",
+                "chrom": "chr11",
+                "genomic_start": 128910000,
+                "genomic_end": 128913000,
+                "introns": [],
+                "construct_variants": ["128911724:G>A"],
+                "verdict": "Sample is contaminated with plasmid DNA",
+                "ratio": 12.0,
+                "spliced_reads": 0,
+                "f_plasmid": 0.60,
+                "f_excess": 0.60,
+            },
+            {
+                "sample": "APA18-T",
+                "plasmid": "pcDNA5_FRT_TO_KCNJ5_L168R",
+                "chrom": "chr11",
+                "genomic_start": 128910000,
+                "genomic_end": 128913000,
+                "introns": [],
+                "construct_variants": ["128911776:T>G"],
+                "verdict": "Sample is contaminated with plasmid DNA",
+                "ratio": 12.0,
+                "spliced_reads": 0,
+                "f_plasmid": 0.60,
+                "f_excess": 0.60,
+            },
+            # APA19-T: contaminated with KCNJ5 G151R, L168R, CLCN2 p.Tyr17His MNV, and CACNA1H
+            {
+                "sample": "APA19-T",
+                "plasmid": "pcDNA5_FRT_TO_KCNJ5_G151R",
+                "chrom": "chr11",
+                "genomic_start": 128910000,
+                "genomic_end": 128913000,
+                "introns": [],
+                "construct_variants": ["128911724:G>A"],
+                "verdict": "Sample is contaminated with plasmid DNA",
+                "ratio": 8.0,
+                "spliced_reads": 0,
+                "f_plasmid": 0.50,
+                "f_excess": 0.50,
+            },
+            {
+                "sample": "APA19-T",
+                "plasmid": "pcDNA5_FRT_TO_KCNJ5_L168R",
+                "chrom": "chr11",
+                "genomic_start": 128910000,
+                "genomic_end": 128913000,
+                "introns": [],
+                "construct_variants": ["128911776:T>G"],
+                "verdict": "Sample is contaminated with plasmid DNA",
+                "ratio": 8.0,
+                "spliced_reads": 0,
+                "f_plasmid": 0.50,
+                "f_excess": 0.50,
+            },
+            {
+                "sample": "APA19-T",
+                "plasmid": "pcDNA5_FRT_TO_CLCN2_Y17H",
+                "chrom": "chr3",
+                "genomic_start": 184350000,
+                "genomic_end": 184365000,
+                "introns": [(184353147, 184353240), (184361300, 184361400)],
+                "construct_variants": ["184361431:AC>GT"],
+                "verdict": "Sample is contaminated with plasmid DNA",
+                "ratio": 15.0,
+                "spliced_reads": 42,
+                "f_plasmid": 0.70,
+                "f_excess": 0.65,
+            },
+            # APA41-T: contaminated with KCNJ5 L168R and CACNA1H spliced construct
+            {
+                "sample": "APA41-T",
+                "plasmid": "pcDNA5_FRT_TO_KCNJ5_L168R",
+                "chrom": "chr11",
+                "genomic_start": 128910000,
+                "genomic_end": 128913000,
+                "introns": [],
+                "construct_variants": ["128911776:T>G"],
+                "verdict": "Sample is contaminated with plasmid DNA",
+                "ratio": 5.0,
+                "spliced_reads": 0,
+                "f_plasmid": 0.40,
+                "f_excess": 0.40,
+            },
+            {
+                "sample": "APA41-T",
+                "plasmid": "pcDNA5_FRT_TO_CACNA1H",
+                "chrom": "chr16",
+                "genomic_start": 1200000,
+                "genomic_end": 1270000,
+                "introns": [(1207119, 1207220), (1210654, 1210750), (1265000, 1265500)],
+                "construct_variants": ["1208076:C>G"],
+                "verdict": "Sample is contaminated with plasmid DNA",
+                "ratio": 25.0,
+                "spliced_reads": 80,
+                "f_plasmid": 0.80,
+                "f_excess": 0.75,
+            },
+            # APA23-N (contaminated normal) vs APA23-TS (clean tumour)
+            {
+                "sample": "APA23-N",
+                "plasmid": "pcDNA5_FRT_TO_KCNJ5_L168R",
+                "chrom": "chr11",
+                "genomic_start": 128910000,
+                "genomic_end": 128913000,
+                "introns": [],
+                "construct_variants": ["128911776:T>G"],
+                "verdict": "Sample is contaminated with plasmid DNA",
+                "ratio": 53.5,
+                "spliced_reads": 0,
+                "f_plasmid": 0.85,
+                "f_excess": 0.80,
+            },
+            {
+                "sample": "APA23-TS",
+                "plasmid": "pcDNA5_FRT_TO_KCNJ5_L168R",
+                "chrom": "chr11",
+                "genomic_start": 128910000,
+                "genomic_end": 128913000,
+                "introns": [],
+                "construct_variants": ["128911776:T>G"],
+                "verdict": "Sample is not contaminated with plasmid DNA",
+                "ratio": 0.0,
+                "spliced_reads": 0,
+                "f_plasmid": 0.0,
+                "f_excess": 0.0,
+            },
+        ]
+
+    @pytest.mark.unit
+    def test_flag_vcf_variants_tsv_fixture(
+        self, tmp_path: Path, apa_summary_rows: list[dict[str, Any]]
+    ) -> None:
+        from plasmicheck.scripts.compare_alignments import flag_vcf_variants
+
+        tsv_in = tmp_path / "variants.tsv"
+        tsv_out = tmp_path / "flagged_variants.tsv"
+        rows = [
+            "sample\tchr\tpos\tref\talt\tdp\tad\tvaf\tref_ctx_in\talt_ctx_in\tgene",
+            # APA18_To: KCNJ5 G151R (AD=49) + L168R (AD=15) -> construct_allele, cooc=yes, ratio=15/49=0.306122
+            "APA18_To\tchr11\t128911724\tG\tA\t200\t49\t0.245\t-\t-\tKCNJ5",
+            "APA18_To\tchr11\t128911776\tT\tG\t200\t15\t0.075\t-\t-\tKCNJ5",
+            # APA18_TvsN: KCNJ5 G151R + L168R
+            "APA18_TvsN\tchr11\t128911724\tG\tA\t200\t49\t0.245\t-\t-\tKCNJ5",
+            "APA18_TvsN\tchr11\t128911776\tT\tG\t200\t15\t0.075\t-\t-\tKCNJ5",
+            # APA19_To: KCNJ5 G151R + L168R and CLCN2 MNV (chr3:184361431 AC>GT)
+            "APA19_To\tchr11\t128911724\tG\tA\t180\t46\t0.255\t-\t-\tKCNJ5",
+            "APA19_To\tchr11\t128911776\tT\tG\t180\t136\t0.755\t-\t-\tKCNJ5",
+            "APA19_To\tchr3\t184361431\tAC\tGT\t150\t60\t0.400\t-\t-\tCLCN2",
+            # APA41_To: KCNJ5 L168R construct_allele
+            "APA41_To\tchr11\t128911776\tT\tG\t160\t32\t0.200\t-\t-\tKCNJ5",
+            # APA23-N (contaminated normal -> construct_allele) vs APA23_To (clean tumour -> none!)
+            "APA23-N\tchr11\t128911776\tT\tG\t140\t70\t0.500\t-\t-\tKCNJ5",
+            "APA23_To\tchr11\t128911776\tT\tG\t150\t35\t0.233\t-\t-\tKCNJ5",
+            # CACNA1H 15-bp truncated TSV ref deletion with 4-bp left-norm shift (intron 1207119-1207220, pos=1207114 -> del_start=1207115)
+            "APA41_To\tchr16\t1207114\tACGTACGTACGTACG\tA\t120\t40\t0.333\t-\t-\tCACNA1H",
+            # CACNA1H full intron deletion with 4-bp left-norm shift (intron 1210654-1210750, len=97, pos=1210649)
+            f"APA41_To\tchr16\t1210649\t{'A' * 98}\tA\t120\t45\t0.375\t-\t-\tCACNA1H",
+            # CACNA1H splice-boundary insertion via alt_ctx_in != '-'
+            "APA41_To\tchr16\t1265005\tC\tCAGGT\t110\t30\t0.272\t-\tAGGT\tCACNA1H",
+            # CLCN2 splice-boundary insertion within +-5 bp of intron boundary (184353147-1 = 184353146)
+            "APA19_To\tchr3\t184353143\tG\tGACCT\t130\t35\t0.269\t-\t-\tCLCN2",
+        ]
+        tsv_in.write_text("\n".join(rows) + "\n")
+
+        flagged = flag_vcf_variants(str(tsv_in), str(tsv_out), apa_summary_rows)
+        assert len(flagged) == 14
+        assert tsv_out.exists()
+
+        # APA18_To G151R & L168R: construct_allele, cooc=yes, ratio=0.306122
+        assert flagged[0]["plasmid_artefact"] == "construct_allele"
+        assert flagged[0]["construct_allele_cooccurrence"] == "yes"
+        assert flagged[0]["construct_allele_ad_ratio"] == "0.306122"
+        assert float(flagged[0]["plasmid_explainable_vaf"]) == pytest.approx(0.30)
+        assert flagged[1]["plasmid_artefact"] == "construct_allele"
+        assert flagged[1]["construct_allele_cooccurrence"] == "yes"
+        assert flagged[1]["construct_allele_ad_ratio"] == "0.306122"
+
+        # APA18_TvsN G151R & L168R
+        assert flagged[2]["plasmid_artefact"] == "construct_allele"
+        assert flagged[3]["plasmid_artefact"] == "construct_allele"
+
+        # APA19_To G151R, L168R, and CLCN2 MNV (AC>GT)
+        assert flagged[4]["plasmid_artefact"] == "construct_allele"
+        assert flagged[4]["construct_allele_cooccurrence"] == "yes"
+        assert flagged[4]["construct_allele_ad_ratio"] == f"{46 / 136:.6f}"
+        assert flagged[5]["plasmid_artefact"] == "construct_allele"
+        assert flagged[6]["plasmid_artefact"] == "construct_allele"
+        assert flagged[6]["matching_constructs"] == "pcDNA5_FRT_TO_CLCN2_Y17H"
+
+        # APA41_To single KCNJ5 L168R: construct_allele, cooc=no
+        assert flagged[7]["plasmid_artefact"] == "construct_allele"
+        assert flagged[7]["construct_allele_cooccurrence"] == "no"
+        assert flagged[7]["construct_allele_ad_ratio"] == "NA"
+
+        # APA23-N is construct_allele; APA23_To MUST be "none" (not conflated with APA23-N)
+        assert flagged[8]["plasmid_artefact"] == "construct_allele"
+        assert flagged[9]["plasmid_artefact"] == "none"
+        assert flagged[9]["plasmid_flag"] == "none"
+        assert float(flagged[9]["f_plasmid"]) == 0.0
+        assert float(flagged[9]["plasmid_explainable_vaf"]) == 0.0
+
+        # CACNA1H and CLCN2 cdna_junction_artefact deletions and insertions
+        for idx in (10, 11, 12, 13):
+            assert flagged[idx]["plasmid_artefact"] == "cdna_junction_artefact"
+            assert float(flagged[idx]["plasmid_explainable_vaf"]) > 0.0
+
+    @pytest.mark.unit
+    def test_flag_vcf_variants_vcf_fixture(
+        self, tmp_path: Path, apa_summary_rows: list[dict[str, Any]]
+    ) -> None:
+        from plasmicheck.scripts.compare_alignments import flag_vcf_variants
+
+        vcf_in = tmp_path / "variants.vcf"
+        tsv_out = tmp_path / "vcf_flagged.tsv"
+        vcf_content = (
+            "##fileformat=VCFv4.2\n"
+            "##contig=<ID=chr11,length=135086622>\n"
+            "##contig=<ID=chr16,length=90338345>\n"
+            '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+            '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">\n'
+            '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic Depths">\n'
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tAPA18_To\tAPA23_To\tAPA41_To\n"
+            "chr11\t128911724\t.\tG\tA\t.\tPASS\t.\tGT:DP:AD\t0/1:200:151,49\t0/0:150:150,0\t0/0:160:160,0\n"
+            "chr11\t128911776\t.\tT\tG\t.\tPASS\t.\tGT:DP:AD\t0/1:200:185,15\t0/1:150:115,35\t0/1:160:128,32\n"
+            f"chr16\t1210649\t.\t{'A' * 98}\tA\t.\tPASS\t.\tGT:DP:AD\t0/0:100:100,0\t0/0:100:100,0\t0/1:120:75,45\n"
+        )
+        vcf_in.write_text(vcf_content)
+
+        flagged = flag_vcf_variants(str(vcf_in), str(tsv_out), apa_summary_rows)
+        by_sample_pos = {(r["sample"], int(r["pos"])): r for r in flagged}
+
+        # 0/0 calls skipped; 5 non-ref calls emitted
+        assert len(flagged) == 5
+
+        # APA18_To has both G151R and L168R with exact AD ratio 15/49 = 0.306122
+        r_18_g151r = by_sample_pos[("APA18_To", 128911724)]
+        assert r_18_g151r["plasmid_artefact"] == "construct_allele"
+        assert r_18_g151r["construct_allele_cooccurrence"] == "yes"
+        assert r_18_g151r["construct_allele_ad_ratio"] == "0.306122"
+
+        r_18_l168r = by_sample_pos[("APA18_To", 128911776)]
+        assert r_18_l168r["plasmid_artefact"] == "construct_allele"
+        assert r_18_l168r["construct_allele_ad_ratio"] == "0.306122"
+
+        # APA23_To somatic L168R is "none"
+        r_23_l168r = by_sample_pos[("APA23_To", 128911776)]
+        assert r_23_l168r["plasmid_artefact"] == "none"
+
+        # APA41_To has L168R (construct_allele) and CACNA1H intron deletion (cdna_junction_artefact)
+        assert by_sample_pos[("APA41_To", 128911776)]["plasmid_artefact"] == "construct_allele"
+        assert by_sample_pos[("APA41_To", 1210649)]["plasmid_artefact"] == "cdna_junction_artefact"
+
+    @pytest.mark.unit
+    def test_compare_alignments_emits_depth_excess_and_flagged_variants(
+        self, tmp_path: Path
+    ) -> None:
+        from plasmicheck.scripts.compare_alignments import compare_alignments
+
+        output_base = tmp_path / "APA18-T"
+        cdna_file = tmp_path / "cDNA_positions.txt"
+        cdna_file.write_text(
+            "cDNA start position in plasmid: 100\n"
+            "cDNA end position in plasmid: 500\n"
+            "INSERT_REGION: (100, 500)\n"
+            "SpliceJunctionCount: 0\n"
+            "ExonCount: 1\n"
+            "ExonLengths: 401\n"
+            "IntronLengths: NA\n"
+            "Strand: +\n"
+            "Chromosome: chr11\n"
+            "GenomicStart: 128910000\n"
+            "GenomicEnd: 128913000\n"
+            "GenomicIntrons: NA\n"
+            "ConstructVariants: 128911724:G>A\n"
+        )
+        vcf_file = tmp_path / "input_variants.tsv"
+        vcf_file.write_text(
+            "sample\tchr\tpos\tref\talt\tdp\tad\tvaf\n"
+            "APA18_To\tchr11\t128911724\tG\tA\t200\t49\t0.245\n"
+        )
+        dummy_metrics = {
+            "insert": {
+                "mean_depth": 120.0,
+                "median_depth": 120.0,
+                "breadth_1x": 1.0,
+                "breadth_5x": 1.0,
+                "cv": 0.1,
+            },
+            "backbone": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+        }
+        empty_mm: dict[str, int] = {}
+        mock_scan_results: tuple[float, dict[str, int], int, int, int, int, int, float] = (
+            0.0,
+            empty_mm,
+            0,
+            0,
+            0,
+            0,
+            0,
+            101.0,
+        )
+        with (
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                return_value={
+                    "Plasmid": 50,
+                    "Human": 10,
+                    "Tied": 0,
+                    "Backbone_Only": 0,
+                    "Ambiguous": 0,
+                },
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments._scan_plasmid_bam",
+                return_value=mock_scan_results,
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=(dummy_metrics, False),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments(
+                "p.bam",
+                "h.bam",
+                str(output_base),
+                cdna_positions_file=str(cdna_file),
+                vcf_file=str(vcf_file),
+                dp_sample_median=100.0,
+                dp_locus=120.0,
+                r_cohort=0.60,
+            )
+
+        summary_content = (tmp_path / "APA18-T.summary.tsv").read_text()
+        assert "dp_sample_median\t100.000000" in summary_content
+        assert "dp_locus\t120.000000" in summary_content
+        assert "r_cohort\t0.600000" in summary_content
+        assert "f_excess\t0.500000" in summary_content
+        assert "ConstructVariants\t128911724:G>A" in summary_content
+
+        flagged_tsv = tmp_path / "APA18-T.flagged_variants.tsv"
+        assert flagged_tsv.exists()
+        flagged_text = flagged_tsv.read_text()
+        assert "construct_allele" in flagged_text

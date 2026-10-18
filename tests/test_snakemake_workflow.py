@@ -338,7 +338,7 @@ class TestResolvePlasmidsAndFlags:
 
         mock_run_pipeline.assert_called_once()
         kwargs = mock_run_pipeline.call_args.kwargs
-        assert kwargs["regions_bed"] == str(bed_file)
+        assert kwargs.get("regions") == str(bed_file) or kwargs.get("regions_bed") == str(bed_file)
         assert kwargs["include_unmapped"] is True
         assert kwargs["sample_name"] == "APA01"
         assert kwargs["cache_dir"] == str(tmp_path / "cache")
@@ -347,22 +347,26 @@ class TestResolvePlasmidsAndFlags:
         """Verify _bam_to_fastq_cmd restricts BAM extraction to BED regions and optional unmapped reads."""
         from plasmicheck.scripts.align_reads import _bam_to_fastq_cmd
 
+        bam = tmp_path / "sample.bam"
+        bam.write_bytes(b"BAM\x01")
+        (tmp_path / "sample.bam.bai").write_bytes(b"BAI\x01")
         bed = tmp_path / "regions.bed"
         bed.write_text("chr11\t128890000\t128940000\n", encoding="utf-8")
 
         cmd_with_unmapped = _bam_to_fastq_cmd(
-            "sample.bam", 2, regions_bed=str(bed), include_unmapped=True
+            str(bam), 2, regions_bed=str(bed), include_unmapped=True
         )
-        assert f"-L {bed}" in cmd_with_unmapped or f"'{bed}'" in cmd_with_unmapped
-        assert "-f 4" in cmd_with_unmapped
+        assert "chr11:128890001-128940000" in cmd_with_unmapped
+        assert "'*'" in cmd_with_unmapped or '"*"' in cmd_with_unmapped
 
         cmd_regions_only = _bam_to_fastq_cmd(
-            "sample.bam", 2, regions_bed=str(bed), include_unmapped=False
+            str(bam), 2, regions_bed=str(bed), include_unmapped=False
         )
-        assert "-f 4" not in cmd_regions_only
+        assert "chr11:128890001-128940000" in cmd_regions_only
+        assert "'*'" not in cmd_regions_only and '"*"' not in cmd_regions_only
 
         with pytest.raises(FileNotFoundError, match="Regions BED file not found"):
-            _bam_to_fastq_cmd("sample.bam", 2, regions_bed=str(tmp_path / "missing.bed"))
+            _bam_to_fastq_cmd(str(bam), 2, regions_bed=str(tmp_path / "missing.bed"))
 
 
 @pytest.mark.unit

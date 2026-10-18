@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import functools
+import gzip
 import itertools
 import logging
 import os
+import re
 from shlex import quote
 from typing import Any
 
@@ -14,9 +17,195 @@ from .utils import run_command
 
 _cfg = get_config()
 PADDING_DEFAULT: int = _cfg["padding"]
+DEFAULT_PADDING: int = PADDING_DEFAULT
 FASTA_EXTENSIONS: list[str] = _cfg["alignment"]["fasta_extensions"]
 MINIMAP2_THREADS: int = _cfg["alignment"]["minimap2_threads"]
 SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
+
+_TX_RE = re.compile(r'transcript_id[=\s]+"?([^";\s]+)"?')
+
+
+def _normalize_chrom(chrom: str) -> str:
+    c = chrom.strip()
+    if c.upper().startswith("NC_"):
+        base = c.split(".")[0].upper()
+        if base[3:].isdigit():
+            num = int(base[3:])
+            if 1 <= num <= 22:
+                return str(num)
+            if num == 23:
+                return "X"
+            if num == 24:
+                return "Y"
+            if num == 12920:
+                return "MT"
+    if c.lower().startswith("chr"):
+        c = c[3:]
+    return c.upper() if c.upper() in ("X", "Y", "M", "MT") else c
+
+
+@functools.lru_cache(maxsize=4)
+def _load_gtf_transcripts(
+    gtf_path: str,
+) -> dict[str, list[tuple[str, int, int, int, list[tuple[int, int]]]]]:
+    open_fn: Any = gzip.open if gtf_path.endswith(".gz") else open
+    tx_exons: dict[tuple[str, str], list[tuple[int, int]]] = {}
+    tx_rank: dict[tuple[str, str], int] = {}
+    with open_fn(gtf_path, "rt", encoding="utf-8") as fh:
+        for line in fh:
+            if not line or line.startswith("#"):
+                continue
+            fields = line.rstrip("\r\n").split("\t")
+            if len(fields) < 9 or fields[2] not in ("exon", "transcript"):
+                continue
+            m = _TX_RE.search(fields[8])
+            if not m:
+                continue
+            tx_id = m.group(1)
+            norm_chr = _normalize_chrom(fields[0])
+            key = (norm_chr, tx_id)
+            attrs = fields[8]
+            rank = 2 if "MANE_Select" in attrs else (1 if "MANE_Plus_Clinical" in attrs else 0)
+            if rank > tx_rank.get(key, 0):
+                tx_rank[key] = rank
+            if fields[2] == "exon":
+                tx_exons.setdefault(key, []).append((int(fields[3]), int(fields[4])))
+
+    by_chrom: dict[str, list[tuple[str, int, int, int, list[tuple[int, int]]]]] = {}
+    for (norm_chr, tx_id), raw_exons in tx_exons.items():
+        if not raw_exons:
+            continue
+        exons = sorted(set(raw_exons))
+        by_chrom.setdefault(norm_chr, []).append(
+            (tx_id, tx_rank.get((norm_chr, tx_id), 0), exons[0][0], exons[-1][1], exons)
+        )
+    return by_chrom
+
+
+def _cigar_geometry(
+    alignments: list[Any],
+) -> tuple[list[tuple[int, int]], set[tuple[int, int]], list[tuple[int, int]]]:
+    ref_blocks: list[tuple[int, int]] = []
+    introns: set[tuple[int, int]] = set()
+    indels: list[tuple[int, int]] = []
+    for read in alignments:
+        if read.reference_start is None:
+            continue
+        rpos = int(read.reference_start)
+        ops = read.cigartuples or []
+        for idx, (op, length) in enumerate(ops):
+            if op in (0, 2, 7, 8):
+                ref_blocks.append((rpos, rpos + length))
+                if op == 2:
+                    indels.append((rpos + 1, -length))
+                rpos += length
+            elif op == 3:
+                introns.add((rpos + 1, rpos + length))
+                rpos += length
+            elif op == 1:
+                prev_exon = idx > 0 and ops[idx - 1][0] in (0, 2, 7, 8)
+                next_exon = idx + 1 < len(ops) and ops[idx + 1][0] in (0, 2, 7, 8)
+                if prev_exon and next_exon:
+                    indels.append((rpos + 1, length))
+    ref_blocks.sort()
+    return ref_blocks, introns, indels
+
+
+def _resolve_gtf_exons(
+    gtf_path: str, chrom: str, alignments: list[Any]
+) -> tuple[list[int], list[int], list[tuple[int, int]]] | None:
+    ref_blocks, bam_introns, indel_events = _cigar_geometry(alignments)
+    if not ref_blocks:
+        return None
+    aln_s1 = ref_blocks[0][0] + 1
+    aln_e1 = max(b[1] for b in ref_blocks)
+    candidates = _load_gtf_transcripts(gtf_path).get(_normalize_chrom(chrom), [])
+    overlapping = [tx for tx in candidates if tx[3] >= aln_s1 and tx[2] <= aln_e1]
+    if not overlapping:
+        return None
+
+    def _rank_tx(
+        tx: tuple[str, int, int, int, list[tuple[int, int]]],
+    ) -> tuple[bool, int, int, int, int]:
+        _, mane_rank, tx_min, tx_max, exons = tx
+        tx_introns = {(exons[i][1] + 1, exons[i + 1][0] - 1) for i in range(len(exons) - 1)}
+        exact_matches = len(bam_introns & tx_introns)
+        sym_diff = len(bam_introns ^ tx_introns)
+        overlap_bp = max(0, min(aln_e1, tx_max) - max(aln_s1, tx_min) + 1)
+        return (mane_rank > 0, exact_matches, -sym_diff, mane_rank, overlap_bp)
+
+    _, _, tx_min, tx_max, best_exons = max(overlapping, key=_rank_tx)
+    valid_blocks = [b for b in ref_blocks if b[1] > tx_min - 1 and b[0] < tx_max]
+    if not valid_blocks:
+        return None
+    eff_s1 = valid_blocks[0][0] + 1
+    eff_e1 = valid_blocks[-1][1]
+
+    clipped_exons: list[tuple[int, int]] = []
+    gtf_exon_lengths: list[int] = []
+    for s, e in best_exons:
+        if e < eff_s1 or s > eff_e1:
+            continue
+        cs = max(s, eff_s1)
+        ce = min(e, eff_e1)
+        adj = sum(delta for pos, delta in indel_events if cs <= pos <= ce)
+        clipped_exons.append((cs, ce))
+        gtf_exon_lengths.append((ce - cs + 1) + adj)
+
+    if not clipped_exons:
+        return None
+    gtf_introns = [
+        (clipped_exons[i][1] + 1, clipped_exons[i + 1][0] - 1)
+        for i in range(len(clipped_exons) - 1)
+    ]
+    gtf_intron_lengths = [e - s + 1 for s, e in gtf_introns]
+    return gtf_exon_lengths, gtf_intron_lengths, gtf_introns
+
+
+def _extract_introns_and_variants(
+    alignments: list[Any],
+) -> tuple[list[tuple[int, int]], list[str]]:
+    introns: set[tuple[int, int]] = set()
+    raw_variants: list[tuple[int, str, str]] = []
+
+    for read in alignments:
+        if read.reference_start is None:
+            continue
+        rpos = int(read.reference_start)
+        for op, length in read.cigartuples or []:
+            if op == 3:
+                introns.add((rpos + 1, rpos + length))
+                rpos += length
+            elif op in (0, 2, 7, 8):
+                rpos += length
+
+        qseq = getattr(read, "query_sequence", None)
+        if isinstance(qseq, str) and qseq and hasattr(read, "has_tag") and read.has_tag("MD"):
+            mismatches: list[tuple[int, str, str]] = []
+            for qpos, ref_pos, ref_base in read.get_aligned_pairs(with_seq=True):
+                if qpos is None or ref_pos is None or ref_base is None:
+                    continue
+                alt_base = qseq[qpos].upper()
+                ref_upper = ref_base.upper()
+                if (
+                    (ref_base.islower() or ref_upper != alt_base)
+                    and ref_upper != "N"
+                    and alt_base != "N"
+                ):
+                    mismatches.append((ref_pos + 1, ref_upper, alt_base))
+            mismatches.sort(key=lambda x: x[0])
+            merged: list[tuple[int, str, str]] = []
+            for pos, r_b, a_b in mismatches:
+                if merged and pos == merged[-1][0] + len(merged[-1][1]):
+                    prev_pos, prev_r, prev_a = merged[-1]
+                    merged[-1] = (prev_pos, prev_r + r_b, prev_a + a_b)
+                else:
+                    merged.append((pos, r_b, a_b))
+            raw_variants.extend(merged)
+
+    raw_variants.sort(key=lambda x: (x[0], x[1], x[2]))
+    dedup_variants = list(dict.fromkeys(f"{pos}:{r_b}>{a_b}" for pos, r_b, a_b in raw_variants))
+    return sorted(introns), dedup_variants
 
 
 def find_fasta_file(base_name: str) -> str:
@@ -49,7 +238,7 @@ def spliced_alignment(
     )
     try:
         run_command(
-            f"minimap2 -t {quote(str(mm_threads))} -ax splice "
+            f"minimap2 -t {quote(str(mm_threads))} -ax splice --MD "
             f"{quote(human_index)} {quote(plasmid_fasta)} "
             f"| samtools view -@ {quote(str(st_threads))} -h -F 4 - "
             f"| samtools sort -@ {quote(str(st_threads))} -o {quote(output_bam)}"
@@ -135,7 +324,18 @@ def extract_human_reference(
     logging.info(f"Human reference regions have been extracted to {output_fasta}")
 
 
-def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_file: str) -> None:
+def extract_plasmid_cdna_positions(
+    plasmid_fasta: str,
+    bam_file: str,
+    output_file: str,
+    padding: int | str | None = PADDING_DEFAULT,
+    gtf_file: str | None = None,
+) -> None:
+    if isinstance(padding, str) or padding is None:
+        if gtf_file is None and isinstance(padding, str):
+            gtf_file = padding
+        padding = PADDING_DEFAULT
+
     logging.info(
         f"Extracting cDNA start and end positions from {bam_file} and saving to {output_file}"
     )
@@ -197,6 +397,10 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
     chromosome: str | None = None
     genomic_start: int | None = None
     genomic_end: int | None = None
+    genomic_introns: list[tuple[int, int]] = []
+    construct_variants: list[str] = []
+    map_exon_lengths: list[int] = []
+    disagreed_gtf_exons: list[int] | None = None
 
     if records_info:
         spliced_records = [r for r in records_info if r["junctions"] > 0]
@@ -227,6 +431,7 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
         genomic_end = chosen_read.reference_end
         cdna_start = chosen["q_start"]
         cdna_end = chosen["q_end"]
+        active_reads = [chosen_read]
 
         # Circular origin wrap-around check
         for other in records_info:
@@ -260,6 +465,7 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
                             genomic_start = min(g1_s, g2_s)
                             genomic_end = max(g1_e, g2_e)
                             first_p, second_p = (chosen, other) if g1_s <= g2_s else (other, chosen)
+                            active_reads = [first_p["read"], second_p["read"]]
                             ex1, in1 = _exons_and_introns(first_p["ops"])
                             ex2, in2 = _exons_and_introns(second_p["ops"])
                             if genomic_gap <= 5 and ex1 and ex2:
@@ -271,6 +477,28 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
                             exon_count = len(exon_lengths)
                             junction_count = len(intron_lengths)
                             break
+
+        genomic_introns, construct_variants = _extract_introns_and_variants(active_reads)
+        map_exon_lengths = list(exon_lengths) if exon_lengths is not None else []
+
+        if gtf_file is not None and chromosome is not None:
+            gtf_res = _resolve_gtf_exons(gtf_file, chromosome, active_reads)
+            if gtf_res is not None:
+                gtf_exons, gtf_intron_lens, gtf_intron_coords = gtf_res
+                genomic_introns = gtf_intron_coords
+                if gtf_exons != map_exon_lengths:
+                    logging.warning(
+                        f"GTF exon lengths {gtf_exons} differ from map-derived exon lengths "
+                        f"{map_exon_lengths} for {plasmid_fasta}; overriding with GTF."
+                    )
+                    disagreed_gtf_exons = gtf_exons
+                    exon_lengths = gtf_exons
+                    intron_lengths = gtf_intron_lens
+                    exon_count = len(gtf_exons)
+                    junction_count = len(gtf_intron_lens)
+                    if gtf_intron_coords:
+                        genomic_start = gtf_intron_coords[0][0] - 1 - gtf_exons[0]
+                        genomic_end = gtf_intron_coords[-1][1] + gtf_exons[-1]
 
     # Write the output file with all fields (use NA for missing values)
     with open(output_file, "w") as f:
@@ -303,5 +531,19 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
         f.write(f"Chromosome: {chromosome if chromosome is not None else 'NA'}\n")
         f.write(f"GenomicStart: {genomic_start if genomic_start is not None else 'NA'}\n")
         f.write(f"GenomicEnd: {genomic_end if genomic_end is not None else 'NA'}\n")
+
+        if disagreed_gtf_exons is not None:
+            f.write(
+                f"MapExonLengths: {','.join(map(str, map_exon_lengths)) if map_exon_lengths else 'NA'}\n"
+            )
+            f.write(f"GTFExonLengths: {','.join(map(str, disagreed_gtf_exons))}\n")
+
+        if gtf_file is not None or genomic_introns or construct_variants:
+            f.write(
+                f"GenomicIntrons: {','.join(f'{s}-{e}' for s, e in genomic_introns) if genomic_introns else 'NA'}\n"
+            )
+            f.write(
+                f"ConstructVariants: {','.join(construct_variants) if construct_variants else 'NA'}\n"
+            )
 
     logging.info(f"cDNA positions and INSERT_REGION saved to {output_file}")

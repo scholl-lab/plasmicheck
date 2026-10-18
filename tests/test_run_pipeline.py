@@ -1055,6 +1055,8 @@ def test_sample_scoped_temp_fastq_cleanup(tmp_path: Path) -> None:
         )
 
     assert len(created_temp_fastqs) == 1
+    assert not str(created_temp_fastqs[0]).startswith(str(output))
+    assert "plasmicheck_prep_" in str(created_temp_fastqs[0])
     assert not created_temp_fastqs[0].exists()
 
 
@@ -1106,3 +1108,168 @@ def test_cross_sample_plasmid_prep_dedup(tmp_path: Path) -> None:
     assert mock_align.call_count == 4
     assert mock_compare.call_count == 2
     assert mock_report.call_count == 2
+
+
+@pytest.mark.unit
+def test_auto_derived_and_explicit_regions_for_indexed_bam(tmp_path: Path) -> None:
+    """Verify auto-derived spliced_reference.fasta regions and explicit --regions override on indexed BAM."""
+    human_fasta = tmp_path / "human.fasta"
+    human_fasta.write_text(">chr11\nACGT\n")
+
+    plasmid = tmp_path / "p1.gb"
+    plasmid.write_text("LOCUS       test1 1 bp\nORIGIN\n 1 a\n//\n")
+
+    bam = tmp_path / "sample.bam"
+    bam.write_bytes(b"A" * 128)
+    (tmp_path / "sample.bam.bai").write_bytes(b"BAI")
+
+    output = tmp_path / "output_regions"
+    captured_cmds: list[str] = []
+
+    def fake_extract_ref(_hf: str, _regions: object, out_fasta: str) -> None:
+        Path(out_fasta).write_text(">chr11:128890001-128920000\nACGT\n")
+
+    def fake_run_cmd(cmd: str, *args: object, **kwargs: object) -> None:
+        captured_cmds.append(cmd)
+        if ">" in cmd:
+            target = cmd.split(">")[-1].strip().strip("'\"")
+            Path(target).write_text("@read\nACGT\n+\nIIII\n")
+
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+        mock.patch("plasmicheck.scripts.utils.run_command", side_effect=fake_run_cmd),
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch(
+            "plasmicheck.scripts.run_pipeline.spliced_alignment",
+            return_value=[("chr11", 128890000, 128920000)],
+        ),
+        mock.patch(
+            "plasmicheck.scripts.run_pipeline.extract_human_reference",
+            side_effect=fake_extract_ref,
+        ),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads") as mock_align,
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+    ):
+        run_pipeline(
+            human_fasta=str(human_fasta),
+            plasmid_files=str(plasmid),
+            sequencing_files_r1=str(bam),
+            output_folder=str(output),
+            no_cache=True,
+            md5_level="none",
+        )
+
+    assert len(captured_cmds) == 1
+    assert "samtools view" in captured_cmds[0]
+    assert "chr11:128890001-128920000" in captured_cmds[0]
+    assert "'*'" in captured_cmds[0]
+    # Because sample_temp_fastq was created, align_reads gets regions=None
+    for call in mock_align.call_args_list:
+        assert call.kwargs["regions"] is None
+
+    # Explicit --regions BED override
+    captured_cmds.clear()
+    bed = tmp_path / "override.bed"
+    bed.write_text("chr3\t53500000\t53900000\n")
+
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+        mock.patch("plasmicheck.scripts.utils.run_command", side_effect=fake_run_cmd),
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch(
+            "plasmicheck.scripts.run_pipeline.spliced_alignment",
+            return_value=[("chr11", 128890000, 128920000)],
+        ),
+        mock.patch(
+            "plasmicheck.scripts.run_pipeline.extract_human_reference",
+            side_effect=fake_extract_ref,
+        ),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+    ):
+        run_pipeline(
+            human_fasta=str(human_fasta),
+            plasmid_files=str(plasmid),
+            sequencing_files_r1=str(bam),
+            output_folder=str(output / "override"),
+            regions=str(bed),
+            no_cache=True,
+            md5_level="none",
+        )
+
+    assert len(captured_cmds) == 1
+    assert "chr3:53500001-53900000" in captured_cmds[0]
+    assert "chr11:128890001-128920000" not in captured_cmds[0]
+
+
+@pytest.mark.unit
+def test_pipeline_forwards_gtf_vcf_and_depth_options(tmp_path: Path) -> None:
+    """Verify run_pipeline forwards gtf_file/gtf_md5, vcf_file, target_bed, and depth options."""
+    human_fasta = tmp_path / "human.fasta"
+    human_fasta.write_text(">chr1\nACGT\n")
+
+    plasmid = tmp_path / "p.gb"
+    plasmid.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+    bam = tmp_path / "sample.bam"
+    bam.write_bytes(b"fake bam")
+
+    gtf = tmp_path / "mane.gtf"
+    gtf.write_text('chr1\tMANE\texon\t10\t50\t.\t+\t.\ttranscript_id "tx1"; tag "MANE_Select";\n')
+
+    target_bed = tmp_path / "exome.bed"
+    target_bed.write_text("chr1\t0\t100\n")
+
+    vcf = tmp_path / "calls.tsv"
+    vcf.write_text("sample\tchr\tpos\tref\talt\n")
+
+    mock_cache = mock.MagicMock()
+    mock_cache.get_index.return_value = None
+    mock_cache.get_spliced.return_value = None
+
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions") as mock_cdna,
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+        mock.patch(
+            "plasmicheck.scripts.run_pipeline.compute_bed_median_depth", return_value=112.5
+        ) as mock_bed_dp,
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments") as mock_compare,
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+        mock.patch("plasmicheck.scripts.run_pipeline.CacheManager", return_value=mock_cache),
+    ):
+        run_pipeline(
+            human_fasta=str(human_fasta),
+            plasmid_files=str(plasmid),
+            sequencing_files_r1=str(bam),
+            output_folder=str(tmp_path / "out"),
+            gtf_file=str(gtf),
+            vcf_file=str(vcf),
+            target_bed=str(target_bed),
+            dp_locus=240.0,
+            r_cohort=0.58,
+            md5_level="none",
+        )
+
+    assert mock_cdna.call_args.kwargs["gtf_file"] == str(gtf)
+    assert mock_cache.get_spliced.call_args.kwargs["gtf_md5"] != ""
+    assert mock_cache.put_spliced.call_args.kwargs["gtf_md5"] != ""
+    mock_bed_dp.assert_called_once_with(str(bam), str(target_bed))
+
+    cmp_kwargs = mock_compare.call_args.kwargs
+    assert cmp_kwargs["vcf_file"] == str(vcf)
+    assert cmp_kwargs["target_bed"] == str(target_bed)
+    assert cmp_kwargs["dp_sample_median"] == 112.5
+    assert cmp_kwargs["dp_locus"] == 240.0
+    assert cmp_kwargs["r_cohort"] == 0.58
+    assert cmp_kwargs["sample_bam"] == str(bam)
