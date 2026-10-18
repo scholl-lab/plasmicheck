@@ -1523,99 +1523,207 @@ def _build_cohort_overview(
     return rows, kpi_counts, flags
 
 
-def _format_junction_display_df(junction_df: pd.DataFrame) -> pd.DataFrame:
-    """Format junction metadata DataFrame with concise human-readable columns for HTML display."""
+def _build_junction_rows(
+    junction_df: pd.DataFrame | None,
+    verdict_df: pd.DataFrame | None,
+    output_folder: str,
+    input_dir: str | None = None,
+) -> list[dict[str, Any]]:
+    """Build structured rows for the Splice Junction & Vector Boundary table."""
     import math
 
-    display_df = junction_df.copy()
-    display_df.columns.name = None
-
-    # Sort by EstimatedContaminationFraction descending when available
-    if "EstimatedContaminationFraction" in display_df.columns:
-        import pandas as pd
-
-        display_df["_ecf_sort"] = pd.to_numeric(
-            display_df["EstimatedContaminationFraction"], errors="coerce"
-        ).fillna(-1.0)
-        display_df = display_df.sort_values(
-            by=["_ecf_sort", "Sample", "Plasmid"], ascending=[False, True, True]
-        ).drop(columns=["_ecf_sort"])
-
-    if "EstimatedContaminationFraction" in display_df.columns:
-
-        def _fmt_ecf(v: Any) -> str:
-            sval = str(v or "").strip()
-            if sval in ("", "NA", "N/A", "nan", "None"):
-                return "N/A"
-            try:
-                fval = float(sval)
-                if math.isnan(fval):
-                    return "N/A"
-                return f"{fval * 100.0:.1f}% ({fval:.4f})"
-            except (ValueError, TypeError):
-                return sval
-
-        display_df["EstimatedContaminationFraction"] = display_df[
-            "EstimatedContaminationFraction"
-        ].apply(_fmt_ecf)
-
-    for int_col in (
-        "SpliceJunctionCount",
-        "ExonCount",
-        "SpliceJunctionReads",
-        "SpliceJunctionEvents",
-        "SpliceJunctionsCovered",
-        "ExonIntronBoundaryReads",
-        "VectorInsertJunctionReads",
-        "VectorInsertBridgePairs",
+    if (
+        junction_df is None
+        or junction_df.empty
+        or not {"Sample", "Plasmid"}.issubset(junction_df.columns)
     ):
-        if int_col in display_df.columns:
-            display_df[int_col] = display_df[int_col].apply(
-                lambda v: _format_int_comma(v) if str(v).strip() not in ("NA", "N/A") else "N/A"
+        return []
+
+    verdict_lookup: dict[tuple[str, str], str] = {}
+    if (
+        verdict_df is not None
+        and not verdict_df.empty
+        and {"Sample", "Plasmid", "Value"}.issubset(verdict_df.columns)
+    ):
+        for _, r in verdict_df.iterrows():
+            verdict_lookup[(str(r["Sample"]), str(r["Plasmid"]))] = str(r["Value"])
+
+    def _to_float(v: Any, default: float = -1.0) -> float:
+        try:
+            f = float(str(v).strip())
+            return default if math.isnan(f) else f
+        except (ValueError, TypeError):
+            return default
+
+    rows: list[dict[str, Any]] = []
+    for _, r in junction_df.iterrows():
+        row_d = {str(k): v for k, v in r.to_dict().items()}
+        sample = str(row_d.get("Sample", ""))
+        plasmid = str(row_d.get("Plasmid", ""))
+        v_short, v_class, v_rank = _short_verdict(verdict_lookup.get((sample, plasmid), ""))
+
+        ecf_val = _to_float(row_d.get("EstimatedContaminationFraction"), -1.0)
+        est_contam_str = f"{ecf_val * 100.0:.1f}% ({ecf_val:.4f})" if ecf_val >= 0.0 else "—"
+
+        cov_str = _format_int_comma(row_d.get("SpliceJunctionsCovered"))
+        tot_str = _format_int_comma(row_d.get("SpliceJunctionCount"))
+        exons_str = _format_int_comma(row_d.get("ExonCount"))
+        cov_sort = _to_float(row_d.get("SpliceJunctionsCovered"), 0.0)
+        if cov_str != "—" and tot_str != "—":
+            junctions_str = (
+                f"{cov_str} / {tot_str} ({exons_str} exons)"
+                if exons_str != "—"
+                else f"{cov_str} / {tot_str}"
             )
+        else:
+            junctions_str = "—"
 
-    for col in ["ExonLengths", "IntronLengths"]:
-        if col in display_df.columns:
-            display_df[col] = display_df[col].apply(
-                lambda v: (
-                    _truncate_list_for_html(str(v)) if v is not None and str(v) != "nan" else "N/A"
-                )
-            )
+        ee_str = _format_int_comma(row_d.get("SpliceJunctionEvents"))
+        ee_sort = _to_float(row_d.get("SpliceJunctionEvents"), -1.0)
+        ei_str = _format_int_comma(row_d.get("ExonIntronBoundaryReads"))
+        ei_sort = _to_float(row_d.get("ExonIntronBoundaryReads"), -1.0)
+        span_str = _format_int_comma(row_d.get("SpliceJunctionReads"))
+        span_sort = _to_float(row_d.get("SpliceJunctionReads"), -1.0)
+        vi_str = _format_int_comma(row_d.get("VectorInsertJunctionReads"))
+        vi_sort = _to_float(row_d.get("VectorInsertJunctionReads"), -1.0)
+        bridge_str = _format_int_comma(row_d.get("VectorInsertBridgePairs"))
+        bridge_sort = _to_float(row_d.get("VectorInsertBridgePairs"), -1.0)
 
-    preferred_order = [
-        "Sample",
-        "Plasmid",
-        "EstimatedContaminationFraction",
-        "SpliceJunctionsCovered",
-        "SpliceJunctionCount",
-        "ExonCount",
-        "SpliceJunctionEvents",
-        "ExonIntronBoundaryReads",
-        "SpliceJunctionReads",
-        "VectorInsertJunctionReads",
-        "VectorInsertBridgePairs",
-        "ExonLengths",
-        "IntronLengths",
-    ]
-    ordered_cols = [c for c in preferred_order if c in display_df.columns] + [
-        c for c in display_df.columns if c not in preferred_order
-    ]
-    display_df = display_df[ordered_cols]
+        exon_raw = str(row_d.get("ExonLengths", "") or "").strip()
+        intron_raw = str(row_d.get("IntronLengths", "") or "").strip()
+        exon_disp = _truncate_list_for_html(exon_raw) if exon_raw and exon_raw != "nan" else "—"
+        intron_disp = (
+            _truncate_list_for_html(intron_raw) if intron_raw and intron_raw != "nan" else "—"
+        )
 
-    rename_map = {
-        "EstimatedContaminationFraction": "Est. Contamination",
-        "SpliceJunctionsCovered": "Junctions Covered",
-        "SpliceJunctionCount": "Total Junctions",
-        "ExonCount": "Exons",
-        "SpliceJunctionEvents": "Plasmid Span Events (EE)",
-        "ExonIntronBoundaryReads": "Human Intron Clips (EI)",
-        "SpliceJunctionReads": "Spanning Reads",
-        "VectorInsertJunctionReads": "Vector Junctions (VI)",
-        "VectorInsertBridgePairs": "Bridge Pairs",
-        "ExonLengths": "Exon Sizes (bp)",
-        "IntronLengths": "Intron Sizes (bp)",
-    }
-    return display_df.rename(columns=rename_map)
+        inter_rel, static_rel = _find_sample_report_relpaths(
+            sample, plasmid, output_folder, input_dir=input_dir
+        )
+
+        rows.append(
+            {
+                "sample": sample,
+                "plasmid": plasmid,
+                "verdict_short": v_short,
+                "verdict_class": v_class,
+                "verdict_rank": v_rank,
+                "est_contam_str": est_contam_str,
+                "est_contam_sort": ecf_val,
+                "junctions_str": junctions_str,
+                "junctions_sort": cov_sort,
+                "ee_str": ee_str,
+                "ee_sort": ee_sort,
+                "ei_str": ei_str,
+                "ei_sort": ei_sort,
+                "span_str": span_str,
+                "span_sort": span_sort,
+                "vi_str": vi_str,
+                "vi_sort": vi_sort,
+                "bridge_str": bridge_str,
+                "bridge_sort": bridge_sort,
+                "exon_sizes_str": exon_disp,
+                "exon_sizes_raw": exon_raw if exon_disp != "—" else "",
+                "intron_sizes_str": intron_disp,
+                "intron_sizes_raw": intron_raw if intron_disp != "—" else "",
+                "report_relpath": inter_rel,
+                "static_report_relpath": static_rel or inter_rel,
+            }
+        )
+
+    rows.sort(
+        key=lambda x: (
+            x["verdict_rank"],
+            -x["est_contam_sort"],
+            -x["ee_sort"],
+            x["sample"],
+            x["plasmid"],
+        )
+    )
+    return rows
+
+
+def _build_resistance_rows(
+    resistance_gene_df: pd.DataFrame | None,
+    verdict_df: pd.DataFrame | None,
+    output_folder: str,
+    input_dir: str | None = None,
+) -> list[dict[str, Any]]:
+    """Build structured rows for the Resistance Gene Coverage table."""
+    import math
+
+    if (
+        resistance_gene_df is None
+        or resistance_gene_df.empty
+        or not {"Sample", "Plasmid"}.issubset(resistance_gene_df.columns)
+    ):
+        return []
+
+    verdict_lookup: dict[tuple[str, str], str] = {}
+    if (
+        verdict_df is not None
+        and not verdict_df.empty
+        and {"Sample", "Plasmid", "Value"}.issubset(verdict_df.columns)
+    ):
+        for _, r in verdict_df.iterrows():
+            verdict_lookup[(str(r["Sample"]), str(r["Plasmid"]))] = str(r["Value"])
+
+    rows: list[dict[str, Any]] = []
+    for _, r in resistance_gene_df.iterrows():
+        row_d = {str(k): v for k, v in r.to_dict().items()}
+        sample = str(row_d.get("Sample", ""))
+        plasmid = str(row_d.get("Plasmid", ""))
+        gene_name = str(row_d.get("Gene Name", ""))
+        v_short, v_class, v_rank = _short_verdict(verdict_lookup.get((sample, plasmid), ""))
+
+        try:
+            depth_val = float(row_d.get("Mean Depth", 0.0))
+            if math.isnan(depth_val):
+                depth_val = 0.0
+            depth_str = f"{depth_val:,.2f}x"
+        except (ValueError, TypeError):
+            depth_val = 0.0
+            depth_str = str(row_d.get("Mean Depth", "—"))
+
+        try:
+            breadth_val = float(row_d.get("Breadth (%)", 0.0))
+            if math.isnan(breadth_val):
+                breadth_val = 0.0
+            breadth_str = f"{breadth_val:.1f}%"
+        except (ValueError, TypeError):
+            breadth_val = 0.0
+            breadth_str = str(row_d.get("Breadth (%)", "—"))
+
+        inter_rel, static_rel = _find_sample_report_relpaths(
+            sample, plasmid, output_folder, input_dir=input_dir
+        )
+
+        rows.append(
+            {
+                "sample": sample,
+                "plasmid": plasmid,
+                "verdict_short": v_short,
+                "verdict_class": v_class,
+                "verdict_rank": v_rank,
+                "gene_name": gene_name,
+                "depth_str": depth_str,
+                "depth_sort": depth_val,
+                "breadth_str": breadth_str,
+                "breadth_sort": breadth_val,
+                "report_relpath": inter_rel,
+                "static_report_relpath": static_rel or inter_rel,
+            }
+        )
+
+    rows.sort(
+        key=lambda x: (
+            x["verdict_rank"],
+            -x["depth_sort"],
+            x["sample"],
+            x["plasmid"],
+            x["gene_name"],
+        )
+    )
+    return rows
 
 
 # Report Generation Functions
@@ -1768,74 +1876,34 @@ def generate_report(
         output_folder=output_folder,
         input_dir=input_dir,
     )
-
-    # Format display copies of DataFrames for clean HTML rendering
-    combined_display_df = combined_df.copy()
-    if "Value" in combined_display_df.columns:
-        combined_display_df["Value"] = combined_display_df["Value"].apply(
-            lambda v: _format_table_float(v, decimals=4)
-        )
-    if {"Sample", "Plasmid", "Category", "Value"}.issubset(combined_display_df.columns):
-        combined_display_df = combined_display_df[["Sample", "Plasmid", "Category", "Value"]]
-
-    verdict_display_df = verdict_df.copy()
-    if {"Sample", "Plasmid", "Value"}.issubset(verdict_display_df.columns):
-        verdict_display_df = verdict_display_df[["Sample", "Plasmid", "Value"]].rename(
-            columns={"Value": "Verdict"}
-        )
-
-    ratio_display_df = ratio_df.copy()
-    if "Value" in ratio_display_df.columns:
-        ratio_display_df["Value"] = ratio_display_df["Value"].apply(
-            lambda v: _format_table_float(v, decimals=4)
-        )
-    if {"Sample", "Plasmid", "Value"}.issubset(ratio_display_df.columns):
-        ratio_display_df = ratio_display_df[["Sample", "Plasmid", "Value"]].rename(
-            columns={"Value": "Ratio (Plasmid / Human)"}
-        )
-
-    p_values_display_df = p_values_df.copy()
-    for col in ("p_value", "p_value_corrected"):
-        if col in p_values_display_df.columns:
-            p_values_display_df[col] = p_values_display_df[col].apply(
-                lambda v: _format_table_float(v, decimals=4, sci_threshold=1e-3)
-            )
-    p_values_display_df = p_values_display_df.rename(
-        columns={"p_value": "P-Value", "p_value_corrected": "Adj. P-Value"}
+    junction_rows = _build_junction_rows(
+        junction_df=junction_df,
+        verdict_df=verdict_df,
+        output_folder=output_folder,
+        input_dir=input_dir,
+    )
+    resistance_rows = _build_resistance_rows(
+        resistance_gene_df=resistance_gene_df,
+        verdict_df=verdict_df,
+        output_folder=output_folder,
+        input_dir=input_dir,
     )
 
-    # Convert sorted DataFrames to HTML
-    combined_html = combined_display_df.to_html(
-        classes="table table-striped table-bordered", index=False
+    # Fallback HTML strings only for direct template.render unit tests
+    combined_html = combined_df.to_html(classes="pc-cohort-table", index=False, border=0)
+    verdict_html = verdict_df.to_html(classes="pc-cohort-table", index=False, border=0)
+    ratio_html = ratio_df.to_html(classes="pc-cohort-table", index=False, border=0)
+    p_value_html = p_values_df.to_html(classes="pc-cohort-table", index=False, border=0)
+    resistance_gene_html = (
+        resistance_gene_df.to_html(classes="pc-cohort-table", index=False, border=0)
+        if resistance_gene_df is not None and not resistance_gene_df.empty
+        else ""
     )
-    verdict_html = verdict_display_df.to_html(
-        classes="table table-striped table-bordered", index=False
+    junction_table_html = (
+        junction_df.to_html(classes="pc-cohort-table", index=False, border=0)
+        if junction_df is not None and not junction_df.empty
+        else ""
     )
-    ratio_html = ratio_display_df.to_html(classes="table table-striped table-bordered", index=False)
-    p_value_html = p_values_display_df.to_html(
-        classes="table table-striped table-bordered", index=False
-    )
-
-    # Convert resistance gene DataFrame to HTML if provided
-    resistance_gene_html = ""
-    if resistance_gene_df is not None and not resistance_gene_df.empty:
-        res_display_df = resistance_gene_df.copy()
-        for col in ("Mean Depth", "Breadth (%)"):
-            if col in res_display_df.columns:
-                res_display_df[col] = res_display_df[col].apply(
-                    lambda v: _format_table_float(v, decimals=2)
-                )
-        resistance_gene_html = res_display_df.to_html(
-            classes="table table-striped table-bordered", index=False
-        )
-
-    # Convert junction metadata DataFrame to HTML with human-readable columns & truncation
-    junction_table_html = ""
-    if junction_df is not None and not junction_df.empty:
-        display_df = _format_junction_display_df(junction_df)
-        junction_table_html = display_df.to_html(
-            classes="table table-striped table-bordered", index=False
-        )
 
     # Encode the logo
     logo_base64 = encode_image_to_base64(str(get_resource_path(LOGO_PATH)))
@@ -1843,6 +1911,8 @@ def generate_report(
     # Render interactive HTML report
     html_content_interactive = template.render(
         overview_rows=overview_rows,
+        junction_rows=junction_rows,
+        resistance_rows=resistance_rows,
         cohort_kpis=cohort_kpis,
         overview_flags=overview_flags,
         combined_df=combined_html,
@@ -1885,6 +1955,8 @@ def generate_report(
     if static_report and heatmap_png_base64 and boxplot_png_base64:
         html_content_non_interactive = template.render(
             overview_rows=overview_rows,
+            junction_rows=junction_rows,
+            resistance_rows=resistance_rows,
             cohort_kpis=cohort_kpis,
             overview_flags=overview_flags,
             combined_df=combined_html,

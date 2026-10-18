@@ -324,7 +324,7 @@
         }
         .pc-v-contam::before { background: #ef4444; }
 
-        /* -- Interactive Cohort Table Toolbar -------------- */
+        /* -- Unified Cohort Table Toolbar & Layout --------- */
         .pc-table-toolbar {
             display: flex;
             flex-wrap: wrap;
@@ -390,7 +390,6 @@
             white-space: nowrap;
         }
 
-        /* -- Clean Tables ---------------------------------- */
         .table-container {
             width: 100%;
             overflow-x: auto;
@@ -399,7 +398,6 @@
             max-height: 440px;
             overflow-y: auto;
         }
-        table.table,
         table.pc-cohort-table {
             width: 100%;
             border-collapse: separate;
@@ -411,7 +409,6 @@
             border-radius: 8px;
             background: var(--pc-surface);
         }
-        table.table thead th,
         table.pc-cohort-table thead th {
             position: sticky;
             top: 0;
@@ -434,11 +431,9 @@
             color: #1e3a8a;
             background: #e2e8f0;
         }
-        table.table thead th.pc-num,
         table.pc-cohort-table thead th.pc-num {
             text-align: right;
         }
-        table.table tbody td,
         table.pc-cohort-table tbody td {
             padding: 0.48rem 0.75rem;
             border-bottom: 1px solid var(--pc-border);
@@ -446,17 +441,14 @@
             line-height: 1.45;
             vertical-align: middle;
         }
-        table.table tbody td.pc-num,
         table.pc-cohort-table tbody td.pc-num {
             text-align: right;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 0.8rem;
         }
-        table.table tbody tr:last-child td,
         table.pc-cohort-table tbody tr:last-child td {
             border-bottom: none;
         }
-        table.table tbody tr:hover td,
         table.pc-cohort-table tbody tr:hover td {
             background: #f8fafc;
         }
@@ -512,11 +504,10 @@
             <nav class="pc-nav" aria-label="Report Sections">
                 {% if overview_rows is defined and overview_rows %}<a href="#sec-cohort-matrix">Results Matrix</a>{% endif %}
                 <a href="#sec-verdicts">Overview Plots</a>
-                {% if junction_table %}<a href="#sec-junctions">Splice Evidence</a>{% endif %}
+                {% if junction_rows is defined and junction_rows %}<a href="#sec-junctions">Splice Evidence</a>{% endif %}
                 {% if coverage_outside_heatmap_content or depth_heatmap_content or breadth_heatmap_content %}<a href="#sec-coverage">Backbone Coverage</a>{% endif %}
                 {% if mismatches_heatmap_content %}<a href="#sec-mismatches">Boundary Mismatches</a>{% endif %}
-                {% if resistance_gene_table %}<a href="#sec-resistance">Resistance Genes</a>{% endif %}
-                <a href="#sec-raw-tables">Raw Tables</a>
+                {% if resistance_rows is defined and resistance_rows %}<a href="#sec-resistance">Resistance Genes</a>{% endif %}
             </nav>
         </div>
     </header>
@@ -530,17 +521,17 @@
                 <span class="pc-kpi-val">{{ cohort_kpis.total_pairs }}</span>
                 <span class="pc-kpi-sub">{{ cohort_kpis.samples }} samples &times; {{ cohort_kpis.plasmids }} plasmids</span>
             </button>
-            <button type="button" class="pc-kpi-card" data-kpi-filter="Contaminated" title="Filter table to Contaminated pairs (Ratio > {{ contam_cutoff }})">
+            <button type="button" class="pc-kpi-card" data-kpi-filter="Contaminated" title="Filter tables to Contaminated pairs (Ratio > {{ contam_cutoff }})">
                 <span class="pc-kpi-label">Contaminated</span>
                 <span class="pc-kpi-val" style="color: #b91c1c;">{{ cohort_kpis.contaminated }}</span>
                 <span class="pc-kpi-sub">Ratio &gt; {{ contam_cutoff }}</span>
             </button>
-            <button type="button" class="pc-kpi-card" data-kpi-filter="Unclear" title="Filter table to Unclear pairs (Ratio {{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }})">
+            <button type="button" class="pc-kpi-card" data-kpi-filter="Unclear" title="Filter tables to Unclear pairs (Ratio {{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }})">
                 <span class="pc-kpi-label">Unclear</span>
                 <span class="pc-kpi-val" style="color: #b45309;">{{ cohort_kpis.unclear }}</span>
                 <span class="pc-kpi-sub">Zone {{ unclear_range.lower_bound }}&ndash;{{ unclear_range.upper_bound }}</span>
             </button>
-            <button type="button" class="pc-kpi-card" data-kpi-filter="Clean" title="Filter table to Clean pairs (Ratio < {{ unclear_range.lower_bound }})">
+            <button type="button" class="pc-kpi-card" data-kpi-filter="Clean" title="Filter tables to Clean pairs (Ratio < {{ unclear_range.lower_bound }})">
                 <span class="pc-kpi-label">Clean</span>
                 <span class="pc-kpi-val" style="color: #047857;">{{ cohort_kpis.clean }}</span>
                 <span class="pc-kpi-sub">Ratio &lt; {{ unclear_range.lower_bound }}</span>
@@ -555,12 +546,12 @@
 
         <!-- Primary Section 1: Unified Cohort Results Matrix -->
         {% if overview_rows is defined and overview_rows %}
-        <details open id="sec-cohort-matrix" class="pc-section">
+        <details open id="sec-cohort-matrix" class="pc-section" data-table-widget>
             <summary>
                 <div class="pc-summary-left">
                     <h2>Cohort Results Matrix</h2>
                 </div>
-                <span class="pc-summary-hint">Sorted by severity &middot; Click column headers to sort</span>
+                <span class="pc-summary-hint">Sorted by severity &middot; Click any column header to sort</span>
             </summary>
             <div class="pc-section-body">
                 <div class="pc-table-toolbar">
@@ -583,17 +574,18 @@
                             type="search"
                             id="cohortSearchInput"
                             class="pc-search-input"
+                            data-table-search
                             placeholder="Filter sample or plasmid..."
                             aria-label="Filter sample or plasmid"
                         >
-                        <span class="pc-table-count" id="cohortRowCount">
+                        <span class="pc-table-count" id="cohortRowCount" data-table-count>
                             {{ overview_rows|length }} of {{ overview_rows|length }} pairs
                         </span>
                     </div>
                 </div>
 
                 <div class="table-container table-container-scroll">
-                    <table class="pc-cohort-table" id="cohortOverviewTable">
+                    <table class="pc-cohort-table" id="cohortOverviewTable" data-pc-table data-unit-label="pairs">
                         <thead>
                             <tr>
                                 <th data-sort-col="0" data-sort-type="text">Sample</th>
@@ -730,9 +722,9 @@
             </div>
         </details>
 
-        <!-- Primary Section 3: Splice Junction & Vector Boundary Evidence -->
-        {% if junction_table %}
-        <details open id="sec-junctions" class="pc-section">
+        <!-- Primary Section 3: Splice Junction & Vector Boundary Evidence (Same Unified Table Design) -->
+        {% if junction_rows is defined and junction_rows %}
+        <details open id="sec-junctions" class="pc-section" data-table-widget>
             <summary>
                 <div class="pc-summary-left">
                     <h2>Splice Junction &amp; Vector Boundary Evidence</h2>
@@ -745,14 +737,99 @@
                     <strong>Human Intron Clips (EI)</strong> count native genomic reads soft-clipped at exon&ndash;intron splice sites;
                     <strong>Vector Junctions (VI)</strong> count reads crossing the 5'/3' cloning boundaries.
                 </p>
+                <div class="pc-table-toolbar">
+                    <div class="pc-filter-pills" role="group" aria-label="Filter Splice Table by Verdict">
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="all" aria-pressed="true">
+                            All ({{ junction_rows|length }})
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Contaminated" aria-pressed="false">
+                            Contaminated
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Unclear" aria-pressed="false">
+                            Unclear
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Clean" aria-pressed="false">
+                            Clean
+                        </button>
+                    </div>
+                    <div class="pc-toolbar-right">
+                        <input
+                            type="search"
+                            class="pc-search-input"
+                            data-table-search
+                            placeholder="Filter sample or plasmid..."
+                            aria-label="Filter splice table by sample or plasmid"
+                        >
+                        <span class="pc-table-count" data-table-count>
+                            {{ junction_rows|length }} of {{ junction_rows|length }} pairs
+                        </span>
+                    </div>
+                </div>
+
                 <div class="table-container table-container-scroll">
-                    {{ junction_table|safe }}
+                    <table class="pc-cohort-table" id="cohortJunctionTable" data-pc-table data-unit-label="pairs">
+                        <thead>
+                            <tr>
+                                <th data-sort-col="0" data-sort-type="text">Sample</th>
+                                <th data-sort-col="1" data-sort-type="text">Plasmid</th>
+                                <th data-sort-col="2" data-sort-type="num">Verdict</th>
+                                <th class="pc-num" data-sort-col="3" data-sort-type="num" title="Estimated cDNA contamination fraction at multi-exon splice junctions">Est. Contamination</th>
+                                <th class="pc-num" data-sort-col="4" data-sort-type="num" title="Covered exon-exon junctions / Total junctions (Exon count)">Junctions Covered</th>
+                                <th class="pc-num" data-sort-col="5" data-sort-type="num" title="Plasmid exon-exon spanning events (EE)">Plasmid Span Events (EE)</th>
+                                <th class="pc-num" data-sort-col="6" data-sort-type="num" title="Native human genomic reads soft-clipped at exon-intron boundaries (EI)">Human Intron Clips (EI)</th>
+                                <th class="pc-num" data-sort-col="7" data-sort-type="num" title="Unique reads spanning at least one exon-exon junction">Spanning Reads</th>
+                                <th class="pc-num" data-sort-col="8" data-sort-type="num" title="Reads spanning the 5' or 3' vector-insert cloning site">Vector Junctions (VI)</th>
+                                <th class="pc-num" data-sort-col="9" data-sort-type="num" title="Paired-end fragments bridging across the vector-insert boundary">Bridge Pairs</th>
+                                <th class="pc-num" title="Exon lengths along the spliced cDNA insert">Exon Sizes (bp)</th>
+                                <th class="pc-num" title="Spliced human genomic intron lengths between exons">Intron Sizes (bp)</th>
+                                {% if overview_flags is defined and overview_flags.has_report_links %}
+                                <th style="text-align: right;">Sample Report</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in junction_rows %}
+                            <tr data-verdict="{{ row.verdict_short }}">
+                                <td data-sort="{{ row.sample }}"><strong>{{ row.sample }}</strong></td>
+                                <td data-sort="{{ row.plasmid }}">{{ row.plasmid }}</td>
+                                <td data-sort="{{ row.verdict_rank }}">
+                                    <span class="pc-v-badge pc-v-{{ row.verdict_class }}">{{ row.verdict_short }}</span>
+                                </td>
+                                <td class="pc-num" data-sort="{{ row.est_contam_sort }}">
+                                    {% if row.est_contam_sort > 0 %}
+                                        <strong>{{ row.est_contam_str }}</strong>
+                                    {% else %}
+                                        {{ row.est_contam_str }}
+                                    {% endif %}
+                                </td>
+                                <td class="pc-num" data-sort="{{ row.junctions_sort }}">{{ row.junctions_str }}</td>
+                                <td class="pc-num" data-sort="{{ row.ee_sort }}">{{ row.ee_str }}</td>
+                                <td class="pc-num" data-sort="{{ row.ei_sort }}">{{ row.ei_str }}</td>
+                                <td class="pc-num" data-sort="{{ row.span_sort }}">{{ row.span_str }}</td>
+                                <td class="pc-num" data-sort="{{ row.vi_sort }}">{{ row.vi_str }}</td>
+                                <td class="pc-num" data-sort="{{ row.bridge_sort }}">{{ row.bridge_str }}</td>
+                                <td class="pc-num" {% if row.exon_sizes_raw %}title="{{ row.exon_sizes_raw }}"{% endif %}>{{ row.exon_sizes_str }}</td>
+                                <td class="pc-num" {% if row.intron_sizes_raw %}title="{{ row.intron_sizes_raw }}"{% endif %}>{{ row.intron_sizes_str }}</td>
+                                {% if overview_flags is defined and overview_flags.has_report_links %}
+                                <td style="text-align: right;">
+                                    {% set target_href = row.report_relpath if interactive else row.static_report_relpath %}
+                                    {% if target_href %}
+                                        <a class="pc-report-link" href="{{ target_href }}">Open &rarr;</a>
+                                    {% else %}
+                                        &mdash;
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </details>
         {% endif %}
 
-        <!-- Secondary Section 4: Backbone & Outside-Insert Coverage (Collapsed by default for clean browsing) -->
+        <!-- Secondary Section 4: Backbone & Outside-Insert Coverage (Collapsed by default) -->
         {% if coverage_outside_heatmap_content or depth_heatmap_content or breadth_heatmap_content %}
         <details id="sec-coverage" class="pc-section">
             <summary>
@@ -863,63 +940,118 @@
         </details>
         {% endif %}
 
-        <!-- Secondary Section 6: Resistance Gene Coverage (Collapsed by default) -->
-        {% if resistance_gene_table %}
-        <details id="sec-resistance" class="pc-section">
+        <!-- Secondary Section 6: Resistance Gene Coverage (Same Unified Table Design, Collapsed by default) -->
+        {% if resistance_rows is defined and resistance_rows %}
+        <details id="sec-resistance" class="pc-section" data-table-widget>
             <summary>
                 <div class="pc-summary-left">
                     <h2>Resistance Gene Coverage</h2>
                 </div>
-                <span class="pc-summary-hint">Depth and breadth across annotated plasmid selection markers</span>
+                <span class="pc-summary-hint">Depth and breadth across annotated plasmid selection markers ({{ resistance_rows|length }} markers)</span>
             </summary>
             <div class="pc-section-body">
+                <div class="pc-table-toolbar">
+                    <div class="pc-filter-pills" role="group" aria-label="Filter Resistance Table by Verdict">
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="all" aria-pressed="true">
+                            All ({{ resistance_rows|length }})
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Contaminated" aria-pressed="false">
+                            Contaminated
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Unclear" aria-pressed="false">
+                            Unclear
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Clean" aria-pressed="false">
+                            Clean
+                        </button>
+                    </div>
+                    <div class="pc-toolbar-right">
+                        <input
+                            type="search"
+                            class="pc-search-input"
+                            data-table-search
+                            placeholder="Filter sample, plasmid, or gene..."
+                            aria-label="Filter resistance table"
+                        >
+                        <span class="pc-table-count" data-table-count>
+                            {{ resistance_rows|length }} of {{ resistance_rows|length }} markers
+                        </span>
+                    </div>
+                </div>
+
                 <div class="table-container table-container-scroll">
-                    {{ resistance_gene_table|safe }}
+                    <table class="pc-cohort-table" id="cohortResistanceTable" data-pc-table data-unit-label="markers">
+                        <thead>
+                            <tr>
+                                <th data-sort-col="0" data-sort-type="text">Sample</th>
+                                <th data-sort-col="1" data-sort-type="text">Plasmid</th>
+                                <th data-sort-col="2" data-sort-type="num">Verdict</th>
+                                <th data-sort-col="3" data-sort-type="text">Selection Marker</th>
+                                <th class="pc-num" data-sort-col="4" data-sort-type="num">Mean Depth</th>
+                                <th class="pc-num" data-sort-col="5" data-sort-type="num">Breadth (&ge;1x)</th>
+                                {% if overview_flags is defined and overview_flags.has_report_links %}
+                                <th style="text-align: right;">Sample Report</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in resistance_rows %}
+                            <tr data-verdict="{{ row.verdict_short }}">
+                                <td data-sort="{{ row.sample }}"><strong>{{ row.sample }}</strong></td>
+                                <td data-sort="{{ row.plasmid }}">{{ row.plasmid }}</td>
+                                <td data-sort="{{ row.verdict_rank }}">
+                                    <span class="pc-v-badge pc-v-{{ row.verdict_class }}">{{ row.verdict_short }}</span>
+                                </td>
+                                <td data-sort="{{ row.gene_name }}"><code>{{ row.gene_name }}</code></td>
+                                <td class="pc-num" data-sort="{{ row.depth_sort }}">
+                                    {% if row.depth_sort > 1.0 %}
+                                        <strong>{{ row.depth_str }}</strong>
+                                    {% else %}
+                                        {{ row.depth_str }}
+                                    {% endif %}
+                                </td>
+                                <td class="pc-num" data-sort="{{ row.breadth_sort }}">{{ row.breadth_str }}</td>
+                                {% if overview_flags is defined and overview_flags.has_report_links %}
+                                <td style="text-align: right;">
+                                    {% set target_href = row.report_relpath if interactive else row.static_report_relpath %}
+                                    {% if target_href %}
+                                        <a class="pc-report-link" href="{{ target_href }}">Open &rarr;</a>
+                                    {% else %}
+                                        &mdash;
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </details>
         {% endif %}
 
-        <!-- Secondary Section 7: Statistical & Raw Export Tables (Collapsed by default unless overview_rows is absent) -->
-        <details {% if overview_rows is not defined or not overview_rows %}open{% endif %} id="sec-raw-tables" class="pc-section">
+        <!-- Fallback only when overview_rows is omitted in direct template.render unit tests -->
+        {% if overview_rows is not defined or not overview_rows %}
+        <details open id="sec-raw-tables" class="pc-section">
             <summary>
                 <div class="pc-summary-left">
-                    <h2>Statistical &amp; Raw Data Tables</h2>
+                    <h2>Summary Tables</h2>
                 </div>
-                <span class="pc-summary-hint">Individual Verdict, Ratio, P-Value, and Read Count export tables</span>
             </summary>
             <div class="pc-section-body">
                 <div class="pc-grid-2">
                     <div class="pc-panel">
                         <h3>Verdicts</h3>
-                        <div class="table-container table-container-scroll">
-                            {{ verdict_df|safe }}
-                        </div>
+                        <div class="table-container">{{ verdict_df|safe }}</div>
                     </div>
                     <div class="pc-panel">
                         <h3>Contamination Ratios</h3>
-                        <div class="table-container table-container-scroll">
-                            {{ ratio_df|safe }}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="pc-grid-2">
-                    <div class="pc-panel">
-                        <h3>P-Value Table</h3>
-                        <div class="table-container table-container-scroll">
-                            {{ p_value_table|safe }}
-                        </div>
-                    </div>
-                    <div class="pc-panel">
-                        <h3>Summary Table</h3>
-                        <div class="table-container table-container-scroll">
-                            {{ combined_df|safe }}
-                        </div>
+                        <div class="table-container">{{ ratio_df|safe }}</div>
                     </div>
                 </div>
             </div>
         </details>
+        {% endif %}
 
         <footer class="details">
             <p><span>Verdict Cutoffs:</span> Clean &lt; {{ unclear_range.lower_bound }} | Unclear {{ unclear_range.lower_bound }} &ndash; {{ unclear_range.upper_bound }} | Contaminated &gt; {{ contam_cutoff }} (threshold: {{ threshold }})</p>
@@ -930,86 +1062,94 @@
 
     <script>
         (function() {
-            function decorateLegacyTables() {
-                document.querySelectorAll('table.table').forEach(function(tbl) {
-                    var ths = tbl.querySelectorAll('thead th');
-                    var numCols = [];
-                    ths.forEach(function(th, idx) {
-                        var h = (th.textContent || '').trim();
-                        if (h !== 'Sample' && h !== 'Plasmid' && h !== 'Verdict' && h !== 'Category' && h !== 'Gene Name') {
-                            th.classList.add('pc-num');
-                            numCols.push(idx);
+            var widgetControllers = [];
+
+            function initTableWidgets() {
+                document.querySelectorAll('[data-table-widget]').forEach(function(widget) {
+                    var table = widget.querySelector('table[data-pc-table]');
+                    if (!table) return;
+                    var tbody = table.querySelector('tbody');
+                    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+                    var totalRows = rows.length;
+                    var unitLabel = table.getAttribute('data-unit-label') || 'rows';
+                    var searchInput = widget.querySelector('[data-table-search]');
+                    var countEl = widget.querySelector('[data-table-count]');
+                    var filterPills = Array.prototype.slice.call(widget.querySelectorAll('[data-verdict-filter]'));
+                    var activeVerdict = 'all';
+                    var sortCol = null;
+                    var sortAsc = true;
+
+                    function applyFilters() {
+                        var q = searchInput ? (searchInput.value || '').trim().toLowerCase() : '';
+                        var shown = 0;
+                        rows.forEach(function(tr) {
+                            var v = tr.getAttribute('data-verdict') || '';
+                            var matchVerdict = (activeVerdict === 'all' || v === activeVerdict);
+                            var matchText = !q || (tr.textContent || '').toLowerCase().indexOf(q) !== -1;
+                            var vis = matchVerdict && matchText;
+                            tr.style.display = vis ? '' : 'none';
+                            if (vis) shown++;
+                        });
+                        if (countEl) {
+                            countEl.textContent = shown + ' of ' + totalRows + ' ' + unitLabel;
                         }
-                    });
-                    tbl.querySelectorAll('tbody tr').forEach(function(tr) {
-                        var tds = tr.querySelectorAll('td');
-                        tds.forEach(function(td, idx) {
-                            if (numCols.indexOf(idx) !== -1) {
-                                td.classList.add('pc-num');
-                            }
-                            if (td.querySelector('.pc-v-badge')) return;
-                            var txt = (td.textContent || '').trim();
-                            if (txt === 'Sample is contaminated with plasmid DNA' || txt === 'Contaminated') {
-                                td.innerHTML = '<span class="pc-v-badge pc-v-contam">Contaminated</span>';
-                            } else if (txt === 'Sample is not contaminated with plasmid DNA' || txt === 'Clean') {
-                                td.innerHTML = '<span class="pc-v-badge pc-v-clean">Clean</span>';
-                            } else if (txt === 'Sample contamination status is unclear' || txt === 'Unclear') {
-                                td.innerHTML = '<span class="pc-v-badge pc-v-unclear">Unclear</span>';
-                            }
+                    }
+
+                    function setVerdictFilter(verdict) {
+                        activeVerdict = verdict;
+                        filterPills.forEach(function(btn) {
+                            var match = btn.getAttribute('data-verdict-filter') === verdict;
+                            btn.setAttribute('aria-pressed', match ? 'true' : 'false');
+                        });
+                        applyFilters();
+                    }
+
+                    filterPills.forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            setVerdictFilter(btn.getAttribute('data-verdict-filter') || 'all');
                         });
                     });
-                });
-            }
 
-            function initCohortTable() {
-                var table = document.getElementById('cohortOverviewTable');
-                if (!table) return;
-                var tbody = table.querySelector('tbody');
-                var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-                var totalRows = rows.length;
-                var searchInput = document.getElementById('cohortSearchInput');
-                var countEl = document.getElementById('cohortRowCount');
-                var filterPills = Array.prototype.slice.call(document.querySelectorAll('[data-verdict-filter]'));
-                var kpiCards = Array.prototype.slice.call(document.querySelectorAll('[data-kpi-filter]'));
-                var activeVerdict = 'all';
-                var sortCol = null;
-                var sortAsc = true;
-
-                function applyFilters() {
-                    var q = searchInput ? (searchInput.value || '').trim().toLowerCase() : '';
-                    var shown = 0;
-                    rows.forEach(function(tr) {
-                        var v = tr.getAttribute('data-verdict') || '';
-                        var matchVerdict = (activeVerdict === 'all' || v === activeVerdict);
-                        var matchText = !q || (tr.textContent || '').toLowerCase().indexOf(q) !== -1;
-                        var vis = matchVerdict && matchText;
-                        tr.style.display = vis ? '' : 'none';
-                        if (vis) shown++;
-                    });
-                    if (countEl) {
-                        countEl.textContent = shown + ' of ' + totalRows + ' pairs';
+                    if (searchInput) {
+                        searchInput.addEventListener('input', applyFilters);
                     }
-                }
 
-                function setVerdictFilter(verdict) {
-                    activeVerdict = verdict;
-                    filterPills.forEach(function(btn) {
-                        var match = btn.getAttribute('data-verdict-filter') === verdict;
-                        btn.setAttribute('aria-pressed', match ? 'true' : 'false');
+                    var headers = Array.prototype.slice.call(table.querySelectorAll('thead th[data-sort-col]'));
+                    headers.forEach(function(th) {
+                        th.addEventListener('click', function() {
+                            var colIdx = parseInt(th.getAttribute('data-sort-col') || '0', 10);
+                            var sortType = th.getAttribute('data-sort-type') || 'text';
+                            if (sortCol === colIdx) {
+                                sortAsc = !sortAsc;
+                            } else {
+                                sortCol = colIdx;
+                                sortAsc = (sortType === 'text');
+                            }
+                            rows.sort(function(a, b) {
+                                var cellA = a.children[colIdx];
+                                var cellB = b.children[colIdx];
+                                var rawA = cellA ? (cellA.getAttribute('data-sort') || cellA.textContent || '').trim() : '';
+                                var rawB = cellB ? (cellB.getAttribute('data-sort') || cellB.textContent || '').trim() : '';
+                                if (sortType === 'num') {
+                                    var numA = parseFloat(rawA);
+                                    var numB = parseFloat(rawB);
+                                    if (isNaN(numA)) numA = -1e9;
+                                    if (isNaN(numB)) numB = -1e9;
+                                    return sortAsc ? (numA - numB) : (numB - numA);
+                                }
+                                return sortAsc ? rawA.localeCompare(rawB) : rawB.localeCompare(rawA);
+                            });
+                            rows.forEach(function(tr) { tbody.appendChild(tr); });
+                        });
                     });
-                    applyFilters();
-                }
 
-                filterPills.forEach(function(btn) {
-                    btn.addEventListener('click', function() {
-                        setVerdictFilter(btn.getAttribute('data-verdict-filter') || 'all');
-                    });
+                    widgetControllers.push({ setVerdictFilter: setVerdictFilter });
                 });
 
-                kpiCards.forEach(function(card) {
+                document.querySelectorAll('[data-kpi-filter]').forEach(function(card) {
                     card.addEventListener('click', function() {
                         var f = card.getAttribute('data-kpi-filter') || 'all';
-                        setVerdictFilter(f);
+                        widgetControllers.forEach(function(ctrl) { ctrl.setVerdictFilter(f); });
                         var sec = document.getElementById('sec-cohort-matrix');
                         if (sec) {
                             sec.open = true;
@@ -1017,44 +1157,11 @@
                         }
                     });
                 });
-
-                if (searchInput) {
-                    searchInput.addEventListener('input', applyFilters);
-                }
-
-                var headers = Array.prototype.slice.call(table.querySelectorAll('thead th[data-sort-col]'));
-                headers.forEach(function(th) {
-                    th.addEventListener('click', function() {
-                        var colIdx = parseInt(th.getAttribute('data-sort-col') || '0', 10);
-                        var sortType = th.getAttribute('data-sort-type') || 'text';
-                        if (sortCol === colIdx) {
-                            sortAsc = !sortAsc;
-                        } else {
-                            sortCol = colIdx;
-                            sortAsc = (sortType === 'text');
-                        }
-                        rows.sort(function(a, b) {
-                            var cellA = a.children[colIdx];
-                            var cellB = b.children[colIdx];
-                            var rawA = cellA ? (cellA.getAttribute('data-sort') || cellA.textContent || '').trim() : '';
-                            var rawB = cellB ? (cellB.getAttribute('data-sort') || cellB.textContent || '').trim() : '';
-                            if (sortType === 'num') {
-                                var numA = parseFloat(rawA);
-                                var numB = parseFloat(rawB);
-                                if (isNaN(numA)) numA = -1e9;
-                                if (isNaN(numB)) numB = -1e9;
-                                return sortAsc ? (numA - numB) : (numB - numA);
-                            }
-                            return sortAsc ? rawA.localeCompare(rawB) : rawB.localeCompare(rawA);
-                        });
-                        rows.forEach(function(tr) { tbody.appendChild(tr); });
-                    });
-                });
             }
 
             function initSectionNav() {
                 document.querySelectorAll('.pc-nav a[href^="#"]').forEach(function(link) {
-                    link.addEventListener('click', function(e) {
+                    link.addEventListener('click', function() {
                         var targetId = (link.getAttribute('href') || '').slice(1);
                         var target = document.getElementById(targetId);
                         if (!target) return;
@@ -1066,8 +1173,7 @@
                 });
             }
 
-            decorateLegacyTables();
-            initCohortTable();
+            initTableWidgets();
             initSectionNav();
 
             {% if interactive %}
