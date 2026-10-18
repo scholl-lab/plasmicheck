@@ -11,16 +11,25 @@
 # https://hpc-docs.cubi.bihealth.org/best-practice/temp-files/#tmpdir-and-the-scheduler
 # https://bihealth.github.io/bih-cluster/slurm/snakemake/#custom-logging-directory
 
-# First, point TMPDIR to the scratch in your home as mktemp will use this
-export TMPDIR=$HOME/scratch/tmp
-# Second, create another unique temporary directory within this directory
-export TMPDIR=$(mktemp -d)
-# Finally, setup the cleanup trap
-trap "rm -rf $TMPDIR" EXIT
+set -euo pipefail
+
+export TMPDIR="${HOME}/scratch/tmp"
+mkdir -p "$TMPDIR"
+export TMPDIR="$(mktemp -d -p "$TMPDIR")"
+trap 'rm -rf "$TMPDIR"' EXIT
 
 mkdir -p slurm_logs
 export SBATCH_DEFAULTS=" --output=slurm_logs/%x-%j.log"
 
+CONFIGFILE="${1:-config.example.yaml}"
+PROFILE="${SNAKEMAKE_PROFILE:-cubi-v1}"
+JOBS="${SNAKEMAKE_JOBS:-100}"
+
+CONFIG_ARGS=()
+if [ -f "$CONFIGFILE" ]; then
+    CONFIG_ARGS=(--configfile "$CONFIGFILE")
+fi
+
 date
-srun snakemake -s plasmicheck.smk --use-conda --profile=cubi-v1 -j150
+srun snakemake -s plasmicheck.smk "${CONFIG_ARGS[@]}" --use-conda --profile="$PROFILE" -j"$JOBS"
 date

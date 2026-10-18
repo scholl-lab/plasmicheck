@@ -70,7 +70,9 @@ jobs:
         run: make test
       - name: Install integration tools
         if: matrix.python-version == '3.12'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minimap2 samtools
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends minimap2 samtools
+          uv pip install "snakemake>=9,<10"  # end-to-end cohort workflow test (tests/test_snakemake_e2e.py)
       - name: Integration tests
         if: matrix.python-version == '3.12'
         run: make test-integration

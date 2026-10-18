@@ -1,0 +1,187 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+description: Configuration schema for the PlasmiCheck Snakemake cohort workflow.
+
+type: object
+additionalProperties: false
+
+properties:
+  human_fasta:
+    type: string
+    minLength: 1
+    description: Path to the human reference genome FASTA file.
+
+  samples:
+    description: >
+      Sample inputs as a path to a TSV sample sheet ('sample\tbam' or 'corrected_id'),
+      a newline-delimited BAM list file, a list of BAM paths, or a {sample_id: bam_path} mapping.
+    oneOf:
+      - type: string
+        minLength: 1
+      - type: array
+        minItems: 1
+        items:
+          type: string
+          minLength: 1
+      - type: object
+        minProperties: 1
+        additionalProperties:
+          type: string
+          minLength: 1
+
+  bams_file:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Legacy path to newline-delimited BAM file list (fallback data/bams.txt).
+
+  bam_folder:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Directory containing per-sample BAMs when using a sample_map TSV without a bam column.
+
+  bam_dir:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Alias for bam_folder.
+
+  bam_ext:
+    type: string
+    default: ".merged.dedup.bqsr.bam"
+    description: BAM filename suffix appended to sample IDs when resolving from bam_folder.
+
+  plasmids_file:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Path to plasmid construct file or newline-delimited construct list (.txt).
+
+  constructs:
+    description: Explicit list of plasmid construct paths or path to construct list file.
+    oneOf:
+      - type: "null"
+      - type: string
+        minLength: 1
+      - type: array
+        minItems: 1
+        items:
+          type: string
+          minLength: 1
+
+  output_dir:
+    type: string
+    default: "output"
+    description: Root output directory for per-sample comparison outputs and reports.
+
+  summary_dir:
+    type: string
+    default: "output/summary"
+    description: Output directory for cohort summary reports and tables.
+
+  log_dir:
+    type: string
+    default: "logs"
+    description: Directory for rule completion markers and per-sample logs.
+
+  cache_dir:
+    type:
+      - "string"
+      - "null"
+    default: ".plasmicheck_cache"
+    description: Shared content-addressable cache directory for indexes and spliced alignments.
+
+  conda_env:
+    type: string
+    default: "plasmicheck"
+    description: Conda environment name or YAML path for Snakemake execution.
+
+  regions_bed:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Optional BED file restricting BAM read extraction to construct target regions.
+
+  include_unmapped:
+    type: boolean
+    default: true
+    description: Include unmapped reads alongside regions_bed during BAM extraction.
+
+  threshold:
+    type:
+      - "number"
+      - "null"
+    exclusiveMinimum: 0
+    default: 0.8
+    description: Plasmid-to-human ratio threshold for contamination verdict.
+
+  padding:
+    type:
+      - "integer"
+      - "null"
+    minimum: 0
+    default: 1000
+    description: Genomic padding (bp) around spliced alignment spans.
+
+  static_report:
+    type: boolean
+    default: false
+    description: Generate static PNG reports alongside interactive HTML reports.
+
+  archive_output:
+    type: boolean
+    default: false
+    description: Archive and compress per-sample output folders into .tar.gz files.
+
+  overwrite:
+    type: boolean
+    default: false
+    description: Overwrite existing indexes and intermediate files.
+
+  substring_to_remove:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Optional substring stripped from sample names in summary_reports.
+
+  extra_args:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Additional CLI flags appended to plasmicheck pipeline.
+
+  resources:
+    type: object
+    additionalProperties: false
+    description: Per-rule SLURM resource overrides (walltime runtime <= 120 min).
+    properties:
+      prepare_constructs:
+        $ref: "#/$defs/rule_resources"
+      scan_sample:
+        $ref: "#/$defs/rule_resources"
+      summary_reports:
+        $ref: "#/$defs/rule_resources"
+
+$defs:
+  rule_resources:
+    type: object
+    additionalProperties: false
+    properties:
+      threads:
+        type: integer
+        minimum: 1
+      mem_mb:
+        type: integer
+        minimum: 100
+      runtime:
+        type: integer
+        minimum: 1
+        maximum: 120
+        description: Maximum per-job walltime in minutes (< 2 hours).
