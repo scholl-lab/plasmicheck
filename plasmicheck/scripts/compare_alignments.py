@@ -383,7 +383,7 @@ def _scan_plasmid_bam(
                 junc_positions
                 and is_primary_usable
                 and cigartuples is not None
-                and not any(op in {4, 5} for op, ln in cigartuples if ln > 2)
+                and not any(op in {4, 5} for op, ln in cigartuples if ln > 6)
                 and (int(read.get_tag("NM")) if read.has_tag("NM") else 0) <= 2
             ):
                 spanned = False
