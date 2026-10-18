@@ -469,3 +469,132 @@ def test_report_anonymize_paths(tmp_path: Path) -> None:
     assert "human.fa" in content
     assert "plasmid.gb" in content
     assert "reads.bam" in content
+    assert "--anonymize was enabled" in content
+
+
+@pytest.mark.unit
+def test_load_verified_igv_b64_integrity(tmp_path: Path) -> None:
+    """Verify vendored igv.min.js.gz SHA-256 checks succeed and reject tampered bytes."""
+    from plasmicheck.scripts.generate_report import _load_verified_igv_b64
+
+    b64 = _load_verified_igv_b64()
+    assert len(b64) > 400_000
+
+    tampered = tmp_path / "tampered.js.gz"
+    tampered.write_bytes(b"corrupted-gzip-payload")
+    with (
+        patch("plasmicheck.scripts.generate_report.get_resource_path", return_value=tampered),
+        pytest.raises(RuntimeError, match="compressed SHA-256 mismatch"),
+    ):
+        _load_verified_igv_b64()
+
+
+@pytest.mark.unit
+def test_build_igv_context_and_embed_in_report(tmp_path: Path) -> None:
+    """Verify _build_igv_context embeds offline igv.js, BED tracks, BAM reads, and loci."""
+    import pysam
+
+    from plasmicheck.scripts.generate_report import _build_igv_context, main
+
+    base_dir = tmp_path / "sample_out"
+    align_dir = base_dir / "alignments"
+    ref_dir = base_dir / "references"
+    data_dir = base_dir / "data"
+    reports_dir = base_dir / "reports"
+    for d in (align_dir, ref_dir, data_dir, reports_dir):
+        d.mkdir(parents=True)
+
+    # Write plasmid FASTA (1000 bp)
+    fasta_path = ref_dir / "pTEST.fasta"
+    fasta_path.write_text(">pTEST\n" + ("ACGT" * 250) + "\n")
+
+    # Write cDNA_positions.txt with 2 exons
+    cdna_path = data_dir / "cDNA_positions.txt"
+    cdna_path.write_text(
+        "cDNA start position in plasmid: 200\n"
+        "cDNA end position in plasmid: 500\n"
+        "SpliceJunctionCount: 1\n"
+        "ExonCount: 2\n"
+        "ExonLengths: 150,150\n"
+        "IntronLengths: 1000\n"
+    )
+
+    # Write igv_session.xml
+    (base_dir / "igv_session.xml").write_text("<Session/>")
+
+    # Write real small BAM with 5 mapped reads
+    bam_path = align_dir / "plasmid_alignment.bam"
+    header = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "pTEST", "LN": 1000}]}
+    with pysam.AlignmentFile(str(bam_path), "wb", header=header) as out_bam:
+        for i in range(5):
+            seg = pysam.AlignedSegment(out_bam.header)
+            seg.query_name = f"read_{i}"
+            seg.query_sequence = "ACGT" * 25
+            seg.flag = 0
+            seg.reference_id = 0
+            seg.reference_start = 180 + i * 30
+            seg.mapping_quality = 60
+            seg.cigartuples = [(0, 100)]
+            seg.query_qualities = pysam.qualitystring_to_array("I" * 100)
+            out_bam.write(seg)
+
+    ctx = _build_igv_context(str(base_dir), reports_dir=str(reports_dir), max_reads=3)
+    assert ctx["igv_embedded"] is True
+    assert ctx["igv_downsampled"] is True
+    assert ctx["igv_read_count"] == 3
+    assert ctx["igv_session_relpath"] == "../igv_session.xml"
+    assert len(ctx["igv_loci"]) == 5  # Full, Insert, 5', 3', Splice Junction 1
+    assert "const IGV_GZ_B64 =" in ctx["igv_payload"]
+    assert "const IGV_BROWSER_OPTIONS =" in ctx["igv_payload"]
+
+    # Also render full interactive + static report with #121/#122 metrics
+    reads_file = data_dir / "reads.tsv"
+    summary_file = data_dir / "summary.tsv"
+    reads_file.write_text("AssignedTo\tPlasmidScore\tHumanScore\nPlasmid\t90\t20\n")
+    summary_file.write_text(
+        "Category\tCount\n"
+        "Plasmid\t80\n"
+        "Human\t20\n"
+        "Ratio\t4.0\n"
+        "Verdict\tSample is contaminated with plasmid DNA\n"
+        "SpliceJunctionCount\t1\n"
+        "ExonCount\t2\n"
+        "SpliceJunctionEvents\t42\n"
+        "VectorInsertJunctionReads\t11\n"
+        "EstimatedContaminationFraction\t0.8250\n"
+    )
+
+    with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
+        png_box = reports_dir / "box.png"
+        png_scat = reports_dir / "scat.png"
+        png_box.write_bytes(b"\x89PNG\r\n\x1a\n")
+        png_scat.write_bytes(b"\x89PNG\r\n\x1a\n")
+        mock_plots.return_value = (
+            "<div>box</div>",
+            str(png_box),
+            "<div>scatter</div>",
+            str(png_scat),
+        )
+        main(
+            str(reads_file),
+            str(summary_file),
+            str(base_dir),
+            reports_dir=str(reports_dir),
+            static_report=True,
+        )
+
+    interactive_html = (reports_dir / "report_interactive.html").read_text()
+    assert "Est. Contamination:" in interactive_html
+    assert "0.8250" in interactive_html
+    assert "Splice-Junction Events:" in interactive_html
+    assert "Vector Junctions:" in interactive_html
+    assert "igvLociTable" in interactive_html
+    assert "DecompressionStream('gzip')" in interactive_html
+    assert "../igv_session.xml" in interactive_html
+
+    static_html = (reports_dir / "report_non_interactive.html").read_text()
+    assert (
+        "Interactive IGV alignment browser is only active in report_interactive.html."
+        in static_html
+    )
+    assert "const IGV_GZ_B64 =" not in static_html

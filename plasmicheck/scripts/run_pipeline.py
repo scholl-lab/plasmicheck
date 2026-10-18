@@ -904,6 +904,10 @@ def run_pipeline(
                         )
                         prog.advance()
 
+                        # IGV session XML generation (Issue #49) before report so report can link it
+                        if keep_intermediate and paths.plasmid_bam.exists():
+                            write_igv_session(paths)
+
                         # Step 7: Generate report
                         logging.info("Generating report...")
                         reads_assignment_file = f"{comparison_output}.reads_assignment.tsv"
@@ -940,10 +944,6 @@ def run_pipeline(
                             if os.path.exists(summary_file):
                                 write_md5sum(summary_file, "output", output_subfolder)
                         prog.advance()
-
-                        # IGV session XML generation (Issue #49)
-                        if keep_intermediate and paths.plasmid_bam.exists():
-                            write_igv_session(paths)
 
                         # Step 8: Optionally delete intermediate files
                         if not keep_intermediate:

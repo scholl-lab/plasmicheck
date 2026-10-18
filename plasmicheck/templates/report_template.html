@@ -240,7 +240,8 @@
         }
         .pc-evidence-pill strong {
             font-weight: 600;
-            color: var(--pc-text-secondary);
+            color: inherit;
+            opacity: 0.85;
         }
 
         /* -- Gauge inside Hero ----------------------------- */
@@ -291,12 +292,13 @@
         .pc-hero-ratio-val {
             font-size: 1.45rem;
             font-weight: 700;
-            line-height: 1.2;
+            line-height: 1.35;
             font-variant-numeric: tabular-nums;
             color: var(--pc-text);
         }
         .pc-hero-ratio-thresh {
-            font-size: 0.74rem;
+            font-size: 0.76rem;
+            line-height: 1.4;
             color: var(--pc-text-muted);
             background: var(--pc-surface-subtle);
             border: 1px solid var(--pc-border);
@@ -322,7 +324,7 @@
             max-width: 280px;
             background: #0f172a;
             color: #f8fafc;
-            font-size: 0.74rem;
+            font-size: 0.76rem;
             font-weight: 400;
             line-height: 1.45;
             padding: 0.45rem 0.65rem;
@@ -392,8 +394,8 @@
             top: -23px;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 0.72rem;
-            line-height: 1.25;
+            font-size: 0.76rem;
+            line-height: 1.35;
             font-weight: 700;
             font-variant-numeric: tabular-nums;
             white-space: nowrap;
@@ -407,7 +409,8 @@
             position: relative;
             height: 1.15rem;
             margin-top: 0.25rem;
-            font-size: 0.69rem;
+            font-size: 0.76rem;
+            line-height: 1.35;
             color: var(--pc-text-muted);
             font-variant-numeric: tabular-nums;
         }
@@ -426,8 +429,8 @@
             grid-template-columns: repeat(3, 1fr);
             gap: 0.35rem;
             margin-top: 0.2rem;
-            font-size: 0.73rem;
-            line-height: 1.3;
+            font-size: 0.78rem;
+            line-height: 1.4;
             font-variant-numeric: tabular-nums;
         }
         .pc-gauge-zone {
@@ -443,7 +446,8 @@
         .pc-gauge-zone strong {
             font-weight: 600;
             display: block;
-            font-size: 0.74rem;
+            font-size: 0.78rem;
+            line-height: 1.4;
         }
         .pc-gauge-zone-clean.is-active {
             background: #ecfdf5;
@@ -716,14 +720,18 @@
         }
         .pc-details-toggle summary::-webkit-details-marker { display: none; }
         .pc-details-toggle summary::before {
-            content: '\25B6';
-            font-size: 0.72rem;
-            line-height: 1.3;
+            content: '';
+            display: inline-block;
+            width: 0.42rem;
+            height: 0.42rem;
+            border-right: 1.75px solid var(--pc-text-muted);
+            border-bottom: 1.75px solid var(--pc-text-muted);
+            transform: rotate(-45deg);
             transition: transform 0.18s ease;
-            color: var(--pc-text-muted);
+            flex-shrink: 0;
         }
         .pc-details-toggle[open] summary::before {
-            transform: rotate(90deg);
+            transform: rotate(45deg);
         }
         .pc-details-content {
             padding: 0 1.5rem 1.25rem;
@@ -748,6 +756,140 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 0.8rem;
             color: var(--pc-text-secondary);
+        }
+
+        /* -- IGV Alignment Inspector ----------------------- */
+        .pc-igv-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.75rem;
+        }
+        .pc-igv-meta-pills {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .pc-igv-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.76rem;
+            line-height: 1.4;
+            font-weight: 600;
+            padding: 0.22rem 0.6rem;
+            border-radius: 6px;
+            background: var(--pc-surface-subtle);
+            border: 1px solid var(--pc-border);
+            color: var(--pc-text-secondary);
+            text-decoration: none;
+            font-variant-numeric: tabular-nums;
+        }
+        a.pc-igv-pill:hover {
+            border-color: var(--pc-accent);
+            color: var(--pc-accent);
+        }
+        a.pc-igv-pill:focus-visible {
+            outline: 2px solid var(--pc-accent);
+            outline-offset: 2px;
+        }
+        .pc-loci-table-wrap {
+            border: 1px solid var(--pc-border);
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 0.9rem;
+        }
+        .pc-loci-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        .pc-loci-table th {
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            background: var(--pc-surface-subtle);
+            color: var(--pc-text-secondary);
+            font-size: 0.76rem;
+            line-height: 1.4;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid var(--pc-border);
+        }
+        .pc-loci-table td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--pc-surface-subtle);
+            color: var(--pc-text);
+            line-height: 1.45;
+        }
+        .pc-loci-table tr:last-child td { border-bottom: none; }
+        .pc-loci-table tr.is-selected td {
+            background: var(--pc-accent-soft);
+        }
+        .pc-locus-coord {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.8rem;
+            line-height: 1.45;
+            color: var(--pc-text-secondary);
+            font-variant-numeric: tabular-nums;
+        }
+        .pc-locus-btn {
+            appearance: none;
+            background: var(--pc-surface);
+            border: 1px solid var(--pc-border);
+            color: var(--pc-text);
+            font-size: 0.78rem;
+            line-height: 1.4;
+            font-weight: 600;
+            padding: 0.25rem 0.65rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+        }
+        .pc-locus-btn:hover {
+            border-color: var(--pc-accent);
+            color: var(--pc-accent);
+        }
+        .pc-locus-btn:focus-visible {
+            outline: 2px solid var(--pc-accent);
+            outline-offset: 2px;
+        }
+        .pc-locus-btn[aria-selected="true"] {
+            background: var(--pc-accent);
+            border-color: var(--pc-accent);
+            color: #ffffff;
+        }
+        .pc-igv-state {
+            padding: 0.65rem 0.9rem;
+            border-radius: 8px;
+            border: 1px solid var(--pc-border);
+            background: var(--pc-surface-subtle);
+            color: var(--pc-text-secondary);
+            font-size: 0.84rem;
+            line-height: 1.5;
+            margin-bottom: 0.75rem;
+        }
+        .pc-igv-state.is-ready {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+            color: #166534;
+        }
+        .pc-igv-state.is-error {
+            background: var(--pc-contam-bg);
+            border-color: var(--pc-contam-border);
+            color: var(--pc-contam-text);
+        }
+        .pc-igv-viewport {
+            min-height: 360px;
+            border: 1px solid var(--pc-border);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 0.35rem;
+            overflow: hidden;
         }
 
         /* -- Footer ---------------------------------------- */
@@ -816,15 +958,23 @@
     <section class="pc-verdict pc-verdict-{{ verdict_class }}">
         <div class="pc-verdict-status">
             <div class="pc-verdict-icon" aria-hidden="true">
-                {% if verdict_class == 'clean' %}&#10003;
-                {% elif verdict_class == 'unclear' %}&#63;
-                {% else %}&#9888;
+                {% if verdict_class == 'clean' %}
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                {% elif verdict_class == 'unclear' %}
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+                {% else %}
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
                 {% endif %}
             </div>
             <div>
                 <h2 class="pc-verdict-label">{{ verdict_short }}</h2>
                 <p class="pc-verdict-detail">{{ verdict }}</p>
                 <div class="pc-evidence-pills">
+                    {% if junction_metrics and junction_metrics.estimated_contamination_fraction is defined and junction_metrics.estimated_contamination_fraction not in ('N/A', 'NA', '') %}
+                    <span class="pc-evidence-pill">
+                        <strong>Est. Contamination:</strong> {{ junction_metrics.estimated_contamination_fraction }}
+                    </span>
+                    {% endif %}
                     <span class="pc-evidence-pill">
                         <strong>Backbone Mean Depth:</strong> {{ coverage_metrics.mean_depth_backbone | default('0.00') }}x
                     </span>
@@ -834,9 +984,18 @@
                     <span class="pc-evidence-pill">
                         <strong>Coverage Outside Insert:</strong> {{ coverage_outside_insert }}
                     </span>
-                    {% if junction_metrics and junction_metrics.splice_junction_count != 'N/A' %}
+                    {% if junction_metrics and junction_metrics.splice_junction_events is defined and junction_metrics.splice_junction_events not in ('N/A', 'NA', '') %}
+                    <span class="pc-evidence-pill">
+                        <strong>Splice-Junction Events:</strong> {{ junction_metrics.splice_junction_events }}
+                    </span>
+                    {% elif junction_metrics and junction_metrics.splice_junction_count not in ('N/A', 'NA', '') %}
                     <span class="pc-evidence-pill">
                         <strong>Splice Junctions:</strong> {{ junction_metrics.splice_junction_count }}
+                    </span>
+                    {% endif %}
+                    {% if junction_metrics and junction_metrics.vector_insert_junction_reads is defined and junction_metrics.vector_insert_junction_reads not in ('N/A', 'NA', '') %}
+                    <span class="pc-evidence-pill">
+                        <strong>Vector Junctions:</strong> {{ junction_metrics.vector_insert_junction_reads }}
                     </span>
                     {% endif %}
                 </div>
@@ -1077,13 +1236,13 @@
                     <div class="pc-metric-label">Reads without mismatches near insert</div>
                     <div class="pc-metric-value">{{ "{:,}".format(mismatches_without) }}</div>
                 </div>
-                {% if junction_metrics and junction_metrics.vector_insert_junction_reads is defined and junction_metrics.vector_insert_junction_reads != 'N/A' %}
+                {% if junction_metrics and junction_metrics.vector_insert_junction_reads is defined and junction_metrics.vector_insert_junction_reads not in ('N/A', 'NA', '') %}
                 <div class="pc-metric">
                     <div class="pc-metric-label">Vector-insert junction reads</div>
                     <div class="pc-metric-value">{{ junction_metrics.vector_insert_junction_reads }}</div>
                 </div>
                 {% endif %}
-                {% if junction_metrics and junction_metrics.vector_insert_bridge_pairs is defined and junction_metrics.vector_insert_bridge_pairs != 'N/A' %}
+                {% if junction_metrics and junction_metrics.vector_insert_bridge_pairs is defined and junction_metrics.vector_insert_bridge_pairs not in ('N/A', 'NA', '') %}
                 <div class="pc-metric">
                     <div class="pc-metric-label">Vector-insert bridge pairs</div>
                     <div class="pc-metric-value">{{ junction_metrics.vector_insert_bridge_pairs }}</div>
@@ -1092,9 +1251,14 @@
             </div>
         </section>
 
-        {% if junction_metrics and junction_metrics.splice_junction_count != 'N/A' %}
+        {% if junction_metrics and junction_metrics.splice_junction_count not in ('N/A', 'NA', '') %}
         <section class="pc-card">
             <h2 class="pc-card-header">Splice Junction Metadata</h2>
+            {% if junction_metrics.exon_count == '1' %}
+            <div class="pc-notice" style="margin-bottom: 0.85rem;">
+                Single-exon cDNA insert &mdash; splice-junction contamination fraction is not applicable; evaluate using vector-insert junction reads and backbone breadth.
+            </div>
+            {% endif %}
             <table class="pc-table">
                 <thead>
                     <tr>
@@ -1111,31 +1275,31 @@
                         <td>Exon Count</td>
                         <td class="pc-num">{{ junction_metrics.exon_count }}</td>
                     </tr>
-                    {% if junction_metrics.splice_junction_reads is defined and junction_metrics.splice_junction_reads != 'N/A' %}
+                    {% if junction_metrics.splice_junction_reads is defined and junction_metrics.splice_junction_reads not in ('N/A', 'NA', '') %}
                     <tr>
                         <td>Splice-Junction Spanning Reads</td>
                         <td class="pc-num">{{ junction_metrics.splice_junction_reads }} ({{ junction_metrics.splice_junctions_covered }}/{{ junction_metrics.splice_junction_count }} junctions)</td>
                     </tr>
                     {% endif %}
-                    {% if junction_metrics.splice_junction_events is defined and junction_metrics.splice_junction_events != 'N/A' %}
+                    {% if junction_metrics.splice_junction_events is defined and junction_metrics.splice_junction_events not in ('N/A', 'NA', '') %}
                     <tr>
                         <td>Splice-Junction Events</td>
                         <td class="pc-num">{{ junction_metrics.splice_junction_events }}</td>
                     </tr>
                     {% endif %}
-                    {% if junction_metrics.exon_intron_boundary_reads is defined and junction_metrics.exon_intron_boundary_reads != 'N/A' %}
+                    {% if junction_metrics.exon_intron_boundary_reads is defined and junction_metrics.exon_intron_boundary_reads not in ('N/A', 'NA', '') %}
                     <tr>
                         <td>Exon-Intron Boundary Reads</td>
                         <td class="pc-num">{{ junction_metrics.exon_intron_boundary_reads }}</td>
                     </tr>
                     {% endif %}
-                    {% if junction_metrics.estimated_contamination_fraction is defined and junction_metrics.estimated_contamination_fraction != 'N/A' %}
+                    {% if junction_metrics.estimated_contamination_fraction is defined and junction_metrics.estimated_contamination_fraction not in ('N/A', 'NA', '') %}
                     <tr>
                         <td>Estimated Contamination Fraction</td>
                         <td class="pc-num">{{ junction_metrics.estimated_contamination_fraction }}</td>
                     </tr>
                     {% endif %}
-                    {% if junction_metrics.exon_lengths != 'N/A' %}
+                    {% if junction_metrics.exon_lengths not in ('N/A', 'NA', '') %}
                     <tr>
                         <td>Exon Lengths (bp)</td>
                         <td class="pc-num" title="{{ junction_metrics.exon_lengths }}">
@@ -1143,7 +1307,7 @@
                         </td>
                     </tr>
                     {% endif %}
-                    {% if junction_metrics.intron_lengths != 'N/A' %}
+                    {% if junction_metrics.intron_lengths not in ('N/A', 'NA', '') %}
                     <tr>
                         <td>Intron Lengths (bp)</td>
                         <td class="pc-num" title="{{ junction_metrics.intron_lengths }}">
@@ -1157,6 +1321,76 @@
         {% endif %}
     </div>
 
+    <!-- ---- Interactive Alignment Inspector (igv.js) ------ -->
+    <section class="pc-card" id="sec-igv">
+        <div class="pc-igv-header-row">
+            <div>
+                <h2 class="pc-card-header">Plasmid &amp; Junction Alignment Inspector</h2>
+                <p class="pc-card-subtitle" style="margin-bottom: 0;">
+                    Self-contained offline alignment viewer (<code>igv.js {{ igv_version | default('3.0.2') }}</code>) showing plasmid read pileups, soft-clips, and junction boundaries without external network calls.
+                </p>
+            </div>
+            <div class="pc-igv-meta-pills">
+                {% if igv_embedded %}
+                <span class="pc-igv-pill">
+                    Embedded Reads: {{ "{:,}".format(igv_read_count | default(0)) }}{% if igv_downsampled %} (subsampled){% endif %}
+                </span>
+                {% endif %}
+                {% if igv_session_relpath %}
+                <a class="pc-igv-pill" href="{{ igv_session_relpath }}" download>
+                    Desktop IGV Session (igv_session.xml)
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if igv_embedded and interactive %}
+            {% if igv_loci %}
+            <div class="pc-loci-table-wrap">
+                <table class="pc-loci-table" id="igvLociTable">
+                    <thead>
+                        <tr>
+                            <th>Diagnostic Locus</th>
+                            <th>Feature Type</th>
+                            <th>Coordinates</th>
+                            <th>Description</th>
+                            <th style="text-align: right;">View</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in igv_loci %}
+                        <tr class="{% if loop.index0 == (1 if igv_loci|length > 1 else 0) %}is-selected{% endif %}">
+                            <td><strong>{{ item.label }}</strong></td>
+                            <td>{{ item.type }}</td>
+                            <td class="pc-locus-coord">{{ item.locus }}</td>
+                            <td>{{ item.note }}</td>
+                            <td style="text-align: right;">
+                                <button
+                                    type="button"
+                                    class="pc-locus-btn"
+                                    data-locus="{{ item.locus }}"
+                                    aria-selected="{{ 'true' if loop.index0 == (1 if igv_loci|length > 1 else 0) else 'false' }}"
+                                >
+                                    {{ 'Showing' if loop.index0 == (1 if igv_loci|length > 1 else 0) else 'Show' }}
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            <div id="igvState" class="pc-igv-state" role="status" aria-live="polite">
+                Decompressing offline <code>igv.js {{ igv_version | default('3.0.2') }}</code> bundle and initializing plasmid alignment tracks&hellip;
+            </div>
+            <div id="igvDiv" class="pc-igv-viewport"></div>
+        {% else %}
+            <div id="igvState" class="pc-igv-state" role="status">
+                {{ igv_absence_detail | default('Alignment BAM and plasmid reference FASTA are not present in this report directory.') }}
+            </div>
+        {% endif %}
+    </section>
+
     <!-- ---- Run Details (collapsible) --------------------- -->
     <details class="pc-details-toggle">
         <summary>Run Details &amp; Provenance</summary>
@@ -1165,6 +1399,16 @@
                 <span class="pc-detail-label">PlasmiCheck Version</span>
                 <span class="pc-detail-value">{{ version }}</span>
             </div>
+            <div class="pc-detail-row">
+                <span class="pc-detail-label">Alignment Browser</span>
+                <span class="pc-detail-value">igv.js {{ igv_version | default('3.0.2') }} (SHA-256: {{ (igv_sha256 | default(''))[:16] }}&hellip;, {% if igv_embedded and interactive %}embedded offline{% else %}{{ igv_absence_reason | default('not embedded') }}{% endif %})</span>
+            </div>
+            {% if igv_session_relpath %}
+            <div class="pc-detail-row">
+                <span class="pc-detail-label">IGV Session XML</span>
+                <span class="pc-detail-value">{{ igv_session_relpath }}</span>
+            </div>
+            {% endif %}
             {% if human_fasta and human_fasta != 'None' %}
             <div class="pc-detail-row">
                 <span class="pc-detail-label">Human Reference</span>
@@ -1228,6 +1472,89 @@
     window.addEventListener('resize', function() {
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(resizePlots, 150);
+    });
+})();
+</script>
+{% endif %}
+
+{% if interactive and igv_embedded and igv_payload %}
+<script>
+{{ igv_payload|safe }}
+(function() {
+    var stateEl = document.getElementById('igvState');
+    var igvDiv = document.getElementById('igvDiv');
+    var lociTable = document.getElementById('igvLociTable');
+    var igvBrowser = null;
+
+    function setStatus(msg, cls) {
+        if (!stateEl) return;
+        stateEl.textContent = msg;
+        stateEl.className = 'pc-igv-state' + (cls ? ' ' + cls : '');
+    }
+
+    function selectLocusButton(btn) {
+        if (!lociTable || !btn) return;
+        var buttons = lociTable.querySelectorAll('.pc-locus-btn');
+        buttons.forEach(function(b) {
+            var active = (b === btn);
+            b.setAttribute('aria-selected', active ? 'true' : 'false');
+            b.textContent = active ? 'Showing' : 'Show';
+            var row = b.closest('tr');
+            if (row) {
+                row.classList.toggle('is-selected', active);
+            }
+        });
+        var locus = btn.getAttribute('data-locus');
+        if (locus && igvBrowser && typeof igvBrowser.search === 'function') {
+            igvBrowser.search(locus);
+        }
+    }
+
+    if (lociTable) {
+        lociTable.addEventListener('click', function(ev) {
+            var btn = ev.target.closest('.pc-locus-btn');
+            if (btn) selectLocusButton(btn);
+        });
+        lociTable.addEventListener('keydown', function(ev) {
+            if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+            var buttons = Array.prototype.slice.call(lociTable.querySelectorAll('.pc-locus-btn'));
+            var idx = buttons.indexOf(document.activeElement);
+            if (idx === -1) return;
+            ev.preventDefault();
+            var nextIdx = ev.key === 'ArrowDown'
+                ? Math.min(buttons.length - 1, idx + 1)
+                : Math.max(0, idx - 1);
+            buttons[nextIdx].focus();
+            selectLocusButton(buttons[nextIdx]);
+        });
+    }
+
+    async function loadOfflineIgv() {
+        if (typeof DecompressionStream === 'undefined') {
+            setStatus('Browser does not support DecompressionStream("gzip"); open igv_session.xml in desktop IGV.', 'is-error');
+            return;
+        }
+        try {
+            var binary = atob(IGV_GZ_B64);
+            var bytes = new Uint8Array(binary.length);
+            for (var i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+            var code = await new Response(stream).text();
+            (0, eval)(code);
+            if (!window.igv || typeof window.igv.createBrowser !== 'function') {
+                throw new Error('igv.createBrowser unavailable after bundle evaluation');
+            }
+            igvBrowser = await window.igv.createBrowser(igvDiv, IGV_BROWSER_OPTIONS);
+            setStatus('Offline igv.js alignment browser active — click any diagnostic locus above or drag tracks to inspect reads.', 'is-ready');
+        } catch (err) {
+            setStatus('Unable to initialize embedded IGV view: ' + (err && err.message ? err.message : String(err)), 'is-error');
+        }
+    }
+
+    window.addEventListener('load', function() {
+        loadOfflineIgv();
     });
 })();
 </script>

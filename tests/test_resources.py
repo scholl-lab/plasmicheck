@@ -28,6 +28,12 @@ class TestGetResourcePath:
         assert path.exists()
 
     @pytest.mark.unit
+    def test_resolves_igv_bundle(self) -> None:
+        path = get_resource_path("static/js/igv-3.0.2.min.js.gz")
+        assert path.is_file()
+        assert path.stat().st_size > 100_000
+
+    @pytest.mark.unit
     def test_nonexistent_returns_path(self) -> None:
         path = get_resource_path("does_not_exist.txt")
         assert isinstance(path, Path)

@@ -173,14 +173,18 @@
         }
         .pc-section > summary::-webkit-details-marker { display: none; }
         .pc-section > summary::before {
-            content: '\25B6';
-            font-size: 0.72rem;
-            line-height: 1.3;
-            color: var(--pc-text-muted);
+            content: '';
+            display: inline-block;
+            width: 0.42rem;
+            height: 0.42rem;
+            border-right: 1.75px solid var(--pc-text-muted);
+            border-bottom: 1.75px solid var(--pc-text-muted);
+            transform: rotate(-45deg);
             transition: transform 0.18s ease;
+            flex-shrink: 0;
         }
         .pc-section[open] > summary::before {
-            transform: rotate(90deg);
+            transform: rotate(45deg);
         }
         .pc-section > summary h2 {
             font-size: 1.15rem;
@@ -595,11 +599,11 @@
                                 Counts reads overlapping the <strong>cDNA insert boundaries (&plusmn;100 bp)</strong> that exhibit sequence mismatches (<code>NM &gt; 0</code>) or soft/hard clipping (<code>S</code>/<code>H</code> CIGAR operations) when aligned to the plasmid reference.
                             </p>
                             <div style="display: grid; gap: 0.65rem; font-size: 0.83rem; line-height: 1.5;">
-                                <div style="background: #f0f9ff; border-left: 3px solid #0284c7; padding: 0.6rem 0.85rem; border-radius: 4px;">
+                                <div style="background: #f0f9ff; border: 1px solid #bae6fd; padding: 0.65rem 0.9rem; border-radius: 8px;">
                                     <strong style="color: #0369a1;">Native Genomic Reads (Clean Sample)</strong><br>
                                     <span style="color: var(--pc-text-secondary);">Reads spanning exon&ndash;intron or UTR boundaries diverge from the plasmid vector cloning site, producing soft-clipped tails and elevated boundary mismatch counts relative to clean insert interiors.</span>
                                 </div>
-                                <div style="background: #fef2f2; border-left: 3px solid #dc2626; padding: 0.6rem 0.85rem; border-radius: 4px;">
+                                <div style="background: #fef2f2; border: 1px solid #fecaca; padding: 0.65rem 0.9rem; border-radius: 8px;">
                                     <strong style="color: #991b1b;">Plasmid-Derived Reads (Contaminated Sample)</strong><br>
                                     <span style="color: var(--pc-text-secondary);">Reads crossing the vector&ndash;insert junction align contiguously into the plasmid backbone without clipping, while high total read depth at the insert boundary can also elevate raw boundary counts alongside high backbone coverage.</span>
                                 </div>

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import base64
+import gzip
+import hashlib
+import json
 import logging
 import math
 import os
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -29,6 +35,11 @@ PLOT_SAMPLE_REPORT: dict[str, Any] = _cfg["plot_sample_report"]
 TEMPLATE_DIR: str = _cfg["paths"]["template_dir"]
 LOGO_PATH: str = _cfg["paths"]["logo_path"]
 DOWNSAMPLE_LIMIT: int = PLOT_SAMPLE_REPORT.get("max_rows_for_interactive_plots", 5000)
+
+IGV_VERSION = "3.0.2"
+IGV_ASSET_RELPATH = "static/js/igv-3.0.2.min.js.gz"
+IGV_GZIP_SHA256 = "0d8b512654b2ef588009453c403c8f1329dce88eedca90ba9e60888af6b2f79f"
+IGV_SHA256 = "ab1aa79c514ee3a0d66a0ffc788b6d37803910e62cf6d114d9b2909d96b5e790"
 
 # Setup logging for the libraries used in this script
 logging.getLogger("jinja2").setLevel(logging.ERROR)
@@ -395,6 +406,299 @@ def _truncate_list_filter(value: str, max_items: int = 5) -> str:
     return truncate_comma_separated(value, max_items)
 
 
+def _load_verified_igv_b64() -> str:
+    """Load vendored igv.min.js.gz, verify compressed & decompressed SHA-256, return base64."""
+    igv_path = get_resource_path(IGV_ASSET_RELPATH)
+    gz_bytes = Path(igv_path).read_bytes()
+    actual_gz_sha = hashlib.sha256(gz_bytes).hexdigest()
+    if actual_gz_sha != IGV_GZIP_SHA256:
+        raise RuntimeError(
+            f"Vendored {IGV_ASSET_RELPATH} compressed SHA-256 mismatch: "
+            f"expected {IGV_GZIP_SHA256}, got {actual_gz_sha}"
+        )
+    raw_bytes = gzip.decompress(gz_bytes)
+    actual_sha = hashlib.sha256(raw_bytes).hexdigest()
+    if actual_sha != IGV_SHA256:
+        raise RuntimeError(
+            f"Vendored {IGV_ASSET_RELPATH} decompressed SHA-256 mismatch: "
+            f"expected {IGV_SHA256}, got {actual_sha}"
+        )
+    return base64.b64encode(gz_bytes).decode("ascii")
+
+
+def _build_igv_context(
+    output_folder: str,
+    reports_dir: str | None = None,
+    anonymize: bool = False,
+    max_reads: int = 300,
+    max_raw_bam_bytes: int = 262_144,
+) -> dict[str, Any]:
+    """Build self-contained igv.js alignment inspector context from pipeline artifacts."""
+    report_dir = Path(reports_dir if reports_dir else output_folder)
+    base_dir = Path(output_folder)
+    session_xml_path = base_dir / "igv_session.xml"
+    session_rel = (
+        os.path.relpath(session_xml_path, report_dir) if session_xml_path.is_file() else ""
+    )
+
+    base_ctx: dict[str, Any] = {
+        "igv_embedded": False,
+        "igv_version": IGV_VERSION,
+        "igv_sha256": IGV_SHA256,
+        "igv_absence_reason": "artifacts_absent",
+        "igv_absence_detail": (
+            "Alignment BAM and plasmid reference FASTA are not present in this report directory "
+            "(run with --keep-intermediate to retain desktop igv_session.xml and raw BAMs)."
+        ),
+        "igv_loci": [],
+        "igv_session_relpath": session_rel,
+        "igv_downsampled": False,
+        "igv_read_count": 0,
+        "igv_payload": "",
+    }
+
+    if anonymize:
+        base_ctx["igv_absence_reason"] = "anonymized"
+        base_ctx["igv_absence_detail"] = (
+            "Interactive read-level alignment browser is withheld because --anonymize was enabled "
+            "(raw read sequences, QNAMEs, and intermediate BAMs are redacted)."
+        )
+        return base_ctx
+
+    bam_candidates = [
+        base_dir / "alignments" / "plasmid_alignment.bam",
+        base_dir / "plasmid_alignment.bam",
+    ]
+    bam_path = next((p for p in bam_candidates if p.is_file() and p.stat().st_size > 0), None)
+
+    ref_dir = base_dir / "references"
+    fasta_candidates = sorted(ref_dir.glob("*.fasta")) if ref_dir.is_dir() else []
+    if not fasta_candidates:
+        fasta_candidates = sorted(base_dir.glob("*.fasta"))
+    fasta_path = next(
+        (
+            p
+            for p in fasta_candidates
+            if not p.name.endswith("spliced_reference.fasta") and p.stat().st_size > 0
+        ),
+        None,
+    )
+
+    if bam_path is None or fasta_path is None:
+        return base_ctx
+
+    try:
+        import pysam
+
+        # Verify BGZF magic header before opening with pysam so mock text files fall back cleanly
+        if bam_path.read_bytes()[:4] != b"\x1f\x8b\x08\x04":
+            return base_ctx
+
+        fasta_bytes = fasta_path.read_bytes()
+        seq_name = "plasmid"
+        seq_len = 0
+        for line in fasta_bytes.decode("utf-8", errors="replace").splitlines():
+            line_s = line.strip()
+            if line_s.startswith(">"):
+                seq_name = line_s[1:].split()[0]
+            elif line_s:
+                seq_len += len(line_s)
+        if seq_len <= 0:
+            return base_ctx
+
+        cdna_candidates = [
+            base_dir / "data" / "cDNA_positions.txt",
+            base_dir / "cDNA_positions.txt",
+        ]
+        cdna_path = next((p for p in cdna_candidates if p.is_file()), None)
+        insert_start: int | None = None
+        insert_end: int | None = None
+        exon_lengths: list[int] = []
+        if cdna_path is not None:
+            for line in cdna_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("cDNA start position in plasmid:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val not in ("N/A", "NA", ""):
+                        insert_start = int(val)
+                elif line.startswith("cDNA end position in plasmid:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val not in ("N/A", "NA", ""):
+                        insert_end = int(val)
+                elif line.startswith("ExonLengths:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val not in ("N/A", "NA", ""):
+                        exon_lengths = [int(x) for x in val.split(",") if x.strip().isdigit()]
+
+        bed_lines: list[str] = []
+        loci: list[dict[str, str]] = [
+            {
+                "label": "Full Construct",
+                "type": "Plasmid Reference",
+                "locus": f"{seq_name}:1-{seq_len}",
+                "note": f"{seq_len:,} bp circular construct",
+            }
+        ]
+
+        if insert_start is not None and insert_end is not None and insert_end > insert_start:
+            bed_lines.append(
+                f"{seq_name}\t{insert_start}\t{insert_end + 1}\tcDNA_Insert\t1000\t+\t"
+                f"{insert_start}\t{insert_end + 1}\t37,99,235"
+            )
+            b5_lo = max(0, insert_start - 15)
+            b5_hi = min(seq_len, insert_start + 15)
+            b3_lo = max(0, insert_end - 15)
+            b3_hi = min(seq_len, insert_end + 15)
+            bed_lines.append(
+                f"{seq_name}\t{b5_lo}\t{b5_hi}\t5p_Vector_Junction\t1000\t+\t{b5_lo}\t{b5_hi}\t220,38,38"
+            )
+            bed_lines.append(
+                f"{seq_name}\t{b3_lo}\t{b3_hi}\t3p_Vector_Junction\t1000\t+\t{b3_lo}\t{b3_hi}\t220,38,38"
+            )
+            pad_lo = max(1, insert_start - 150)
+            pad_hi = min(seq_len, insert_end + 150)
+            loci.append(
+                {
+                    "label": "cDNA Insert",
+                    "type": "Insert Region",
+                    "locus": f"{seq_name}:{pad_lo}-{pad_hi}",
+                    "note": f"{insert_end - insert_start + 1:,} bp insert (±150 bp flank)",
+                }
+            )
+            loci.append(
+                {
+                    "label": "5' Vector-Insert Boundary",
+                    "type": "Vector Junction",
+                    "locus": f"{seq_name}:{max(1, insert_start - 120)}-{min(seq_len, insert_start + 120)}",
+                    "note": f"Coordinate {insert_start:,} bp",
+                }
+            )
+            loci.append(
+                {
+                    "label": "3' Vector-Insert Boundary",
+                    "type": "Vector Junction",
+                    "locus": f"{seq_name}:{max(1, insert_end - 120)}-{min(seq_len, insert_end + 120)}",
+                    "note": f"Coordinate {insert_end:,} bp",
+                }
+            )
+            if len(exon_lengths) > 1 and sum(exon_lengths) <= (insert_end - insert_start + 5):
+                cursor = insert_start
+                for idx, ex_len in enumerate(exon_lengths, start=1):
+                    ex_end = min(seq_len, cursor + ex_len)
+                    bed_lines.append(
+                        f"{seq_name}\t{cursor}\t{ex_end}\tExon_{idx}\t1000\t+\t"
+                        f"{cursor}\t{ex_end}\t13,148,136"
+                    )
+                    if idx < len(exon_lengths):
+                        j_pos = ex_end
+                        loci.append(
+                            {
+                                "label": f"Splice Junction {idx} (Exon {idx}/{idx + 1})",
+                                "type": "Exon-Exon Junction",
+                                "locus": f"{seq_name}:{max(1, j_pos - 100)}-{min(seq_len, j_pos + 100)}",
+                                "note": f"Coordinate {j_pos:,} bp",
+                            }
+                        )
+                    cursor = ex_end
+
+        mapped_reads = 0
+        downsampled = False
+        with pysam.AlignmentFile(str(bam_path), "rb") as in_bam:
+            primary_mapped = [
+                r for r in in_bam.fetch(until_eof=True) if not r.is_unmapped and not r.is_secondary
+            ]
+            mapped_reads = len(primary_mapped)
+            if bam_path.stat().st_size <= max_raw_bam_bytes and mapped_reads <= max_reads:
+                bam_bytes = bam_path.read_bytes()
+            else:
+                downsampled = mapped_reads > max_reads
+                step = max(1, mapped_reads // max_reads) if mapped_reads > max_reads else 1
+                selected = primary_mapped[::step][:max_reads]
+                mapped_reads = len(selected)
+                with tempfile.NamedTemporaryFile(suffix=".bam", delete=False) as tmp_bam:
+                    tmp_bam_name = tmp_bam.name
+                try:
+                    with pysam.AlignmentFile(tmp_bam_name, "wb", header=in_bam.header) as out_bam:
+                        for r in selected:
+                            out_bam.write(r)
+                    bam_bytes = Path(tmp_bam_name).read_bytes()
+                finally:
+                    if os.path.exists(tmp_bam_name):
+                        os.remove(tmp_bam_name)
+
+        igv_gz_b64 = _load_verified_igv_b64()
+        fasta_uri = "data:application/octet-stream;base64," + base64.b64encode(fasta_bytes).decode(
+            "ascii"
+        )
+        bam_uri = "data:application/octet-stream;base64," + base64.b64encode(bam_bytes).decode(
+            "ascii"
+        )
+        bed_uri = (
+            "data:application/octet-stream;base64,"
+            + base64.b64encode(("\n".join(bed_lines) + "\n").encode("utf-8")).decode("ascii")
+            if bed_lines
+            else ""
+        )
+
+        tracks: list[dict[str, Any]] = []
+        if bed_uri:
+            tracks.append(
+                {
+                    "name": "Plasmid Regions & Junctions",
+                    "type": "annotation",
+                    "format": "bed",
+                    "url": bed_uri,
+                    "indexed": False,
+                    "displayMode": "EXPANDED",
+                    "height": 68,
+                }
+            )
+        tracks.append(
+            {
+                "name": f"Plasmid Alignments ({mapped_reads} reads)",
+                "type": "alignment",
+                "format": "bam",
+                "url": bam_uri,
+                "indexed": False,
+                "showCoverage": True,
+                "showSoftClips": True,
+                "colorBy": "strand",
+                "height": 300,
+            }
+        )
+
+        browser_options = {
+            "loadDefaultGenomes": False,
+            "reference": {
+                "id": seq_name,
+                "name": seq_name,
+                "fastaURL": fasta_uri,
+                "indexed": False,
+            },
+            "locus": loci[1]["locus"] if len(loci) > 1 else loci[0]["locus"],
+            "tracks": tracks,
+        }
+        payload_js = (
+            f"const IGV_GZ_B64 = {json.dumps(igv_gz_b64)};\n"
+            f"const IGV_BROWSER_OPTIONS = {json.dumps(browser_options)};"
+        )
+
+        return {
+            "igv_embedded": True,
+            "igv_version": IGV_VERSION,
+            "igv_sha256": IGV_SHA256,
+            "igv_absence_reason": "",
+            "igv_absence_detail": "",
+            "igv_loci": loci,
+            "igv_session_relpath": session_rel,
+            "igv_downsampled": downsampled,
+            "igv_read_count": mapped_reads,
+            "igv_payload": payload_js,
+        }
+    except Exception as exc:
+        logging.warning("Skipping embedded IGV inspector: %s", exc)
+        return base_ctx
+
+
 def generate_report(
     summary_df: pd.DataFrame,
     output_folder: str,
@@ -443,6 +747,7 @@ def generate_report(
     reports_dir: str | None = None,
     junction_metrics: dict[str, str] | None = None,
     anonymize: bool = False,
+    igv_context: dict[str, Any] | None = None,
 ) -> None:
     from jinja2 import Environment, FileSystemLoader
 
@@ -456,6 +761,10 @@ def generate_report(
         sequencing_file = _shown(sequencing_file)
         if command_line:
             command_line = " ".join(_shown(a) for a in command_line.split())
+
+    resolved_igv = igv_context or _build_igv_context(
+        output_folder, reports_dir=reports_dir, anonymize=anonymize
+    )
 
     logging.info("Generating report")
     env = Environment(
@@ -524,6 +833,7 @@ def generate_report(
         coverage_metrics=coverage_metrics or {},
         coverage_fallback=coverage_fallback,
         junction_metrics=junction_metrics or {},
+        **resolved_igv,
     )
 
     # Save interactive HTML report
@@ -538,6 +848,15 @@ def generate_report(
         # Convert the static PNG files to Base64
         boxplot_png_base64 = encode_image_to_base64(boxplot_filename_png)
         scatter_png_base64 = encode_image_to_base64(scatter_filename_png)
+        static_igv = {
+            **resolved_igv,
+            "igv_embedded": False,
+            "igv_payload": "",
+            "igv_absence_reason": "static_report",
+            "igv_absence_detail": (
+                "Interactive IGV alignment browser is only active in report_interactive.html."
+            ),
+        }
 
         # Render the non-interactive HTML report
         html_content_non_interactive = template.render(
@@ -585,6 +904,7 @@ def generate_report(
             coverage_metrics=coverage_metrics or {},
             coverage_fallback=coverage_fallback,
             junction_metrics=junction_metrics or {},
+            **static_igv,
         )
 
         # Save non-interactive HTML report

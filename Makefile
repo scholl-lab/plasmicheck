@@ -57,7 +57,7 @@ smoke-package: build ## Smoke-test built wheel and sdist in an isolated temp ven
 		$(UV) venv --quiet --clear "$$tmp/venv"; \
 		$(UV) pip sync --quiet --python "$$tmp/venv/bin/python" "$$tmp/reqs.txt"; \
 		$(UV) pip install --quiet --python "$$tmp/venv/bin/python" --no-deps "$$artifact"; \
-		(cd "$$tmp" && "$$tmp/venv/bin/plasmicheck" --version >/dev/null && "$$tmp/venv/bin/python" -c 'import sys; from pathlib import Path; import plasmicheck; from plasmicheck.resources import get_resource_path; assert Path(plasmicheck.__file__).is_relative_to(Path(sys.prefix)); [ None for r in ("config.json", "py.typed", "templates/report_template.html", "templates/summary_template.html", "static/img/plasmicheck_ascii.txt", "static/img/plasmicheck_logo.svg", "static/img/plasmicheck_logo_200px.png", "static/img/plasmicheck_logo_600px.png") if not get_resource_path(r).is_file() and (_ for _ in ()).throw(AssertionError(r)) ]'); \
+		(cd "$$tmp" && "$$tmp/venv/bin/plasmicheck" --version >/dev/null && "$$tmp/venv/bin/python" -c 'import sys; from pathlib import Path; import plasmicheck; from plasmicheck.resources import get_resource_path; assert Path(plasmicheck.__file__).is_relative_to(Path(sys.prefix)); [ None for r in ("config.json", "py.typed", "templates/report_template.html", "templates/summary_template.html", "static/img/plasmicheck_ascii.txt", "static/img/plasmicheck_logo.svg", "static/img/plasmicheck_logo_200px.png", "static/img/plasmicheck_logo_600px.png", "static/js/igv-3.0.2.min.js.gz") if not get_resource_path(r).is_file() and (_ for _ in ()).throw(AssertionError(r)) ]'); \
 	done
 
 ci-check: check test smoke-package ## Run full CI gates locally (including lint-actions & integration when tools exist)
