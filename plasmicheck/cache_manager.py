@@ -195,7 +195,7 @@ class CacheManager:
         """
         p_md5 = _resolve_md5(plasmid_md5)
         h_md5 = _resolve_md5(human_md5)
-        key = f"{p_md5}:{h_md5}:{padding}:v2"
+        key = f"{p_md5}:{h_md5}:{padding}:v3"
         cache_key = hashlib.md5(key.encode()).hexdigest()
 
         with FileLock(str(self.cache_dir / ".cache.lock"), timeout=300):
@@ -253,7 +253,7 @@ class CacheManager:
         """
         p_md5 = _resolve_md5(plasmid_md5)
         h_md5 = _resolve_md5(human_md5)
-        key = f"{p_md5}:{h_md5}:{padding}:v2"
+        key = f"{p_md5}:{h_md5}:{padding}:v3"
         cache_key = hashlib.md5(key.encode()).hexdigest()
 
         cached_bam = self.spliced_dir / f"{cache_key}.bam"
@@ -429,7 +429,3 @@ class CacheManager:
 
             logger.info(f"Cleaned all cache entries ({entry_count} entries removed)")
             return entry_count
-
-    def clear_all(self) -> int:
-        """Alias for clean_all()."""
-        return self.clean_all()

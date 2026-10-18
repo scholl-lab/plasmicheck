@@ -21,7 +21,9 @@ if TYPE_CHECKING:
 _cfg = get_config()
 
 
-def get_depth_array(bam_path: str, contig: str, start: int, end: int) -> npt.NDArray[Any]:
+def get_depth_array(
+    bam_path: str, contig: str, start: int, end: int, read_callback: Any = "all"
+) -> npt.NDArray[Any]:
     """Extract per-base depth array for a genomic region.
 
     Args:
@@ -29,6 +31,7 @@ def get_depth_array(bam_path: str, contig: str, start: int, end: int) -> npt.NDA
         contig: Reference contig name
         start: 0-based inclusive start position
         end: 0-based exclusive end position (half-open interval)
+        read_callback: Filter callback or "all"/"nofilter" passed to pysam.count_coverage
 
     Returns:
         Numpy array of per-base depths. Empty array if start >= end.
@@ -48,7 +51,7 @@ def get_depth_array(bam_path: str, contig: str, start: int, end: int) -> npt.NDA
             start=start,
             stop=end,
             quality_threshold=0,  # Include all bases (match alignment behavior)
-            read_callback="all",
+            read_callback=read_callback,
         )
         # Sum A, C, G, T counts to get total depth per position
         depth: npt.NDArray[Any] = (

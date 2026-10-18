@@ -17,7 +17,6 @@ from .utils import sanitize_filename
 
 _cfg = get_config()
 DEFAULT_SHIFT_BASES: int = _cfg["shift_bases"]
-CONVERSION_CONFIG: dict[str, Any] = _cfg["conversion"]
 
 
 def convert_plasmidfile_to_fasta(

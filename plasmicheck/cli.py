@@ -223,6 +223,12 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_compare.add_argument(
         "-o", "--output_basename", help="Basename for output files", required=True
     )
+    parser_compare.add_argument(
+        "--anonymize",
+        action="store_true",
+        default=False,
+        help="Anonymize read IDs in output TSV",
+    )
 
     # Spliced Command
     parser_spliced = subparsers.add_parser(
@@ -370,6 +376,12 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         action="store_true",
         help="Disable caching for this run",
     )
+    parser_pipeline.add_argument(
+        "--anonymize",
+        action="store_true",
+        default=False,
+        help="Anonymize read IDs in output TSV and delete intermediate BAMs",
+    )
 
     # Report Command
     parser_report = subparsers.add_parser(
@@ -388,6 +400,12 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     )
     parser_report.add_argument(
         "-o", "--output_folder", help="Folder to write the report and plots", required=True
+    )
+    parser_report.add_argument(
+        "--anonymize",
+        action="store_true",
+        default=False,
+        help="Anonymize file paths in HTML report",
     )
 
     # Summary Reports Command
@@ -502,7 +520,13 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     elif args.command == "compare":
         from .scripts.compare_alignments import compare_alignments
 
-        compare_alignments(args.plasmid_bam, args.human_bam, args.output_basename, args.threshold)
+        compare_alignments(
+            args.plasmid_bam,
+            args.human_bam,
+            args.output_basename,
+            args.threshold,
+            anonymize=args.anonymize,
+        )
     elif args.command == "spliced":
         from .scripts.spliced_alignment import (
             extract_human_reference,
@@ -548,6 +572,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             threads=args.threads,
             cache_dir=args.cache_dir,
             no_cache=args.no_cache,
+            anonymize=args.anonymize,
         )
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report
@@ -562,6 +587,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             static_report=args.static_report,
             plotly_mode=args.plotly_mode,
             plot_backend=args.plot_backend,
+            anonymize=args.anonymize,
         )
     elif args.command == "summary_reports":
         from .scripts.generate_summary_reports import main as generate_summary_reports

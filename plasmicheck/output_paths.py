@@ -165,6 +165,11 @@ class OutputPaths:
         """MD5 checksum file (at base level, covers all subdirs)."""
         return self.base / "md5sum.txt"
 
+    @property
+    def igv_session(self) -> Path:
+        """IGV session file; resource paths inside are relative to base."""
+        return self.base / "igv_session.xml"
+
     # -------------------------------------------------------------------------
     # Methods
     # -------------------------------------------------------------------------

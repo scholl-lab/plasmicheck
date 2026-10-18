@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
+from plasmicheck.output_paths import OutputPaths
 from plasmicheck.scripts.run_pipeline import (
     CombinationResult,
     PipelinePlan,
@@ -18,6 +20,7 @@ from plasmicheck.scripts.run_pipeline import (
     read_file_list,
     resolve_sequencing_inputs,
     run_pipeline,
+    write_igv_session,
 )
 
 
@@ -795,3 +798,311 @@ def test_pipeline_passes_cdna_positions_file_to_compare_alignments(
 
     assert compare.call_count == 1
     assert compare.call_args.kwargs["cdna_positions_file"] == custom_cdna
+
+
+@pytest.mark.unit
+def test_write_igv_session_relative_paths(tmp_path: Path) -> None:
+    """Verify write_igv_session produces valid XML with relative paths."""
+    paths = OutputPaths(tmp_path, "sample1", "plasmid1")
+    write_igv_session(paths)
+
+    assert paths.igv_session.exists()
+    tree = ET.parse(paths.igv_session)
+    root = tree.getroot()
+    assert root.tag == "Session"
+    assert root.attrib["genome"] == paths.plasmid_fasta.relative_to(paths.base).as_posix()
+    assert root.attrib["version"] == "8"
+
+    resources = root.find("Resources")
+    assert resources is not None
+    resource = resources.find("Resource")
+    assert resource is not None
+    assert resource.attrib["path"] == paths.plasmid_bam.relative_to(paths.base).as_posix()
+
+    content = paths.igv_session.read_text()
+    assert str(tmp_path) not in content
+    assert str(paths.base) not in content
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("keep_intermediate,expected_exists", [(True, True), (False, False)])
+def test_pipeline_generates_igv_session_when_keep_intermediate(
+    synthetic_data_dir: Path, tmp_path: Path, keep_intermediate: bool, expected_exists: bool
+) -> None:
+    """Verify IGV session generation is gated on keep_intermediate."""
+    output_dir = tmp_path / f"output_{keep_intermediate}"
+
+    def fake_align(index: str, reads: str, out_bam: str, *args: object, **kwargs: object) -> None:
+        Path(out_bam).parent.mkdir(parents=True, exist_ok=True)
+        Path(out_bam).write_bytes(b"BAM data")
+
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads", side_effect=fake_align),
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+    ):
+        run_pipeline(
+            human_fasta=str(synthetic_data_dir / "human_ref.fasta"),
+            plasmid_files=str(synthetic_data_dir / "plasmid.gb"),
+            sequencing_files_r1=str(synthetic_data_dir / "contaminated_R1.fastq"),
+            output_folder=str(output_dir),
+            keep_intermediate=keep_intermediate,
+            md5_level="none",
+            no_cache=True,
+        )
+
+    igv_files = list(output_dir.glob("**/igv_session.xml"))
+    if expected_exists:
+        assert len(igv_files) == 1
+    else:
+        assert len(igv_files) == 0
+
+
+@pytest.mark.unit
+def test_pipeline_anonymize_flag(
+    synthetic_data_dir: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Verify run_pipeline --anonymize forces keep_intermediate=False, logs warning, and redacts paths."""
+    output_dir = tmp_path / "output_anon"
+
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments") as mock_compare,
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report") as mock_report,
+    ):
+        run_pipeline(
+            human_fasta=str(synthetic_data_dir / "human_ref.fasta"),
+            plasmid_files=str(synthetic_data_dir / "plasmid.gb"),
+            sequencing_files_r1=str(synthetic_data_dir / "contaminated_R1.fastq"),
+            output_folder=str(output_dir),
+            keep_intermediate=True,
+            anonymize=True,
+            md5_level="none",
+            no_cache=True,
+        )
+
+    # Check warning was logged
+    assert any("--anonymize deletes intermediate BAMs" in r.message for r in caplog.records)
+
+    # Check compare_alignments received anonymize=True and 16-byte key
+    assert mock_compare.call_count == 1
+    assert mock_compare.call_args.kwargs["anonymize"] is True
+    key = mock_compare.call_args.kwargs["anonymize_key"]
+    assert isinstance(key, bytes)
+    assert len(key) == 16
+
+    # Check generate_report received anonymize=True and redacted paths
+    assert mock_report.call_count == 1
+    kwargs = mock_report.call_args.kwargs
+    assert kwargs["anonymize"] is True
+    assert kwargs["human_fasta"] == "human_ref.fasta"
+    assert kwargs["plasmid_gb"] == "plasmid.gb"
+    assert kwargs["sequencing_file"] == "contaminated_R1.fastq"
+    assert "/" not in kwargs["human_fasta"]
+    assert "/" not in kwargs["plasmid_gb"]
+    assert "/" not in kwargs["sequencing_file"]
+
+
+@pytest.mark.unit
+def test_spliced_fasta_index_caching(tmp_path: Path) -> None:
+    """Verify spliced FASTA indexes (.mmi and .fai) are queried and stored in CacheManager."""
+    human_fasta = tmp_path / "human.fasta"
+    human_fasta.write_text(">chr1\nACGT\n")
+
+    plasmid = tmp_path / "p.gb"
+    plasmid.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+    seq = tmp_path / "s.fastq"
+    seq.write_text("@read\nACGT\n+\nIIII\n")
+
+    output = tmp_path / "output"
+
+    # Part 1: Cache MISS on spliced FASTA index
+    mock_cache = mock.MagicMock()
+    mock_cache.get_index.return_value = None
+    mock_cache.get_spliced.return_value = None
+
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+        mock.patch("plasmicheck.scripts.run_pipeline.CacheManager", return_value=mock_cache),
+    ):
+        run_pipeline(
+            human_fasta=str(human_fasta),
+            plasmid_files=str(plasmid),
+            sequencing_files_r1=str(seq),
+            output_folder=str(output),
+            overwrite=True,
+            md5_level="none",
+        )
+
+        get_index_paths = [call.args[0] for call in mock_cache.get_index.call_args_list]
+        assert any("spliced_reference.fasta" in p for p in get_index_paths)
+
+        put_index_paths = [call.args[0] for call in mock_cache.put_index.call_args_list]
+        assert any("spliced_reference.fasta" in p for p in put_index_paths)
+
+    # Part 2: Cache HIT on spliced FASTA index
+    cached_mmi = tmp_path / "cached_spliced.mmi"
+    cached_fai = tmp_path / "cached_spliced.fai"
+    cached_mmi.write_text("mmi content")
+    cached_fai.write_text("fai content")
+
+    def cache_get_index(fasta_path: str) -> dict[str, Path] | None:
+        if "spliced_reference.fasta" in fasta_path:
+            return {"mmi": cached_mmi, "fai": cached_fai}
+        return None
+
+    mock_cache_hit = mock.MagicMock()
+    mock_cache_hit.get_index.side_effect = cache_get_index
+    mock_cache_hit.get_spliced.return_value = None
+
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.quality_control"),
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes") as mock_create_idx_hit,
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report"),
+        mock.patch("plasmicheck.scripts.run_pipeline.CacheManager", return_value=mock_cache_hit),
+    ):
+        run_pipeline(
+            human_fasta=str(human_fasta),
+            plasmid_files=str(plasmid),
+            sequencing_files_r1=str(seq),
+            output_folder=str(tmp_path / "output_hit"),
+            overwrite=True,
+            md5_level="none",
+        )
+
+        spliced_idx_calls = [
+            call
+            for call in mock_create_idx_hit.call_args_list
+            if "spliced_reference.fasta" in str(call)
+        ]
+        assert len(spliced_idx_calls) == 0
+
+
+@pytest.mark.unit
+def test_sample_scoped_temp_fastq_cleanup(tmp_path: Path) -> None:
+    """Verify sample_temp_fastq is scoped per-sample and cleaned up even if error occurs."""
+    human_fasta = tmp_path / "human.fasta"
+    human_fasta.write_text(">chr1\nACGT\n")
+
+    plasmid1 = tmp_path / "p1.gb"
+    plasmid1.write_text("LOCUS       test1 1 bp\nORIGIN\n 1 a\n//\n")
+    plasmid2 = tmp_path / "p2.gb"
+    plasmid2.write_text("LOCUS       test2 1 bp\nORIGIN\n 1 a\n//\n")
+
+    plasmid_list = tmp_path / "plasmids.txt"
+    plasmid_list.write_text(f"{plasmid1}\n{plasmid2}\n")
+
+    bam = tmp_path / "sample.bam"
+    bam.write_bytes(b"A" * 128)
+
+    output = tmp_path / "output"
+
+    created_temp_fastqs: list[Path] = []
+
+    def fake_run_cmd(cmd: str, *args: object, **kwargs: object) -> None:
+        if ">" in cmd:
+            target = cmd.split(">")[-1].strip().strip("'\"")
+            fq_path = Path(target)
+            fq_path.write_text("@read\nACGT\n+\nIIII\n")
+            created_temp_fastqs.append(fq_path)
+
+    with (
+        mock.patch("plasmicheck.scripts.utils.run_command", side_effect=fake_run_cmd),
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+        mock.patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads"),
+        mock.patch(
+            "plasmicheck.scripts.run_pipeline.compare_alignments",
+            side_effect=RuntimeError("simulated comparison error"),
+        ),
+        pytest.raises(RuntimeError, match="All 2 combinations failed"),
+    ):
+        run_pipeline(
+            human_fasta=str(human_fasta),
+            plasmid_files=str(plasmid_list),
+            sequencing_files_r1=str(bam),
+            output_folder=str(output),
+            no_cache=True,
+            md5_level="none",
+        )
+
+    assert len(created_temp_fastqs) == 1
+    assert not created_temp_fastqs[0].exists()
+
+
+@pytest.mark.unit
+def test_cross_sample_plasmid_prep_dedup(tmp_path: Path) -> None:
+    """Verify plasmid preparation (convert, index, spliced align, cDNA) is done only once across multiple samples."""
+    human_fasta = tmp_path / "human.fasta"
+    human_fasta.write_text(">chr1\nACGT\n")
+
+    plasmid = tmp_path / "shared_p.gb"
+    plasmid.write_text("LOCUS       test 1 bp\nORIGIN\n 1 a\n//\n")
+
+    seq1 = tmp_path / "sample1.fastq"
+    seq2 = tmp_path / "sample2.fastq"
+    seq1.write_text("@read1\nACGT\n+\nIIII\n")
+    seq2.write_text("@read2\nACGT\n+\nIIII\n")
+
+    seq_list = tmp_path / "seqs.txt"
+    seq_list.write_text(f"{seq1}\n{seq2}\n")
+
+    output = tmp_path / "output_dedup"
+
+    with (
+        mock.patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+        mock.patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta") as mock_conv,
+        mock.patch(
+            "plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]
+        ) as mock_splice,
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_human_reference") as mock_extract_ref,
+        mock.patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions") as mock_cdna,
+        mock.patch("plasmicheck.scripts.run_pipeline.align_reads") as mock_align,
+        mock.patch("plasmicheck.scripts.run_pipeline.compare_alignments") as mock_compare,
+        mock.patch("plasmicheck.scripts.run_pipeline.generate_report") as mock_report,
+    ):
+        run_pipeline(
+            human_fasta=str(human_fasta),
+            plasmid_files=str(plasmid),
+            sequencing_files_r1=str(seq_list),
+            output_folder=str(output),
+            no_cache=True,
+            md5_level="none",
+        )
+
+    assert mock_conv.call_count == 1
+    assert mock_splice.call_count == 1
+    assert mock_extract_ref.call_count == 1
+    assert mock_cdna.call_count == 1
+
+    assert mock_align.call_count == 4
+    assert mock_compare.call_count == 2
+    assert mock_report.call_count == 2

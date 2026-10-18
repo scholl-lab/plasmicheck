@@ -10,7 +10,17 @@ from plasmicheck.config import get_config
 from plasmicheck.resources import get_resource_path
 from plasmicheck.version import __version__ as VERSION
 
-from .utils import encode_image_to_base64
+from .utils import (
+    categorize_value as categorize_value,
+)
+from .utils import (
+    encode_image_to_base64,
+    ensure_plotly_assets,
+    truncate_comma_separated,
+)
+from .utils import (
+    verdict_bounds as verdict_bounds,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -22,7 +32,6 @@ PLOT_CONFIG: dict[str, Any] = _cfg["plot_summary"]
 TEMPLATE_DIR: str = _cfg["paths"]["template_dir"]
 LOGO_PATH: str = _cfg["paths"]["logo_path"]
 TABLE_SORTING: dict[str, Any] = _cfg["table_sorting"]
-PLOT_DIMENSIONS: dict[str, int] = PLOT_CONFIG.get("plot_dimensions", {"width": 1200, "height": 420})
 ROUND_DECIMALS: int = PLOT_CONFIG.get("round_decimals", 3)
 LOG_OFFSET: float = PLOT_CONFIG.get("log_offset", 1e-9)
 MARKER_STYLE: dict[str, Any] = PLOT_CONFIG.get("marker_style", {"size": 7, "opacity": 0.75})
@@ -98,9 +107,7 @@ def _extract_sample_plasmid(file_path: str) -> tuple[str, str]:
     return sample_name, plasmid_name
 
 
-def read_compare_outputs(
-    input_dir: str, substring_to_remove: str | None = None
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+def read_compare_outputs(input_dir: str, substring_to_remove: str | None = None) -> pd.DataFrame:
     import pandas as pd
 
     logging.info(f"Reading compare outputs from {input_dir}")
@@ -128,7 +135,7 @@ def read_compare_outputs(
 
     summary_df = pd.concat(summary_df_list, ignore_index=True)
 
-    return pd.DataFrame(), summary_df
+    return summary_df
 
 
 def apply_sorting(df: pd.DataFrame, sorting_config: dict[str, Any] | None) -> pd.DataFrame:
@@ -153,10 +160,7 @@ def _truncate_list_for_html(value: str, max_items: int = 5) -> str:
     """Truncate comma-separated list for HTML table display."""
     if not value or value in ("N/A", "NA", "nan"):
         return "N/A"
-    items = value.split(",")
-    if len(items) <= max_items:
-        return value
-    return ",".join(items[:max_items]) + ",..."
+    return truncate_comma_separated(value, max_items)
 
 
 def save_tables_as_tsv_and_excel(
@@ -307,6 +311,8 @@ def plot_boxplot(
     output_dir: str,
     static_report: bool = False,
     plot_backend: str = "matplotlib",
+    threshold: float = DEFAULT_THRESHOLD,
+    unclear_range: dict[str, float] | None = None,
 ) -> tuple[str, str | None]:
     """Generate and save boxplots for contamination ratios by plasmid."""
     import numpy as np
@@ -315,9 +321,10 @@ def plot_boxplot(
 
     logging.info("Generating boxplots for contamination ratios.")
 
-    boxplot_df = pd.melt(
-        boxplot_data.reset_index(), id_vars=["Sample"], var_name="Plasmid", value_name="Value"
-    )
+    df_reset = boxplot_data.reset_index()
+    if "Sample" not in df_reset.columns:
+        df_reset = df_reset.rename(columns={df_reset.columns[0]: "Sample"})
+    boxplot_df = pd.melt(df_reset, id_vars=["Sample"], var_name="Plasmid", value_name="Value")
     boxplot_df["log_value"] = boxplot_df["Value"].apply(lambda x: np.log10(x + LOG_OFFSET))
 
     fig = px.box(
@@ -328,30 +335,29 @@ def plot_boxplot(
         hover_data={"Sample": True, "Value": ":.4f", "log_value": False},
     )
 
-    contam_cutoff = (
-        UNCLEAR_RANGE["upper_bound"]
-        if UNCLEAR_RANGE["lower_bound"] <= DEFAULT_THRESHOLD <= UNCLEAR_RANGE["upper_bound"]
-        else DEFAULT_THRESHOLD
-    )
-    thresh_log = float(np.log10(contam_cutoff + LOG_OFFSET))
-    low_log = float(np.log10(UNCLEAR_RANGE["lower_bound"] + LOG_OFFSET))
-    high_log = float(np.log10(UNCLEAR_RANGE["upper_bound"] + LOG_OFFSET))
+    if unclear_range is None:
+        unclear_range = UNCLEAR_RANGE
+    low, high = verdict_bounds(threshold, unclear_range)
+    thresh_log = float(np.log10(high + LOG_OFFSET))
+    low_log = float(np.log10(low + LOG_OFFSET))
+    high_log = float(np.log10(high + LOG_OFFSET))
 
-    fig.add_hrect(
-        y0=low_log,
-        y1=high_log,
-        fillcolor="rgba(245, 158, 11, 0.12)",
-        line_width=0,
-        annotation_text=f"Unclear ({UNCLEAR_RANGE['lower_bound']}-{UNCLEAR_RANGE['upper_bound']})",
-        annotation_position="bottom right",
-        annotation_font={"size": 10, "color": "#b45309"},
-    )
+    if high > low:
+        fig.add_hrect(
+            y0=low_log,
+            y1=high_log,
+            fillcolor="rgba(245, 158, 11, 0.12)",
+            line_width=0,
+            annotation_text=f"Unclear ({low}-{high})",
+            annotation_position="bottom right",
+            annotation_font={"size": 10, "color": "#b45309"},
+        )
     fig.add_hline(
         y=thresh_log,
         line_dash="dash",
         line_color="#dc2626",
         line_width=1.5,
-        annotation_text=f"Contaminated (> {contam_cutoff})",
+        annotation_text=f"Contaminated (> {high})",
         annotation_position="top right",
         annotation_font={"size": 10, "color": "#dc2626"},
     )
@@ -395,7 +401,12 @@ def plot_boxplot(
             from .plotting.matplotlib_backend import generate_summary_boxplot_matplotlib
 
             generate_summary_boxplot_matplotlib(
-                boxplot_data, boxplot_filename_png, LOG_OFFSET, "outliers"
+                boxplot_data,
+                boxplot_filename_png,
+                LOG_OFFSET,
+                "outliers",
+                threshold=threshold,
+                unclear_range=unclear_range,
             )
         else:
             fig.write_image(boxplot_filename_png, width=1000, height=420)
@@ -403,21 +414,6 @@ def plot_boxplot(
     logging.info("Boxplots generated.")
 
     return boxplot_filename, boxplot_filename_png
-
-
-def categorize_value(val: float, threshold: float, unclear_range: dict[str, float]) -> str:
-    """Categorize a ratio value matching compare_alignments.py verdict boundaries."""
-    if (
-        threshold == DEFAULT_THRESHOLD
-        and unclear_range["lower_bound"] <= val <= unclear_range["upper_bound"]
-    ):
-        return "Unclear"
-    if val > threshold:
-        return "Contaminated"
-    elif unclear_range["lower_bound"] <= val <= unclear_range["upper_bound"]:
-        return "Unclear"
-    else:
-        return "Clean"
 
 
 def plot_heatmap(
@@ -1424,6 +1420,9 @@ def generate_report(
         logo_base64=logo_base64,
         threshold=threshold,
         unclear_range=unclear_range,
+        unclear_lower=unclear_range.get("lower_bound", 0.6),
+        unclear_upper=unclear_range.get("upper_bound", 1.0),
+        contam_cutoff=unclear_range.get("upper_bound", threshold),
         version=VERSION,
         run_date=datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         command_line=command_line,
@@ -1460,6 +1459,9 @@ def generate_report(
             logo_base64=logo_base64,
             threshold=threshold,
             unclear_range=unclear_range,
+            unclear_lower=unclear_range.get("lower_bound", 0.6),
+            unclear_upper=unclear_range.get("upper_bound", 1.0),
+            contam_cutoff=unclear_range.get("upper_bound", threshold),
             version=VERSION,
             run_date=datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             command_line=command_line,
@@ -1504,18 +1506,7 @@ def main(
         plotly_version = plotly.__version__
 
     if plotly_mode == "directory":
-        # Copy plotly.min.js to output_dir/assets/
-        assets_dir = os.path.join(output_dir, "assets")
-        os.makedirs(assets_dir, exist_ok=True)
-        dest = os.path.join(assets_dir, "plotly.min.js")
-        if not os.path.exists(dest):
-            import shutil
-
-            import plotly as _plotly
-
-            plotly_dir = os.path.dirname(_plotly.__file__)
-            source = os.path.join(plotly_dir, "package_data", "plotly.min.js")
-            shutil.copy2(source, dest)
+        ensure_plotly_assets(output_dir)
         plotly_js_path = "assets/plotly.min.js"  # Relative from output_dir
 
     if plotly_mode == "embedded":
@@ -1527,20 +1518,67 @@ def main(
         with open(plotly_js_source) as f:
             plotly_js_inline = f"<script>{f.read()}</script>"
 
-    _, summary_df = read_compare_outputs(input_dir, substring_to_remove=substring_to_remove)
+    import pandas as pd
+
+    summary_df = read_compare_outputs(input_dir, substring_to_remove=substring_to_remove)
+
+    # Derive effective threshold and bounds
+    effective_threshold = threshold
+    thresh_rows = summary_df[summary_df["Category"] == "Threshold"]
+    if not thresh_rows.empty:
+        try:
+            val_col = "Value" if "Value" in thresh_rows.columns else "Count"
+            effective_threshold = float(thresh_rows[val_col].iloc[0])
+        except (ValueError, TypeError):
+            effective_threshold = threshold
+
+    unclear_lower, unclear_upper = verdict_bounds(effective_threshold, unclear_range)
+    effective_unclear = {"lower_bound": unclear_lower, "upper_bound": unclear_upper}
+
+    # Recompute display verdicts from valid stored Ratio values under effective threshold/bounds
+    category_to_full = {
+        "Contaminated": "Sample is contaminated with plasmid DNA",
+        "Unclear": "Sample contamination status is unclear",
+        "Clean": "Sample is not contaminated with plasmid DNA",
+    }
+    ratio_rows = summary_df[summary_df["Category"] == "Ratio"]
+    if not ratio_rows.empty:
+        ratio_map: dict[tuple[str, str], str] = {}
+        for _, r_row in ratio_rows.iterrows():
+            val = pd.to_numeric(r_row["Value"], errors="coerce")
+            if pd.notna(val):
+                cat = categorize_value(float(val), effective_threshold, effective_unclear)
+                ratio_map[(str(r_row["Sample"]), str(r_row["Plasmid"]))] = category_to_full.get(
+                    cat, cat
+                )
+
+        def _recalc_verdict(v_row: pd.Series) -> Any:
+            key = (str(v_row["Sample"]), str(v_row["Plasmid"]))
+            return ratio_map.get(key, v_row["Value"])
+
+        verdict_mask = summary_df["Category"] == "Verdict"
+        if verdict_mask.any():
+            summary_df.loc[verdict_mask, "Value"] = summary_df.loc[verdict_mask].apply(
+                _recalc_verdict, axis=1
+            )
 
     # Calculate variations
     boxplot_data, p_values_df = calculate_variations(summary_df[summary_df["Category"] == "Ratio"])
 
     # Generate plots
     boxplot_filename_interactive, boxplot_filename_png = plot_boxplot(
-        boxplot_data, output_dir, static_report=static_report, plot_backend=plot_backend
+        boxplot_data,
+        output_dir,
+        static_report=static_report,
+        plot_backend=plot_backend,
+        threshold=effective_threshold,
+        unclear_range=effective_unclear,
     )
     heatmap_filename_interactive, heatmap_filename_png = plot_heatmap(
         summary_df[summary_df["Category"] == "Ratio"],
         output_dir,
-        threshold,
-        unclear_range,
+        effective_threshold,
+        effective_unclear,
         PLOT_CONFIG,
         static_report=static_report,
         plot_backend=plot_backend,
@@ -1610,7 +1648,12 @@ def main(
         "SpliceJunctionCount",
         "ExonCount",
         "SpliceJunctionReads",
+        "SpliceJunctionEvents",
         "SpliceJunctionsCovered",
+        "ExonIntronBoundaryReads",
+        "EstimatedContaminationFraction",
+        "VectorInsertJunctionReads",
+        "VectorInsertBridgePairs",
         "ExonLengths",
         "IntronLengths",
     ]
@@ -1635,12 +1678,17 @@ def main(
     extended_categories = [
         "CoverageOutsideINSERT",
         "MismatchesNearINSERT",
+        "VectorInsertJunctionReads",
+        "VectorInsertBridgePairs",
         "MeanDepthBackbone",
         "BreadthBackbone",
         "SpliceJunctionCount",
         "ExonCount",
         "SpliceJunctionReads",
+        "SpliceJunctionEvents",
         "SpliceJunctionsCovered",
+        "ExonIntronBoundaryReads",
+        "EstimatedContaminationFraction",
         "ExonLengths",
         "IntronLengths",
     ]
@@ -1669,8 +1717,8 @@ def main(
         boxplot_filename_png,
         os.path.join(output_dir, "data", "p_value_table.tsv"),
         output_dir,
-        threshold,
-        unclear_range,
+        effective_threshold,
+        effective_unclear,
         " ".join(sys.argv),
         static_report=static_report,
         plotly_mode=plotly_mode,

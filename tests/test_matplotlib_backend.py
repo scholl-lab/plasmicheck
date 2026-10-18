@@ -330,3 +330,36 @@ def test_generate_verdict_bar_matplotlib_empty_dataframe(tmp_path: Path) -> None
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
+
+
+@pytest.mark.unit
+def test_generate_summary_boxplot_matplotlib_custom_threshold(tmp_path: Path) -> None:
+    """Test that generate_summary_boxplot_matplotlib handles custom threshold and unclear range."""
+    from plasmicheck.scripts.plotting.matplotlib_backend import (
+        generate_summary_boxplot_matplotlib,
+    )
+
+    boxplot_data = pd.DataFrame(
+        {
+            "Plasmid1": [0.5, 0.8, 1.2],
+            "Plasmid2": [0.3, 1.5, 0.9],
+        },
+        index=["Sample1", "Sample2", "Sample3"],
+    )
+
+    # Custom threshold 0.95 with matching unclear range
+    output_custom = tmp_path / "custom_summary_boxplot.png"
+    unclear = {"lower_bound": 0.6, "upper_bound": 0.95}
+    generate_summary_boxplot_matplotlib(
+        boxplot_data, output_custom, threshold=0.95, unclear_range=unclear
+    )
+    assert output_custom.exists()
+    assert output_custom.stat().st_size > 0
+
+    # Inverted / zero-width unclear interval (threshold < lower_bound)
+    output_inverted = tmp_path / "inverted_summary_boxplot.png"
+    generate_summary_boxplot_matplotlib(
+        boxplot_data, output_inverted, threshold=0.4, unclear_range=unclear
+    )
+    assert output_inverted.exists()
+    assert output_inverted.stat().st_size > 0

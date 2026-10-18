@@ -16,7 +16,15 @@ from plasmicheck.scripts.compare_alignments import (
     InsertRegionData,
     _assign,
     _best_read,
+    _has_origin_sa_support,
+    _is_concordant_bridge_pair,
+    _is_pair,
+    _is_strictly_inside_insert,
+    _mate_key,
     _namesort_bam,
+    _read_id,
+    _scan_plasmid_bam,
+    _scores,
     _streaming_compare,
     _write_assignment,
     calculate_alignment_score,
@@ -37,14 +45,22 @@ def mock_pysam_read() -> Any:
         cigartuples: list[tuple[int, int]] | None = None,
         mate_is_unmapped: bool = False,
         is_paired: bool = True,
+        is_read1: bool = True,
+        is_read2: bool = False,
         is_secondary: bool = False,
         is_supplementary: bool = False,
+        is_reverse: bool = False,
+        reference_id: int = 0,
+        next_reference_id: int = 0,
+        reference_start: int | None = 0,
+        reference_end: int | None = 100,
+        next_reference_start: int | None = None,
         nm_tag: int | None = 0,
         query_name: str = "test_read",
         cigarstring: str | None = "100M",
-        reference_start: int | None = 0,
-        reference_end: int | None = 100,
         query_length: int = 100,
+        reference_name: str = "plasmid",
+        tags: dict[str, Any] | None = None,
     ) -> MagicMock:
         read = MagicMock()
         read.is_unmapped = is_unmapped
@@ -52,20 +68,40 @@ def mock_pysam_read() -> Any:
         read.cigartuples = cigartuples if cigartuples is not None else [(0, 100)]
         read.mate_is_unmapped = mate_is_unmapped
         read.is_paired = is_paired
+        read.is_read1 = is_read1 if is_paired else False
+        read.is_read2 = is_read2 if is_paired else False
         read.is_secondary = is_secondary
         read.is_supplementary = is_supplementary
-        read.query_name = query_name
-        read.cigarstring = cigarstring
+        read.is_reverse = is_reverse
+        read.reference_id = reference_id
+        read.next_reference_id = next_reference_id
         read.reference_start = reference_start
         read.reference_end = reference_end
+        read.next_reference_start = (
+            next_reference_start if next_reference_start is not None else reference_start
+        )
+        read.query_name = query_name
+        read.cigarstring = cigarstring
         read.query_length = query_length
+        read.reference_name = reference_name
 
+        tag_dict: dict[str, Any] = {}
         if nm_tag is not None:
-            read.has_tag.return_value = True
-            read.get_tag.return_value = nm_tag
-        else:
-            read.has_tag.return_value = False
-            read.get_tag.return_value = 0
+            tag_dict["NM"] = nm_tag
+        if tags is not None:
+            tag_dict.update(tags)
+
+        read.has_tag.side_effect = lambda t: t in tag_dict
+        read.get_tag.side_effect = lambda t: tag_dict.get(t, 0)
+
+        def _get_overlap(start: int, end: int) -> int:
+            if reference_start is None or reference_end is None:
+                return 0
+            s = max(reference_start, start)
+            e = min(reference_end, end)
+            return max(0, e - s)
+
+        read.get_overlap.side_effect = _get_overlap
 
         return read
 
@@ -149,51 +185,51 @@ class TestCalculateAlignmentScore:
 
     @pytest.mark.unit
     def test_simple_mapped_read(self, mock_pysam_read: Any) -> None:
-        # MAPQ=60, no clipping, 0 mismatches, mate mapped -> 60 + 10 = 70
+        # MAPQ=60, no clipping, 0 mismatches -> 60
         read = mock_pysam_read(
             mapping_quality=60,
             cigartuples=[(0, 100)],  # 100M
             nm_tag=0,
             mate_is_unmapped=False,
         )
-        assert calculate_alignment_score(read) == 70
+        assert calculate_alignment_score(read) == 60
 
     @pytest.mark.unit
     def test_with_soft_clipping(self, mock_pysam_read: Any) -> None:
-        # MAPQ=60, 10bp soft clip, 0 mismatches, mate mapped -> 60 - 10 + 10 = 60
+        # MAPQ=60, 10bp soft clip, 0 mismatches -> 60 - 10 = 50
         read = mock_pysam_read(
             mapping_quality=60,
             cigartuples=[(4, 10), (0, 90)],  # 10S90M
             nm_tag=0,
             mate_is_unmapped=False,
         )
-        assert calculate_alignment_score(read) == 60
+        assert calculate_alignment_score(read) == 50
 
     @pytest.mark.unit
     def test_with_mismatches(self, mock_pysam_read: Any) -> None:
-        # MAPQ=60, no clipping, NM=5, mate mapped -> 60 - 5 + 10 = 65
+        # MAPQ=60, no clipping, NM=5 -> 60 - 5 = 55
         read = mock_pysam_read(
             mapping_quality=60,
             cigartuples=[(0, 100)],
             nm_tag=5,
             mate_is_unmapped=False,
         )
-        assert calculate_alignment_score(read) == 65
+        assert calculate_alignment_score(read) == 55
 
     @pytest.mark.unit
     def test_combined_penalties(self, mock_pysam_read: Any) -> None:
-        # MAPQ=60, 10bp soft clip, NM=5, mate mapped -> 60 - 10 - 5 + 10 = 55
+        # MAPQ=60, 10bp soft clip, NM=5 -> 60 - 10 - 5 = 45
         read = mock_pysam_read(
             mapping_quality=60,
             cigartuples=[(4, 10), (0, 90)],
             nm_tag=5,
             mate_is_unmapped=False,
         )
-        assert calculate_alignment_score(read) == 55
+        assert calculate_alignment_score(read) == 45
 
     @pytest.mark.unit
     def test_mate_unmapped_no_bonus(self, mock_pysam_read: Any) -> None:
-        # MAPQ=60, no clipping, 0 mismatches, mate UNmapped -> 60 + 0 = 60
+        # MAPQ=60, no clipping, 0 mismatches -> 60
         read = mock_pysam_read(
             mapping_quality=60,
             cigartuples=[(0, 100)],
@@ -204,14 +240,14 @@ class TestCalculateAlignmentScore:
 
     @pytest.mark.unit
     def test_hard_clipping(self, mock_pysam_read: Any) -> None:
-        # MAPQ=60, 20bp hard clip, 0 mismatches, mate mapped -> 60 - 20 + 10 = 50
+        # MAPQ=60, 20bp hard clip, 0 mismatches -> 60 - 20 = 40
         read = mock_pysam_read(
             mapping_quality=60,
             cigartuples=[(5, 20), (0, 80)],  # 20H80M
             nm_tag=0,
             mate_is_unmapped=False,
         )
-        assert calculate_alignment_score(read) == 50
+        assert calculate_alignment_score(read) == 40
 
     @pytest.mark.unit
     def test_no_nm_tag(self, mock_pysam_read: Any) -> None:
@@ -222,11 +258,10 @@ class TestCalculateAlignmentScore:
             nm_tag=None,  # no NM tag
             mate_is_unmapped=False,
         )
-        assert calculate_alignment_score(read) == 70
+        assert calculate_alignment_score(read) == 60
 
     @pytest.mark.unit
     def test_unpaired_read_no_mate_bonus(self, mock_pysam_read: Any) -> None:
-        # Unpaired read (is_paired=False, mate_is_unmapped=False) does not receive mate bonus
         read = mock_pysam_read(
             mapping_quality=60,
             cigartuples=[(0, 100)],
@@ -235,6 +270,86 @@ class TestCalculateAlignmentScore:
             mate_is_unmapped=False,
         )
         assert calculate_alignment_score(read) == 60
+
+
+class TestScores:
+    """Test _scores() fragment-level mate bonus and pair concordance."""
+
+    @pytest.mark.unit
+    def test_concordant_pair_gets_mate_bonus(self, mock_pysam_read: Any) -> None:
+        r1 = mock_pysam_read(
+            mapping_quality=60,
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=100,
+            reference_end=200,
+            next_reference_start=300,
+        )
+        r2 = mock_pysam_read(
+            mapping_quality=60,
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=300,
+            reference_end=400,
+            next_reference_start=100,
+        )
+        # 60 + 10 = 70 for each mate
+        assert _scores([r1, r2]) == [70, 70]
+
+    @pytest.mark.unit
+    def test_distant_mates_no_mate_bonus(self, mock_pysam_read: Any) -> None:
+        # Span > 1000 bp across intron on human
+        r1 = mock_pysam_read(
+            mapping_quality=60,
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=100,
+            reference_end=200,
+            next_reference_start=5000,
+        )
+        r2 = mock_pysam_read(
+            mapping_quality=60,
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=5000,
+            reference_end=5100,
+            next_reference_start=100,
+        )
+        assert _scores([r1, r2], length=0) == [60, 60]
+
+    @pytest.mark.unit
+    def test_circular_origin_crossing_pair_gets_mate_bonus(self, mock_pysam_read: Any) -> None:
+        # Plasmid length 12332, forward mate near end, reverse mate near start
+        r1 = mock_pysam_read(
+            mapping_quality=60,
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=12182,
+            reference_end=12283,
+            next_reference_start=50,
+        )
+        r2 = mock_pysam_read(
+            mapping_quality=60,
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=50,
+            reference_end=151,
+            next_reference_start=12182,
+        )
+        # Circular span: (151 + 12332) - 12182 = 301 <= 1000 -> mate bonus awarded!
+        assert _scores([r1, r2], length=12332, span_origin=True) == [70, 70]
 
 
 class TestParseInsertRegion:
@@ -502,17 +617,53 @@ class TestStreamingCompare:
         """Paired read group: both primary mates' scores are summed."""
         # Plasmid mates: 60 + 10 mate bonus = 70 each -> sum = 140
         p_r1 = mock_pysam_read(
-            query_name="pair1", mapping_quality=60, is_paired=True, mate_is_unmapped=False
+            query_name="pair1",
+            mapping_quality=60,
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=0,
+            reference_end=100,
+            next_reference_start=200,
+            mate_is_unmapped=False,
         )
         p_r2 = mock_pysam_read(
-            query_name="pair1", mapping_quality=60, is_paired=True, mate_is_unmapped=False
+            query_name="pair1",
+            mapping_quality=60,
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=200,
+            reference_end=300,
+            next_reference_start=0,
+            mate_is_unmapped=False,
         )
         # Human mates: 30 + 10 mate bonus = 40 each -> sum = 80
         h_r1 = mock_pysam_read(
-            query_name="pair1", mapping_quality=30, is_paired=True, mate_is_unmapped=False
+            query_name="pair1",
+            mapping_quality=30,
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=0,
+            reference_end=100,
+            next_reference_start=200,
+            mate_is_unmapped=False,
         )
         h_r2 = mock_pysam_read(
-            query_name="pair1", mapping_quality=30, is_paired=True, mate_is_unmapped=False
+            query_name="pair1",
+            mapping_quality=30,
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=200,
+            reference_end=300,
+            next_reference_start=0,
+            mate_is_unmapped=False,
         )
 
         with patch(
@@ -792,12 +943,12 @@ class TestStreamingCompareWithFiltering:
 
     @pytest.mark.unit
     def test_score_margin_creates_ambiguous_in_stream(self, mock_pysam_read: Any) -> None:
-        # Both reads with small score diff
+        # Both reads with small score diff due to alignment penalties
         p_read = mock_pysam_read(
             query_name="r1",
-            mapping_quality=52,
+            mapping_quality=60,
             cigartuples=[(0, 100)],
-            nm_tag=0,
+            nm_tag=1,
             mate_is_unmapped=False,
         )
         p_read.is_secondary = False
@@ -805,9 +956,9 @@ class TestStreamingCompareWithFiltering:
 
         h_read = mock_pysam_read(
             query_name="r1",
-            mapping_quality=50,
+            mapping_quality=60,
             cigartuples=[(0, 100)],
-            nm_tag=0,
+            nm_tag=3,
             mate_is_unmapped=False,
         )
         h_read.is_secondary = False
@@ -819,7 +970,7 @@ class TestStreamingCompareWithFiltering:
         ):
             buf = io.StringIO()
             counts = _streaming_compare("p.bam", "h.bam", buf, score_margin=5)
-            # ps=62, hs=60, diff=2 < margin=5 -> Ambiguous
+            # ps=59, hs=57, diff=2 < margin=5 -> Ambiguous
             assert counts["Ambiguous"] == 1
 
 
@@ -1391,9 +1542,14 @@ class TestVerdictAndRatio:
         assert "Ratio\t0.0" in content
 
     @pytest.mark.unit
-    def test_ratio_point_nine_default_threshold_unclear(self, tmp_path: Path) -> None:
-        """Ratio = 0.9 with default threshold (0.8) falls in UNCLEAR_RANGE [0.8, 1.2] -> unclear."""
-        output_base = tmp_path / "unclear_counts"
+    @pytest.mark.parametrize(
+        "plasmid_reads,expected_ratio", [(70, 0.7), (80, 0.8), (90, 0.9), (95, 0.95), (100, 1.0)]
+    )
+    def test_ratio_point_nine_default_threshold_unclear(
+        self, tmp_path: Path, plasmid_reads: int, expected_ratio: float
+    ) -> None:
+        """Ratios in [0.6, 1.0] with default threshold (0.8) fall in UNCLEAR_RANGE -> unclear."""
+        output_base = tmp_path / f"unclear_counts_{plasmid_reads}"
         dummy_metrics = {
             "insert": {
                 "mean_depth": 0.0,
@@ -1416,7 +1572,7 @@ class TestVerdictAndRatio:
             patch(
                 "plasmicheck.scripts.compare_alignments._streaming_compare",
                 return_value={
-                    "Plasmid": 70,
+                    "Plasmid": plasmid_reads,
                     "Human": 100,
                     "Tied": 0,
                     "Backbone_Only": 0,
@@ -1433,9 +1589,65 @@ class TestVerdictAndRatio:
         ):
             compare_alignments("p.bam", "h.bam", str(output_base), threshold=DEFAULT_THRESHOLD)
 
-        content = (tmp_path / "unclear_counts.summary.tsv").read_text()
+        content = (tmp_path / f"unclear_counts_{plasmid_reads}.summary.tsv").read_text()
         assert "Verdict\tSample contamination status is unclear" in content
-        assert "Ratio\t0.7" in content
+        assert f"Ratio\t{expected_ratio}" in content
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "threshold,plasmid_reads,expected_verdict",
+        [
+            (2.0, 150, "Sample contamination status is unclear"),
+            (2.0, 210, "Sample is contaminated with plasmid DNA"),
+            (0.4, 40, "Sample is not contaminated with plasmid DNA"),
+            (0.4, 50, "Sample is contaminated with plasmid DNA"),
+        ],
+    )
+    def test_custom_threshold_verdict_boundaries(
+        self, tmp_path: Path, threshold: float, plasmid_reads: int, expected_verdict: str
+    ) -> None:
+        """Custom threshold extends unclear upper bound or acts as strict boundary below lower_bound."""
+        output_base = tmp_path / f"custom_thresh_{threshold}_{plasmid_reads}"
+        dummy_metrics = {
+            "insert": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+            "backbone": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+        }
+        with (
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                return_value={
+                    "Plasmid": plasmid_reads,
+                    "Human": 100,
+                    "Tied": 0,
+                    "Backbone_Only": 0,
+                    "Ambiguous": 0,
+                },
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=(dummy_metrics, False),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments("p.bam", "h.bam", str(output_base), threshold=threshold)
+
+        content = (tmp_path / f"custom_thresh_{threshold}_{plasmid_reads}.summary.tsv").read_text()
+        assert f"Verdict\t{expected_verdict}" in content
 
 
 class TestAccuracyDiscoveriesV038:
@@ -1462,8 +1674,9 @@ class TestAccuracyDiscoveriesV038:
 
     @pytest.mark.unit
     def test_circular_origin_boundary_clip_excused(self, mock_pysam_read: Any) -> None:
-        """Soft-clip at circular origin (reference_start == 0 or reference_end == plasmid_length) is excused."""
-        r_start0 = mock_pysam_read(
+        """Soft-clip at circular origin is excused only when supported by valid SA alignment."""
+        # Unsupported clip without SA tag is penalized: 24 - 35 = -11
+        r_unsupported = mock_pysam_read(
             mapping_quality=24,
             cigartuples=[(4, 35), (0, 66)],
             reference_start=0,
@@ -1472,10 +1685,21 @@ class TestAccuracyDiscoveriesV038:
             is_paired=True,
             mate_is_unmapped=False,
         )
-        # Without plasmid_length: 24 - 35 + 10 = -1
-        assert calculate_alignment_score(r_start0, 0) == -1
-        # With plasmid_length=12332: base score boosted to 60, origin clip excused -> 60 + 10 = 70
-        assert calculate_alignment_score(r_start0, 12332) == 70
+        assert calculate_alignment_score(r_unsupported, 0) == -11
+        assert calculate_alignment_score(r_unsupported, 12332) == -11
+
+        # Valid SA tag at opposite end of plasmid excuses the origin clip
+        r_supported = mock_pysam_read(
+            mapping_quality=24,
+            cigartuples=[(4, 35), (0, 66)],
+            reference_start=0,
+            reference_end=66,
+            nm_tag=0,
+            is_paired=True,
+            mate_is_unmapped=False,
+            tags={"SA": "plasmid,12297,+,35M66S,60,0;"},
+        )
+        assert calculate_alignment_score(r_supported, 12332) == 24
 
     @pytest.mark.unit
     def test_mapq_asymmetry_identical_cigar_nm_ties(self, mock_pysam_read: Any) -> None:
@@ -1527,7 +1751,675 @@ class TestAccuracyDiscoveriesV038:
         mock_bam.__exit__.return_value = None
 
         with patch("pysam.AlignmentFile", return_value=mock_bam):
-            cov, _mm, sj_reads, sj_cov = _scan_plasmid_bam("p.bam", ir)
+            cov, _mm, sj_reads, sj_cov, *_rest = _scan_plasmid_bam("p.bam", ir)
         assert cov == 0.0
         assert sj_reads == 1
         assert sj_cov == 1
+
+    @pytest.mark.unit
+    def test_mapq_tie_breaker_reverse_strand_cigar_inversion(self, mock_pysam_read: Any) -> None:
+        """MAPQ tie-breaker reverses CIGAR when read orientations differ (pr.is_reverse != hr.is_reverse)."""
+        p_read = mock_pysam_read(
+            query_name="r_inv",
+            mapping_quality=60,
+            cigartuples=[(4, 10), (0, 90)],
+            nm_tag=0,
+            is_reverse=False,
+            is_paired=False,
+        )
+        # Human read is reverse strand with reversed CIGAR -> should tie
+        h_read_rev = mock_pysam_read(
+            query_name="r_inv",
+            mapping_quality=50,
+            cigartuples=[(0, 90), (4, 10)],
+            nm_tag=0,
+            is_reverse=True,
+            is_paired=False,
+        )
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r_inv", [p_read])]), iter([("r_inv", [h_read_rev])])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+        assert counts["Tied"] == 1
+        assert counts["Plasmid"] == 0
+
+        # When reverse-strand CIGAR is NOT inverted, tie-breaker does not fire
+        h_read_non_inv = mock_pysam_read(
+            query_name="r_inv",
+            mapping_quality=50,
+            cigartuples=[(4, 10), (0, 90)],
+            nm_tag=0,
+            is_reverse=True,
+            is_paired=False,
+        )
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("r_inv", [p_read])]), iter([("r_inv", [h_read_non_inv])])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+        # Plasmid score 50 > human score 40
+        assert counts["Plasmid"] == 1
+        assert counts["Tied"] == 0
+
+    @pytest.mark.unit
+    def test_mapq_tie_breaker_mate_bonus_asymmetry_preserves_plasmid_win(
+        self, mock_pysam_read: Any
+    ) -> None:
+        """MAPQ tie-breaker does not trigger when score differences arise from mate bonuses."""
+        pr1 = mock_pysam_read(
+            query_name="pair_mate",
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=100,
+            reference_end=200,
+            next_reference_start=300,
+            mapping_quality=60,
+            cigartuples=[(0, 100)],
+            nm_tag=0,
+        )
+        pr2 = mock_pysam_read(
+            query_name="pair_mate",
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=300,
+            reference_end=400,
+            next_reference_start=100,
+            mapping_quality=60,
+            cigartuples=[(0, 100)],
+            nm_tag=0,
+        )
+        # Human reads have identical CIGAR, NM, and MAPQ, but span > 1000 (discordant -> no mate bonus)
+        hr1 = mock_pysam_read(
+            query_name="pair_mate",
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=100,
+            reference_end=200,
+            next_reference_start=5000,
+            mapping_quality=60,
+            cigartuples=[(0, 100)],
+            nm_tag=0,
+        )
+        hr2 = mock_pysam_read(
+            query_name="pair_mate",
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=5000,
+            reference_end=5100,
+            next_reference_start=100,
+            mapping_quality=60,
+            cigartuples=[(0, 100)],
+            nm_tag=0,
+        )
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[iter([("pair_mate", [pr1, pr2])]), iter([("pair_mate", [hr1, hr2])])],
+        ):
+            buf = io.StringIO()
+            counts = _streaming_compare("p.bam", "h.bam", buf)
+        # Plasmid pair received mate bonus; tie-breaker guard preserves Plasmid win
+        assert counts["Plasmid"] == 1
+        assert counts["Tied"] == 0
+
+    @pytest.mark.unit
+    def test_has_origin_sa_support_validation(self, mock_pysam_read: Any) -> None:
+        """_has_origin_sa_support validates strand, contig, NM <= 2, and opposite-end position."""
+        r_start_clip = mock_pysam_read(
+            reference_name="pContig",
+            reference_start=0,
+            reference_end=66,
+            is_reverse=False,
+            tags={"SA": "pContig,12297,+,35M66S,60,0;"},
+        )
+        assert _has_origin_sa_support(r_start_clip, 12332, is_start_clip=True) is True
+
+        # Wrong strand
+        r_wrong_strand = mock_pysam_read(
+            reference_name="pContig",
+            reference_start=0,
+            reference_end=66,
+            is_reverse=False,
+            tags={"SA": "pContig,12297,-,35M66S,60,0;"},
+        )
+        assert _has_origin_sa_support(r_wrong_strand, 12332, is_start_clip=True) is False
+
+        # Wrong contig
+        r_wrong_contig = mock_pysam_read(
+            reference_name="pContig",
+            reference_start=0,
+            reference_end=66,
+            is_reverse=False,
+            tags={"SA": "otherContig,12297,+,35M66S,60,0;"},
+        )
+        assert _has_origin_sa_support(r_wrong_contig, 12332, is_start_clip=True) is False
+
+        # NM > 2
+        r_high_nm = mock_pysam_read(
+            reference_name="pContig",
+            reference_start=0,
+            reference_end=66,
+            is_reverse=False,
+            tags={"SA": "pContig,12297,+,35M66S,60,3;"},
+        )
+        assert _has_origin_sa_support(r_high_nm, 12332, is_start_clip=True) is False
+
+        # Position not near opposite end
+        r_wrong_pos = mock_pysam_read(
+            reference_name="pContig",
+            reference_start=0,
+            reference_end=66,
+            is_reverse=False,
+            tags={"SA": "pContig,5000,+,35M66S,60,0;"},
+        )
+        assert _has_origin_sa_support(r_wrong_pos, 12332, is_start_clip=True) is False
+
+        # End clip with SA near start
+        r_end_clip = mock_pysam_read(
+            reference_name="pContig",
+            reference_start=12266,
+            reference_end=12332,
+            is_reverse=False,
+            tags={"SA": "pContig,50,+,35M66S,60,0;"},
+        )
+        assert _has_origin_sa_support(r_end_clip, 12332, is_start_clip=False) is True
+
+    @pytest.mark.unit
+    def test_vector_insert_junction_reads_in_scan(self, mock_pysam_read: Any) -> None:
+        """_scan_plasmid_bam counts reads overlapping vector-insert boundaries with >=10bp anchors."""
+        ir = (100, 500)
+        # Read 1: crosses boundary 100 with anchor >= 10 and NM=0
+        r1 = mock_pysam_read(
+            reference_start=85,
+            reference_end=125,
+            cigartuples=[(0, 40)],
+            nm_tag=0,
+        )
+        # Read 2: crosses boundary 501 with anchor >= 10 and NM=1
+        r2 = mock_pysam_read(
+            reference_start=490,
+            reference_end=530,
+            cigartuples=[(0, 40)],
+            nm_tag=1,
+        )
+        # Read 3: crosses boundary 100 but NM=3 (> 2) -> not counted
+        r3 = mock_pysam_read(
+            reference_start=85,
+            reference_end=125,
+            cigartuples=[(0, 40)],
+            nm_tag=3,
+        )
+        # Read 4: strictly inside insert -> not crossing boundary
+        r4 = mock_pysam_read(
+            reference_start=200,
+            reference_end=300,
+            cigartuples=[(0, 100)],
+            nm_tag=0,
+        )
+        mock_bam = MagicMock()
+        mock_bam.lengths = [1000]
+        mock_bam.fetch.return_value = [r1, r2, r3, r4]
+        mock_bam.__enter__.return_value = mock_bam
+        mock_bam.__exit__.return_value = None
+
+        with patch("pysam.AlignmentFile", return_value=mock_bam):
+            *_, vi_reads, _mean_len = _scan_plasmid_bam("p.bam", ir)
+        assert vi_reads == 2
+
+    @pytest.mark.unit
+    def test_wrapped_insert_scan_inside_calculation(self, mock_pysam_read: Any) -> None:
+        """_scan_plasmid_bam calculates inside/outside correctly for origin-wrapping insert."""
+        # Insert wraps around origin: [800, 1000) + [0, 201). Backbone is [201, 800) = 599 bp.
+        ir = (800, 200)
+        # Read inside insert [850, 950] -> outside = 0, inside = 100
+        r1 = mock_pysam_read(reference_start=850, reference_end=950, cigartuples=[(0, 100)])
+        # Read straddling boundary [750, 850] -> outside = [750, 800) = 50, inside = 50
+        r2 = mock_pysam_read(reference_start=750, reference_end=850, cigartuples=[(0, 100)])
+        # Read strictly in backbone [300, 400] -> outside = 100, inside = 0
+        r3 = mock_pysam_read(reference_start=300, reference_end=400, cigartuples=[(0, 100)])
+
+        mock_bam = MagicMock()
+        mock_bam.lengths = [1000]
+        mock_bam.fetch.return_value = [r1, r2, r3]
+        mock_bam.__enter__.return_value = mock_bam
+        mock_bam.__exit__.return_value = None
+
+        with patch("pysam.AlignmentFile", return_value=mock_bam):
+            cov, *_rest = _scan_plasmid_bam("p.bam", ir)
+        # Total outside bases = 0 + 50 + 100 = 150. Reference backbone bases = 599.
+        assert cov == pytest.approx(150 / 599)
+
+    @pytest.mark.unit
+    def test_concordant_bridge_pairs_and_streaming(self, mock_pysam_read: Any) -> None:
+        """Concordant bridge pairs (one mate in insert, one in backbone, span <= 1000) are tallied."""
+        ir = (100, 500)
+        # Inward facing pair: mate 1 strictly in insert (200..300), mate 2 strictly in backbone (600..700)
+        pr1 = mock_pysam_read(
+            query_name="bridge1",
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=200,
+            reference_end=300,
+            mapping_quality=60,
+            cigartuples=[(0, 100)],
+        )
+        pr2 = mock_pysam_read(
+            query_name="bridge1",
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=600,
+            reference_end=700,
+            mapping_quality=60,
+            cigartuples=[(0, 100)],
+        )
+        assert _mate_key(pr1) == 1
+        assert _mate_key(pr2) == 2
+        assert _is_pair([pr1, pr2]) is True
+        assert _is_strictly_inside_insert(pr1, ir, 1000) is True
+        assert _is_strictly_inside_insert(pr2, ir, 1000) is False
+        assert _is_concordant_bridge_pair([pr1, pr2], ir, 1000) is True
+
+        # Non-bridge pair: both mates strictly inside insert
+        pr_in1 = mock_pysam_read(
+            query_name="in_pair",
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            reference_start=150,
+            reference_end=250,
+        )
+        pr_in2 = mock_pysam_read(
+            query_name="in_pair",
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            reference_start=300,
+            reference_end=400,
+        )
+        assert _is_concordant_bridge_pair([pr_in1, pr_in2], ir, 1000) is False
+
+        # Streaming compare matched branch counts bridge pair
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[
+                iter([("bridge1", [pr1, pr2])]),
+                iter([]),
+            ],
+        ):
+            buf = io.StringIO()
+            counts_p_only = _streaming_compare(
+                "p.bam", "h.bam", buf, insert_region=ir, plasmid_length=1000
+            )
+        assert counts_p_only["Plasmid"] == 1
+        assert counts_p_only.bridge_pairs == 1
+
+        # Streaming compare matched branch where plasmid wins over human
+        hr1 = mock_pysam_read(
+            query_name="bridge1",
+            is_paired=True,
+            is_read1=True,
+            is_read2=False,
+            is_reverse=False,
+            mapping_quality=20,
+        )
+        hr2 = mock_pysam_read(
+            query_name="bridge1",
+            is_paired=True,
+            is_read1=False,
+            is_read2=True,
+            is_reverse=True,
+            mapping_quality=20,
+        )
+        with patch(
+            "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+            side_effect=[
+                iter([("bridge1", [pr1, pr2])]),
+                iter([("bridge1", [hr1, hr2])]),
+            ],
+        ):
+            buf = io.StringIO()
+            counts_matched = _streaming_compare(
+                "p.bam", "h.bam", buf, insert_region=ir, plasmid_length=1000
+            )
+        assert counts_matched["Plasmid"] == 1
+        assert counts_matched.bridge_pairs == 1
+
+    @pytest.mark.unit
+    def test_mismatches_near_insert_nearest_boundary_circular(self, mock_pysam_read: Any) -> None:
+        """_scan_plasmid_bam nearest boundary distance calculates circular shortest distance."""
+        ir = (100, 950)  # Boundaries: 100 and 951 on a 1000bp plasmid
+        # Read at [5, 45] is 54 bp from boundary 951 across plasmid origin (1000 - 951 + 5 = 54 <= 100)
+        read_circular_near = mock_pysam_read(
+            reference_start=5,
+            reference_end=45,
+            cigartuples=[(0, 40)],
+            nm_tag=1,
+        )
+        # Read at [500, 600] is ~400 bp away from both boundaries
+        read_far = mock_pysam_read(
+            reference_start=500,
+            reference_end=600,
+            cigartuples=[(0, 100)],
+            nm_tag=1,
+        )
+        mock_bam = MagicMock()
+        mock_bam.lengths = [1000]
+        mock_bam.fetch.return_value = [read_circular_near, read_far]
+        mock_bam.__enter__.return_value = mock_bam
+        mock_bam.__exit__.return_value = None
+
+        with patch("pysam.AlignmentFile", return_value=mock_bam):
+            _, mm, *_rest = _scan_plasmid_bam("p.bam", ir, window_size=100)
+        assert mm["with_mismatches_or_clipping"] == 1
+        assert mm["without_mismatches_or_clipping"] == 0
+
+    @pytest.mark.unit
+    def test_splice_junction_events_and_exon_intron_boundaries(self, mock_pysam_read: Any) -> None:
+        """_scan_plasmid_bam counts multiple junction events per read and exon-intron boundary clips."""
+        # 3 exons -> 2 junctions at 200 and 300
+        ir = InsertRegionData(
+            start=100,
+            end=399,
+            junction_count=2,
+            exon_count=3,
+            exon_lengths=[100, 100, 100],
+            strand="+",
+        )
+        # Read 1: Spans both junctions (150 to 350)
+        r_multi = mock_pysam_read(
+            reference_start=150,
+            reference_end=350,
+            cigartuples=[(0, 200)],
+            nm_tag=0,
+            query_length=200,
+        )
+        # Read 2: Leading clip of 20 bp starting at junction 200
+        r_lead_clip = mock_pysam_read(
+            reference_start=201,
+            reference_end=300,
+            cigartuples=[(4, 20), (0, 99)],
+            nm_tag=0,
+            query_length=119,
+        )
+        # Read 3: Trailing clip of 20 bp ending at junction 300
+        r_trail_clip = mock_pysam_read(
+            reference_start=100,
+            reference_end=299,
+            cigartuples=[(0, 199), (4, 20)],
+            nm_tag=0,
+            query_length=219,
+        )
+        mock_bam = MagicMock()
+        mock_bam.lengths = [5000]
+        mock_bam.fetch.return_value = [r_multi, r_lead_clip, r_trail_clip]
+        mock_bam.__enter__.return_value = mock_bam
+        mock_bam.__exit__.return_value = None
+
+        with patch("pysam.AlignmentFile", return_value=mock_bam):
+            (
+                _cov,
+                _mm,
+                sj_reads,
+                sj_covered,
+                sj_events,
+                ei_boundary_reads,
+                _vi_reads,
+                mean_read_len,
+            ) = _scan_plasmid_bam("p.bam", ir)
+
+        assert sj_reads == 1
+        assert sj_events == 2
+        assert sj_covered == 2
+        assert ei_boundary_reads == 2
+        assert mean_read_len == pytest.approx((200 + 119 + 219) / 3)
+
+    @pytest.mark.unit
+    def test_estimated_contamination_fraction_in_summary(self, tmp_path: Path) -> None:
+        """compare_alignments calculates EstimatedContaminationFraction correctly and handles fallbacks."""
+        output_base = tmp_path / "est_test"
+        cdna_file = tmp_path / "cDNA_positions.txt"
+        cdna_file.write_text(
+            "cDNA start position in plasmid: 100\n"
+            "cDNA end position in plasmid: 500\n"
+            "INSERT_REGION: (100, 500)\n"
+            "SpliceJunctionCount: 1\n"
+            "ExonCount: 2\n"
+            "ExonLengths: 200,201\n"
+            "IntronLengths: 100\n"
+            "Strand: +\n"
+        )
+        dummy_metrics = {
+            "insert": {
+                "mean_depth": 50.0,
+                "median_depth": 50.0,
+                "breadth_1x": 1.0,
+                "breadth_5x": 1.0,
+                "cv": 0.1,
+            },
+            "backbone": {
+                "mean_depth": 0.0,
+                "median_depth": 0.0,
+                "breadth_1x": 0.0,
+                "breadth_5x": 0.0,
+                "cv": 0.0,
+            },
+        }
+
+        empty_mm: dict[str, int] = {}
+        # Case 1: Valid calculation
+        # J_count = 1, events = 5, mean_read_length = 150.0, d_insert = 50.0
+        # W = 150 - 30 + 1 = 121
+        # est = (5 * 150) / (1 * 121 * 50) = 750 / 6050 = 0.1240
+        mock_scan_results: tuple[float, dict[str, int], int, int, int, int, int, float] = (
+            0.0,
+            empty_mm,
+            5,
+            1,
+            5,
+            0,
+            0,
+            150.0,
+        )
+        with (
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                return_value={
+                    "Plasmid": 10,
+                    "Human": 10,
+                    "Tied": 0,
+                    "Backbone_Only": 0,
+                    "Ambiguous": 0,
+                },
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments._scan_plasmid_bam",
+                return_value=mock_scan_results,
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=(dummy_metrics, False),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments(
+                "p.bam", "h.bam", str(output_base), cdna_positions_file=str(cdna_file)
+            )
+
+        content = (tmp_path / "est_test.summary.tsv").read_text()
+        assert "EstimatedContaminationFraction\t0.1240" in content
+        assert "SpliceJunctionEvents\t5" in content
+
+        # Case 2: Zero events -> 0.0000
+        mock_zero_events: tuple[float, dict[str, int], int, int, int, int, int, float] = (
+            0.0,
+            empty_mm,
+            0,
+            0,
+            0,
+            0,
+            0,
+            150.0,
+        )
+        with (
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                return_value={
+                    "Plasmid": 10,
+                    "Human": 10,
+                    "Tied": 0,
+                    "Backbone_Only": 0,
+                    "Ambiguous": 0,
+                },
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments._scan_plasmid_bam",
+                return_value=mock_zero_events,
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=(dummy_metrics, False),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments(
+                "p.bam", "h.bam", str(output_base), cdna_positions_file=str(cdna_file)
+            )
+
+        content = (tmp_path / "est_test.summary.tsv").read_text()
+        assert "EstimatedContaminationFraction\t0.0000" in content
+
+        # Case 3: Fallback when coverage_fallback=True -> NA
+        with (
+            patch("plasmicheck.scripts.compare_alignments._namesort_bam"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                return_value={
+                    "Plasmid": 10,
+                    "Human": 10,
+                    "Tied": 0,
+                    "Backbone_Only": 0,
+                    "Ambiguous": 0,
+                },
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments._scan_plasmid_bam",
+                return_value=mock_scan_results,
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=(dummy_metrics, True),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.os.remove"),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments(
+                "p.bam", "h.bam", str(output_base), cdna_positions_file=str(cdna_file)
+            )
+
+        content = (tmp_path / "est_test.summary.tsv").read_text()
+        assert "EstimatedContaminationFraction\tNA" in content
+
+    @pytest.mark.unit
+    def test_temp_bams_naming_and_cleanup_on_error(self, tmp_path: Path) -> None:
+        """Temp BAMs are created in output dir with PID and cleaned up in finally on error."""
+        import os
+
+        sub_dir = tmp_path / "sub_dir"
+        sub_dir.mkdir()
+        output_base = sub_dir / "sample"
+
+        pid = os.getpid()
+        plasmid_temp = sub_dir / f"sample.plasmid.namesorted.{pid}.bam"
+        human_temp = sub_dir / f"sample.human.namesorted.{pid}.bam"
+
+        def _fake_namesort(in_bam: str, out_bam: str, threads: int = 1) -> None:
+            Path(out_bam).write_text("fake bam")
+
+        with (
+            pytest.raises(RuntimeError, match="Simulated merge failure"),
+            patch(
+                "plasmicheck.scripts.compare_alignments._namesort_bam", side_effect=_fake_namesort
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments._streaming_compare",
+                side_effect=RuntimeError("Simulated merge failure"),
+            ),
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_region_coverage_metrics",
+                return_value=({"insert": {}, "backbone": {}}, False),
+            ),
+            patch("plasmicheck.scripts.compare_alignments.locate_genbank_file", return_value=None),
+            patch("pysam.AlignmentFile"),
+        ):
+            compare_alignments("p.bam", "h.bam", str(output_base))
+
+        # Both temp BAMs must be removed by finally block
+        assert not plasmid_temp.exists()
+        assert not human_temp.exists()
+
+
+@pytest.mark.unit
+def test_read_id_hashing() -> None:
+    """Test keyed hash helper for anonymization."""
+    assert _read_id("read1", None) == "read1"
+    key1 = b"k" * 16
+    key2 = b"j" * 16
+    hashed1 = _read_id("read1", key1)
+    hashed2 = _read_id("read1", key2)
+    assert hashed1 == _read_id("read1", key1)
+    assert hashed1 != hashed2
+    assert len(hashed1) == 16  # 8 bytes hex
+
+
+@pytest.mark.unit
+def test_streaming_compare_anonymize(mock_pysam_read: Any) -> None:
+    """Test _streaming_compare hashes ReadID when anonymize_key is provided."""
+    p_read = mock_pysam_read(query_name="read1", mapping_quality=60)
+    p_read.is_secondary = False
+    p_read.is_supplementary = False
+    h_read = mock_pysam_read(query_name="read1", mapping_quality=30)
+    h_read.is_secondary = False
+    h_read.is_supplementary = False
+
+    with patch(
+        "plasmicheck.scripts.compare_alignments._iter_reads_by_name",
+        side_effect=[
+            iter([("read1", [p_read])]),
+            iter([("read1", [h_read])]),
+            iter([("read1", [p_read])]),
+            iter([("read1", [h_read])]),
+        ],
+    ):
+        buf_plain = io.StringIO()
+        plain = _streaming_compare("p.bam", "h.bam", buf_plain)
+        buf_anon = io.StringIO()
+        anon = _streaming_compare("p.bam", "h.bam", buf_anon, anonymize_key=b"k" * 16)
+
+    assert plain == anon
+    assert "read1" in buf_plain.getvalue()
+    assert "read1" not in buf_anon.getvalue()
+    hashed = _read_id("read1", b"k" * 16)
+    assert hashed in buf_anon.getvalue()

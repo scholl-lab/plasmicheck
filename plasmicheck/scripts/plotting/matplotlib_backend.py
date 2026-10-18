@@ -16,6 +16,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.colors import LinearSegmentedColormap
 
+from ..utils import verdict_bounds
 from .colors import ASSIGNMENT_COLORS
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,8 @@ def generate_boxplot_matplotlib(
     width: int = 1100,
     height: int = 440,
     total_reads: int | None = None,
+    threshold: float = 0.8,
+    unclear_range: dict[str, float] | None = None,
 ) -> None:
     """Generate single-sample score distribution boxplot using matplotlib."""
     n_total = total_reads if total_reads is not None else len(reads_df)
@@ -261,6 +264,8 @@ def generate_summary_boxplot_matplotlib(
     output_path: Path | str,
     log_offset: float = 0.001,
     marker_style: str = "outliers",
+    threshold: float = 0.8,
+    unclear_range: dict[str, float] | None = None,
 ) -> None:
     """Generate summary contamination ratio boxplot (log scale) using matplotlib."""
     if boxplot_data.empty:
@@ -283,22 +288,27 @@ def generate_summary_boxplot_matplotlib(
     plasmids = melted["Plasmid"].unique().tolist()
     data_list = [melted[melted["Plasmid"] == p]["LogRatio"].dropna().tolist() for p in plasmids]
 
-    low_log = float(np.log10(0.6 + log_offset))
-    high_log = float(np.log10(1.0 + log_offset))
-    ax.axhspan(
-        low_log,
-        high_log,
-        color="#f59e0b",
-        alpha=0.12,
-        label="Unclear (0.6-1.0)",
-        zorder=1,
-    )
+    if unclear_range is None:
+        unclear_range = {"lower_bound": 0.6, "upper_bound": 1.0}
+    low, high = verdict_bounds(threshold, unclear_range)
+
+    low_log = float(np.log10(low + log_offset))
+    high_log = float(np.log10(high + log_offset))
+    if high > low:
+        ax.axhspan(
+            low_log,
+            high_log,
+            color="#f59e0b",
+            alpha=0.12,
+            label=f"Unclear ({low}-{high})",
+            zorder=1,
+        )
     ax.axhline(
         high_log,
         color="#dc2626",
         linestyle="--",
         linewidth=1.2,
-        label="Contaminated (>1.0)",
+        label=f"Contaminated (>{high})",
         zorder=1,
     )
 

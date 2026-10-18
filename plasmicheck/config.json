@@ -32,26 +32,7 @@
     "output_formats": ["fasta", "genbank"]
   },
   "plot_summary": {
-    "figsize": {
-      "width": 10,
-      "height": 6
-    },
-    "colors": {
-      "not_contaminated": "lightblue",
-      "unclear": "orange",
-      "contaminated": "red"
-    },
-    "linewidths": 0.5,
-    "linecolor": "gray",
-    "title": "Heatmap of Contamination Ratios by Sample and Plasmid",
-    "xticks_rotation": 45,
-    "xticks_ha": "right",
-    "yticks_rotation": 0,
     "output_filename": "contamination_heatmap.png",
-    "plot_dimensions": {
-      "width": 1400,
-      "height": 1400
-    },
     "round_decimals": 3,
     "log_offset": 1e-9,
     "marker_style": {
@@ -65,21 +46,9 @@
       "width": 1000,
       "height": 400
     },
-    "colors": {
-      "human": "blue",
-      "tied": "orange",
-      "plasmid": "red",
-      "backbone_only": "lightgray",
-      "ambiguous": "darkgray"
-    },
-    "title_box_plot": "Box Plot of Plasmid Scores by Assignment",
-    "title_scatter_plot": "Scatter Plot of Plasmid vs. Human Scores by Assignment",
-    "scatter_plot_legend_title": "Assigned To",
     "scatter_plot_x_label": "Plasmid Score",
     "scatter_plot_y_label": "Human Score",
-    "box_plot_x_label": "Assigned To",
     "box_plot_y_label": "Plasmid Score",
-    "xticks_rotation": 0,
     "output_box_plot_filename": "box_plot.png",
     "output_scatter_plot_filename": "scatter_plot.png",
     "max_rows_for_interactive_plots": 5000

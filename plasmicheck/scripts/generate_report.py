@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -13,7 +14,13 @@ from plasmicheck.resources import get_resource_path
 from plasmicheck.version import __version__ as VERSION
 
 from .plotting.colors import ASSIGNMENT_COLORS
-from .utils import encode_image_to_base64
+from .utils import (
+    categorize_value,
+    encode_image_to_base64,
+    ensure_plotly_assets,
+    truncate_comma_separated,
+    verdict_bounds,
+)
 
 _cfg = get_config()
 DEFAULT_THRESHOLD: float = _cfg["default_threshold"]
@@ -21,7 +28,6 @@ UNCLEAR_RANGE: dict[str, float] = _cfg["unclear_range"]
 PLOT_SAMPLE_REPORT: dict[str, Any] = _cfg["plot_sample_report"]
 TEMPLATE_DIR: str = _cfg["paths"]["template_dir"]
 LOGO_PATH: str = _cfg["paths"]["logo_path"]
-PLOT_DIMENSIONS: dict[str, int] = PLOT_SAMPLE_REPORT.get("figsize", {"width": 1000, "height": 400})
 DOWNSAMPLE_LIMIT: int = PLOT_SAMPLE_REPORT.get("max_rows_for_interactive_plots", 5000)
 
 # Setup logging for the libraries used in this script
@@ -126,6 +132,8 @@ def generate_plots(
     plot_backend: str = "matplotlib",
     reports_dir: str | None = None,
     total_reads: int | None = None,
+    threshold: float = DEFAULT_THRESHOLD,
+    unclear: dict[str, float] = UNCLEAR_RANGE,
 ) -> tuple[str, str | None, str, str | None]:
     """Generate interactive and optional static plots.
 
@@ -279,7 +287,13 @@ def generate_plots(
             )
 
             # Generate plots using matplotlib
-            generate_boxplot_matplotlib(reads_df, boxplot_filename_png, total_reads=total_reads)
+            generate_boxplot_matplotlib(
+                reads_df,
+                boxplot_filename_png,
+                total_reads=total_reads,
+                threshold=threshold,
+                unclear_range=unclear,
+            )
             generate_scatter_matplotlib(reads_df, scatter_filename_png, total_reads=total_reads)
         else:
             # Default plotly/kaleido backend
@@ -300,22 +314,7 @@ def generate_plots(
     )
 
 
-def _ensure_plotly_assets(output_root: str) -> None:
-    """Copy plotly.min.js to {output_root}/assets/ if not already present."""
-    import plotly
-
-    plotly_dir = os.path.dirname(plotly.__file__)
-    plotly_js_source = os.path.join(plotly_dir, "package_data", "plotly.min.js")
-
-    assets_dir = os.path.join(output_root, "assets")
-    os.makedirs(assets_dir, exist_ok=True)
-
-    dest = os.path.join(assets_dir, "plotly.min.js")
-    if not os.path.exists(dest):
-        import shutil
-
-        shutil.copy2(plotly_js_source, dest)
-        logging.info(f"Copied plotly.min.js to {dest}")
+_ensure_plotly_assets = ensure_plotly_assets
 
 
 def extract_verdict_from_summary(summary_df: pd.DataFrame) -> str:
@@ -348,6 +347,14 @@ def _compute_gauge_position(
     """
     if ratio <= 0:
         return 3.0
+    if unclear_lower <= 0:
+        unclear_lower = 0.001
+    if unclear_upper <= unclear_lower:
+        if ratio <= unclear_upper:
+            return max(3.0, min(50.0, (ratio / max(unclear_upper, 0.001)) * 50.0))
+        upper_max = max(10.0 * unclear_upper, unclear_upper + 1.0)
+        return min(95.0, 50.0 + ((ratio - unclear_upper) / (upper_max - unclear_upper)) * 45.0)
+
     if ratio < unclear_lower:
         return max(3.0, (ratio / unclear_lower) * (100.0 / 3.0))
     if ratio <= unclear_upper:
@@ -385,10 +392,7 @@ def _truncate_list_filter(value: str, max_items: int = 5) -> str:
     """Truncate comma-separated list for display. Full value in title attribute."""
     if not value or value in ("N/A", "NA"):
         return value
-    items = value.split(",")
-    if len(items) <= max_items:
-        return value
-    return ",".join(items[:max_items]) + ",..."
+    return truncate_comma_separated(value, max_items)
 
 
 def generate_report(
@@ -425,13 +429,11 @@ def generate_report(
     ambiguous_pct: str = "0.0",
     coverage_outside_insert: str = "N/A",
     mismatches_near_insert: str = "N/A",
-    backbone_warning: str = "",
     verdict_short: str = "",
     verdict_class: str = "",
     gauge_position: float = 50.0,
-    gauge_clean_end: float = 40.0,
-    gauge_unclear_end: float = 60.0,
-    gauge_threshold_pos: float = 50.0,
+    gauge_max_label: str = "10+",
+    contam_cutoff: float | None = None,
     mismatches_with: int = 0,
     mismatches_without: int = 0,
     sample_name: str = "",
@@ -440,8 +442,20 @@ def generate_report(
     coverage_fallback: bool = False,
     reports_dir: str | None = None,
     junction_metrics: dict[str, str] | None = None,
+    anonymize: bool = False,
 ) -> None:
     from jinja2 import Environment, FileSystemLoader
+
+    if anonymize:
+
+        def _shown(p: str) -> str:
+            return os.path.basename(p.rstrip(os.sep)) if os.sep in p else p
+
+        human_fasta = _shown(human_fasta)
+        plasmid_gb = _shown(plasmid_gb)
+        sequencing_file = _shown(sequencing_file)
+        if command_line:
+            command_line = " ".join(_shown(a) for a in command_line.split())
 
     logging.info("Generating report")
     env = Environment(
@@ -460,6 +474,10 @@ def generate_report(
         else ""
     )
 
+    resolved_cutoff = (
+        contam_cutoff if contam_cutoff is not None else unclear.get("upper_bound", threshold)
+    )
+
     # Render the interactive HTML report
     html_content_interactive = template.render(
         box_plot=boxplot_html,
@@ -470,6 +488,7 @@ def generate_report(
         ratio=f"{ratio:.3f}",
         threshold=threshold,
         unclear_range=unclear,
+        contam_cutoff=resolved_cutoff,
         version=VERSION,
         logo_base64=logo_base64,
         human_fasta=human_fasta,
@@ -498,11 +517,8 @@ def generate_report(
         coverage_outside_insert=coverage_outside_insert,
         mismatches_with=mismatches_with,
         mismatches_without=mismatches_without,
-        backbone_warning=backbone_warning,
         gauge_position=gauge_position,
-        gauge_clean_end=gauge_clean_end,
-        gauge_unclear_end=gauge_unclear_end,
-        gauge_threshold_pos=gauge_threshold_pos,
+        gauge_max_label=gauge_max_label,
         sample_name=sample_name,
         plasmid_name=plasmid_name,
         coverage_metrics=coverage_metrics or {},
@@ -533,6 +549,7 @@ def generate_report(
             ratio=f"{ratio:.3f}",
             threshold=threshold,
             unclear_range=unclear,
+            contam_cutoff=resolved_cutoff,
             version=VERSION,
             logo_base64=logo_base64,
             human_fasta=human_fasta,
@@ -561,11 +578,8 @@ def generate_report(
             coverage_outside_insert=coverage_outside_insert,
             mismatches_with=mismatches_with,
             mismatches_without=mismatches_without,
-            backbone_warning=backbone_warning,
             gauge_position=gauge_position,
-            gauge_clean_end=gauge_clean_end,
-            gauge_unclear_end=gauge_unclear_end,
-            gauge_threshold_pos=gauge_threshold_pos,
+            gauge_max_label=gauge_max_label,
             sample_name=sample_name,
             plasmid_name=plasmid_name,
             coverage_metrics=coverage_metrics or {},
@@ -592,10 +606,34 @@ def main(
     static_report: bool = False,
     plotly_mode: str = "directory",
     plot_backend: str = "matplotlib",
-    output_root: str | None = None,
     reports_dir: str | None = None,
+    anonymize: bool = False,
 ) -> None:
+    if anonymize:
+
+        def _shown(p: str) -> str:
+            return os.path.basename(p.rstrip(os.sep)) if os.sep in p else p
+
+        human_fasta = _shown(human_fasta)
+        plasmid_gb = _shown(plasmid_gb)
+        sequencing_file = _shown(sequencing_file)
+        if command_line:
+            command_line = " ".join(_shown(a) for a in command_line.split())
+
     reads_df, summary_df = load_data(reads_assignment_file, summary_file)
+
+    # Extract effective threshold from summary_df (Threshold row if present, else fallback)
+    effective_threshold = threshold
+    thresh_rows = summary_df[summary_df["Category"] == "Threshold"]
+    if not thresh_rows.empty:
+        try:
+            val_col = "Count" if "Count" in thresh_rows.columns else "Value"
+            effective_threshold = float(thresh_rows[val_col].iloc[0])
+        except (ValueError, TypeError):
+            effective_threshold = threshold
+
+    unclear_lower, unclear_upper = verdict_bounds(effective_threshold, unclear)
+    effective_unclear = {"lower_bound": unclear_lower, "upper_bound": unclear_upper}
 
     # Extract category counts from summary_df before downsampling
     def _get_count(df: pd.DataFrame, category: str) -> int:
@@ -627,10 +665,9 @@ def main(
         plot_backend=plot_backend,
         reports_dir=reports_dir,
         total_reads=total_reads,
+        threshold=effective_threshold,
+        unclear=effective_unclear,
     )
-
-    # Extract the verdict from the summary file
-    verdict = extract_verdict_from_summary(summary_df)
 
     # Calculate percentages
     def _pct(count: int, total: int) -> str:
@@ -668,13 +705,26 @@ def main(
         "cv_backbone": _get_metric(summary_df, "CoverageCV_Backbone"),
     }
 
-    # Extract junction metrics (Phase 15)
+    # Extract junction metrics (Phase 15 & #121/#122)
     junction_metrics = {
         "splice_junction_count": _get_metric(summary_df, "SpliceJunctionCount", default="N/A"),
         "exon_count": _get_metric(summary_df, "ExonCount", default="N/A"),
         "splice_junction_reads": _get_metric(summary_df, "SpliceJunctionReads", default="N/A"),
+        "splice_junction_events": _get_metric(summary_df, "SpliceJunctionEvents", default="N/A"),
         "splice_junctions_covered": _get_metric(
             summary_df, "SpliceJunctionsCovered", default="N/A"
+        ),
+        "exon_intron_boundary_reads": _get_metric(
+            summary_df, "ExonIntronBoundaryReads", default="N/A"
+        ),
+        "estimated_contamination_fraction": _get_metric(
+            summary_df, "EstimatedContaminationFraction", default="N/A"
+        ),
+        "vector_insert_junction_reads": _get_metric(
+            summary_df, "VectorInsertJunctionReads", default="N/A"
+        ),
+        "vector_insert_bridge_pairs": _get_metric(
+            summary_df, "VectorInsertBridgePairs", default="N/A"
         ),
         "exon_lengths": _get_metric(summary_df, "ExonLengths", default="N/A"),
         "intron_lengths": _get_metric(summary_df, "IntronLengths", default="N/A"),
@@ -688,10 +738,9 @@ def main(
     )
 
     # Determine if backbone filtering was unavailable
-    backbone_warning = ""
-
     ratio_str = _get_metric(summary_df, "Ratio", default="")
-    if ratio_str != "":
+    has_stored_ratio = ratio_str != ""
+    if has_stored_ratio:
         try:
             ratio = float(ratio_str)
         except (ValueError, TypeError):
@@ -699,14 +748,24 @@ def main(
     else:
         ratio = plasmid_count / human_count if human_count != 0 else float("inf")
 
+    # Extract the verdict from the summary file or recompute from valid stored ratio
+    verdict = extract_verdict_from_summary(summary_df)
+    if has_stored_ratio and math.isfinite(ratio):
+        verdict_cat = categorize_value(ratio, effective_threshold, effective_unclear)
+        verdict = {
+            "Contaminated": "Sample is contaminated with plasmid DNA",
+            "Unclear": "Sample contamination status is unclear",
+            "Clean": "Sample is not contaminated with plasmid DNA",
+        }.get(verdict_cat, verdict)
+
     # Derive new template variables
     verdict_short, verdict_class = _derive_verdict_info(verdict)
-    unclear_lower = float(UNCLEAR_RANGE.get("lower_bound", 0.6))
-    unclear_upper = float(UNCLEAR_RANGE.get("upper_bound", 1.0))
     gauge_position = _compute_gauge_position(ratio, unclear_lower, unclear_upper)
-    gauge_clean_end = _compute_gauge_position(unclear_lower, unclear_lower, unclear_upper)
-    gauge_unclear_end = _compute_gauge_position(unclear_upper, unclear_lower, unclear_upper)
-    gauge_threshold_pos = _compute_gauge_position(threshold, unclear_lower, unclear_upper)
+    gauge_max_label = (
+        f"{int(10.0 * unclear_upper)}+"
+        if (10.0 * unclear_upper).is_integer()
+        else f"{10.0 * unclear_upper:.1f}+"
+    )
     mismatches_with, mismatches_without = _parse_mismatches(mismatches_near_insert)
 
     # Derive sample and plasmid display names from file paths
@@ -749,8 +808,8 @@ def main(
         output_folder,
         verdict,
         ratio,
-        threshold,
-        UNCLEAR_RANGE,
+        effective_threshold,
+        effective_unclear,
         command_line,
         human_fasta,
         plasmid_gb,
@@ -778,13 +837,11 @@ def main(
         ambiguous_pct=_pct(ambiguous_count, total_reads),
         coverage_outside_insert=coverage_outside_insert,
         mismatches_near_insert=mismatches_near_insert,
-        backbone_warning=backbone_warning,
         verdict_short=verdict_short,
         verdict_class=verdict_class,
         gauge_position=gauge_position,
-        gauge_clean_end=gauge_clean_end,
-        gauge_unclear_end=gauge_unclear_end,
-        gauge_threshold_pos=gauge_threshold_pos,
+        gauge_max_label=gauge_max_label,
+        contam_cutoff=unclear_upper,
         mismatches_with=mismatches_with,
         mismatches_without=mismatches_without,
         sample_name=sample_name,
@@ -793,4 +850,5 @@ def main(
         coverage_fallback=coverage_fallback,
         reports_dir=reports_dir,
         junction_metrics=junction_metrics,
+        anonymize=anonymize,
     )

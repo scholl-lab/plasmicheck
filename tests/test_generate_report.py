@@ -341,3 +341,131 @@ class TestCoverageMetricsInReport:
         html_content = report_path.read_text()
 
         assert "Insert region not defined" in html_content
+
+
+@pytest.mark.unit
+def test_truncate_list_filter_semantics() -> None:
+    """Verify _truncate_list_filter semantics for empty, missing, and truncated items."""
+    from plasmicheck.scripts.generate_report import _truncate_list_filter
+
+    assert _truncate_list_filter("") == ""
+    assert _truncate_list_filter("NA") == "NA"
+    assert _truncate_list_filter("nan") == "nan"
+    assert _truncate_list_filter("1,2,3,4,5") == "1,2,3,4,5"
+    assert _truncate_list_filter("1,2,3,4,5,6") == "1,2,3,4,5,..."
+
+
+@pytest.mark.unit
+def test_compute_gauge_position_bounds() -> None:
+    """Verify _compute_gauge_position under standard and zero/inverted unclear intervals."""
+    from plasmicheck.scripts.generate_report import _compute_gauge_position
+
+    # Standard bounds: 0.6 to 1.0
+    pos_low = _compute_gauge_position(0.3, 0.6, 1.0)
+    assert 3.0 <= pos_low < 33.34
+    pos_mid = _compute_gauge_position(0.8, 0.6, 1.0)
+    assert 33.33 <= pos_mid <= 66.67
+    pos_high = _compute_gauge_position(5.0, 0.6, 1.0)
+    assert 66.67 <= pos_high <= 95.0
+
+    # Inverted / zero-width unclear interval (e.g. upper <= lower)
+    pos_inverted = _compute_gauge_position(0.3, 0.6, 0.4)
+    assert 3.0 <= pos_inverted <= 95.0
+
+
+@pytest.mark.unit
+def test_report_effective_threshold_from_summary_tsv(tmp_path: Path) -> None:
+    """Verify main() extracts threshold from summary.tsv Threshold row and passes it."""
+    from plasmicheck.scripts.generate_report import main
+
+    reads_file = tmp_path / "reads.tsv"
+    summary_file = tmp_path / "summary.tsv"
+    output_folder = tmp_path / "output"
+    output_folder.mkdir()
+
+    reads_file.write_text("AssignedTo\tPlasmidScore\tHumanScore\nPlasmid\t70\t30\n")
+    summary_file.write_text(
+        "Category\tCount\nPlasmid\t100\nHuman\t50\nRatio\t0.9\nThreshold\t0.95\nVerdict\tSample contamination status is unclear\n"
+    )
+
+    with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
+        mock_plots.return_value = ("<div>box</div>", None, "<div>scatter</div>", None)
+        main(str(reads_file), str(summary_file), str(output_folder))
+
+        # Check threshold passed to generate_plots was 0.95
+        assert mock_plots.call_count == 1
+        call_kwargs = mock_plots.call_args[1]
+        assert call_kwargs["threshold"] == 0.95
+        assert call_kwargs["unclear"]["upper_bound"] == 0.95
+
+    report_path = output_folder / "report_interactive.html"
+    assert report_path.exists()
+    content = report_path.read_text()
+    assert "0.95" in content
+
+
+@pytest.mark.unit
+def test_report_custom_threshold_reclassifies_verdict(tmp_path: Path) -> None:
+    """Verify custom threshold reclassifies display verdict from stored ratio."""
+    from plasmicheck.scripts.generate_report import main
+
+    reads_file = tmp_path / "reads.tsv"
+    summary_file = tmp_path / "summary.tsv"
+    output_folder = tmp_path / "output"
+    output_folder.mkdir()
+
+    reads_file.write_text("AssignedTo\tPlasmidScore\tHumanScore\nPlasmid\t70\t30\n")
+    # Stored verdict is Contaminated (based on default 0.8), but Ratio is 0.9
+    summary_file.write_text(
+        "Category\tCount\nPlasmid\t100\nHuman\t50\nRatio\t0.9\nVerdict\tSample is contaminated with plasmid DNA\n"
+    )
+
+    with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
+        mock_plots.return_value = ("<div>box</div>", None, "<div>scatter</div>", None)
+        # Pass threshold=1.2: with 0.6..1.2, ratio 0.9 becomes Unclear
+        main(str(reads_file), str(summary_file), str(output_folder), threshold=1.2)
+
+    report_path = output_folder / "report_interactive.html"
+    assert report_path.exists()
+    content = report_path.read_text()
+    # Display verdict should be reclassified to Unclear
+    assert "Unclear" in content
+
+
+@pytest.mark.unit
+def test_report_anonymize_paths(tmp_path: Path) -> None:
+    """Verify --anonymize strips directory paths from report metadata."""
+    from plasmicheck.scripts.generate_report import main
+
+    reads_file = tmp_path / "reads.tsv"
+    summary_file = tmp_path / "summary.tsv"
+    output_folder = tmp_path / "output"
+    output_folder.mkdir()
+
+    reads_file.write_text("AssignedTo\tPlasmidScore\tHumanScore\nPlasmid\t70\t30\n")
+    summary_file.write_text(
+        "Category\tCount\nPlasmid\t100\nHuman\t50\nRatio\t2.0\nVerdict\tSample is contaminated with plasmid DNA\n"
+    )
+
+    with patch("plasmicheck.scripts.generate_report.generate_plots") as mock_plots:
+        mock_plots.return_value = ("<div>box</div>", None, "<div>scatter</div>", None)
+        main(
+            str(reads_file),
+            str(summary_file),
+            str(output_folder),
+            human_fasta="/secret/patient/data/human.fa",
+            plasmid_gb="/private/path/plasmid.gb",
+            sequencing_file="/confidential/patient123/reads.bam",
+            command_line="plasmicheck pipeline -hf /secret/patient/data/human.fa -pf /private/path/plasmid.gb",
+            anonymize=True,
+        )
+
+    report_path = output_folder / "report_interactive.html"
+    assert report_path.exists()
+    content = report_path.read_text()
+    assert "/secret/patient/data" not in content
+    assert "/private/path" not in content
+    assert "/confidential/patient123" not in content
+    assert "human.fa" in content
+    assert "plasmid.gb" in content
+    assert "reads.bam" in content

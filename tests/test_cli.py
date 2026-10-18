@@ -85,7 +85,23 @@ def test_compare_forwards_threshold(
         patch("plasmicheck.scripts.compare_alignments.compare_alignments") as compare,
     ):
         cli.main(default_threshold=0.42)
-    compare.assert_called_once_with("p.bam", "h.bam", "out", expected)
+    compare.assert_called_once_with("p.bam", "h.bam", "out", expected, anonymize=False)
+
+
+@pytest.mark.unit
+def test_compare_forwards_anonymize(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["plasmicheck", "compare", "-p", "p.bam", "-m", "h.bam", "-o", "out", "--anonymize"],
+    )
+    with (
+        patch.object(cli, "setup_logging"),
+        patch.object(cli, "check_requirements"),
+        patch("plasmicheck.scripts.compare_alignments.compare_alignments") as compare,
+    ):
+        cli.main()
+    compare.assert_called_once_with("p.bam", "h.bam", "out", cli.DEFAULT_THRESHOLD, anonymize=True)
 
 
 @pytest.mark.unit
@@ -162,7 +178,36 @@ def test_pipeline_forwards_run_options(
         threads=3,
         cache_dir="custom-cache",
         no_cache=True,
+        anonymize=False,
     )
+
+
+@pytest.mark.unit
+def test_pipeline_forwards_anonymize(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "plasmicheck",
+            "pipeline",
+            "-hf",
+            "human.fa",
+            "-pf",
+            "plasmid.gb",
+            "-sf1",
+            "r1.fastq",
+            "-o",
+            "output",
+            "--anonymize",
+        ],
+    )
+    with (
+        patch.object(cli, "setup_logging"),
+        patch.object(cli, "check_requirements"),
+        patch("plasmicheck.scripts.run_pipeline.run_pipeline") as pipeline,
+    ):
+        cli.main()
+    assert pipeline.call_args.kwargs["anonymize"] is True
 
 
 @pytest.mark.unit

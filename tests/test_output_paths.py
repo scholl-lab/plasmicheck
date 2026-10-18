@@ -175,6 +175,9 @@ def test_base_level_files() -> None:
     assert paths.md5sum_file == base / "md5sum.txt"
     assert paths.md5sum_file.parent == base
 
+    assert paths.igv_session == base / "igv_session.xml"
+    assert paths.igv_session.parent == base
+
 
 @pytest.mark.unit
 def test_ensure_directories_creates_all_subdirs(tmp_path: Path) -> None:
@@ -287,6 +290,7 @@ def test_all_paths_return_path_objects() -> None:
 
     # Base-level files
     assert isinstance(paths.md5sum_file, Path)
+    assert isinstance(paths.igv_session, Path)
 
 
 @pytest.mark.unit
@@ -368,10 +372,7 @@ def test_output_paths_with_read_compare_outputs(tmp_path: Path) -> None:
     )
 
     # Read outputs with read_compare_outputs
-    reads_df, summary_df = read_compare_outputs(str(tmp_path))
-
-    # Verify reads DataFrame is empty (#109.1: read_compare_outputs skips .reads_assignment.tsv)
-    assert reads_df.empty
+    summary_df = read_compare_outputs(str(tmp_path))
 
     # Verify summary DataFrame
     assert len(summary_df) == 8  # 4 rows from sample1 + 4 from sample2

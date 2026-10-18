@@ -17,8 +17,6 @@ PADDING_DEFAULT: int = _cfg["padding"]
 FASTA_EXTENSIONS: list[str] = _cfg["alignment"]["fasta_extensions"]
 MINIMAP2_THREADS: int = _cfg["alignment"]["minimap2_threads"]
 SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
-THREADS_MINIMAP2: int = MINIMAP2_THREADS
-THREADS_SAMTOOLS: int = SAMTOOLS_THREADS
 
 
 def find_fasta_file(base_name: str) -> str:
@@ -44,8 +42,8 @@ def spliced_alignment(
     threads_minimap2: int | None = None,
     threads_samtools: int | None = None,
 ) -> list[tuple[str, int, int]]:
-    mm_threads = threads_minimap2 if threads_minimap2 is not None else THREADS_MINIMAP2
-    st_threads = threads_samtools if threads_samtools is not None else THREADS_SAMTOOLS
+    mm_threads = threads_minimap2 if threads_minimap2 is not None else MINIMAP2_THREADS
+    st_threads = threads_samtools if threads_samtools is not None else SAMTOOLS_THREADS
     logging.info(
         f"Performing spliced alignment with {plasmid_fasta} to {human_index} and writing to {output_bam}"
     )
@@ -179,7 +177,7 @@ def extract_plasmid_cdna_positions(plasmid_fasta: str, bam_file: str, output_fil
         introns: list[int] = []
         curr = 0
         for op, length in ops_list:
-            if op in (0, 2, 7, 8):
+            if op in (0, 1, 7, 8):
                 curr += length
             elif op == 3:
                 exons.append(curr)

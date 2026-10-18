@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -12,9 +13,6 @@ _cfg = get_config()
 MINIMAP2_OPTIONS: list[str] = _cfg["indexing"]["minimap2_options"]
 SAMTOOLS_OPTIONS: list[str] = _cfg["indexing"]["samtools_options"]
 MINIMAP2_THREADS: int = _cfg["alignment"]["minimap2_threads"]
-SAMTOOLS_THREADS: int = _cfg["alignment"]["samtools_threads"]
-THREADS_MINIMAP2: int = MINIMAP2_THREADS
-THREADS_SAMTOOLS: int = SAMTOOLS_THREADS
 LOCK_TIMEOUT: int = 600
 
 
@@ -22,10 +20,15 @@ def create_indexes(fasta_file: str, overwrite: bool = False, threads: int | None
     base_name = os.path.splitext(fasta_file)[0]
     minimap2_index = f"{base_name}.mmi"
     samtools_index = f"{fasta_file}.fai"
-    num_threads = threads if threads is not None else THREADS_MINIMAP2
+    num_threads = threads if threads is not None else MINIMAP2_THREADS
 
-    # Fast-path: if indexes already exist and we are not overwriting, avoid taking the lock.
-    if not overwrite and os.path.exists(minimap2_index) and os.path.exists(samtools_index):
+    # Fast-path: if indexes already exist and are non-empty and we are not overwriting, avoid taking the lock.
+    if (
+        not overwrite
+        and os.path.exists(minimap2_index)
+        and os.path.exists(samtools_index)
+        and os.path.getsize(samtools_index) > 0
+    ):
         logging.info(f"Index files already exist for {fasta_file}, skipping.")
         return
 
@@ -33,13 +36,18 @@ def create_indexes(fasta_file: str, overwrite: bool = False, threads: int | None
     lock = FileLock(lock_path, timeout=LOCK_TIMEOUT)
     with lock:
         # Re-check inside lock — another process may have finished while we waited
-        if not overwrite and os.path.exists(minimap2_index) and os.path.exists(samtools_index):
+        if (
+            not overwrite
+            and os.path.exists(minimap2_index)
+            and os.path.exists(samtools_index)
+            and os.path.getsize(samtools_index) > 0
+        ):
             logging.info(f"Index files already exist for {fasta_file}, skipping.")
             return
 
         # Warn about partial index state (one exists, the other doesn't)
         has_minimap2 = os.path.exists(minimap2_index)
-        has_samtools = os.path.exists(samtools_index)
+        has_samtools = os.path.exists(samtools_index) and os.path.getsize(samtools_index) > 0
         if not overwrite and (has_minimap2 != has_samtools):
             present = minimap2_index if has_minimap2 else samtools_index
             missing = samtools_index if has_minimap2 else minimap2_index
@@ -70,12 +78,28 @@ def create_indexes(fasta_file: str, overwrite: bool = False, threads: int | None
             logging.error(f"Failed to create Minimap2 index: {e}")
             raise
 
-        # Create Samtools index
+        # Create Samtools index atomically via temporary file
         logging.info(f"Creating Samtools index for {fasta_file}")
-        samtools_command = ["samtools", "faidx", *SAMTOOLS_OPTIONS, fasta_file]
+        tmp_fai = f"{fasta_file}.fai.{os.getpid()}.tmp"
+        samtools_command = [
+            "samtools",
+            "faidx",
+            *SAMTOOLS_OPTIONS,
+            fasta_file,
+            "-o",
+            tmp_fai,
+        ]
         try:
             subprocess.run(samtools_command, check=True)
+            if os.path.exists(tmp_fai):
+                os.replace(tmp_fai, samtools_index)
             logging.info(f"Samtools index created: {samtools_index}")
         except subprocess.CalledProcessError as e:
+            if os.path.exists(tmp_fai):
+                os.remove(tmp_fai)
             logging.error(f"Failed to create Samtools index: {e}")
             raise
+        finally:
+            if os.path.exists(tmp_fai):
+                with contextlib.suppress(OSError):
+                    os.remove(tmp_fai)

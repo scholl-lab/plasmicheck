@@ -34,3 +34,16 @@ class TestGetConfig:
         b = get_config()
         assert a is not b
         assert a == b  # same content
+
+    @pytest.mark.unit
+    def test_removed_dead_keys_and_retained_figsize(self) -> None:
+        cfg = get_config()
+        # plot_sample_report.figsize must be retained for matplotlib_backend
+        assert "figsize" in cfg["plot_sample_report"]
+        assert cfg["plot_sample_report"]["figsize"] == {"width": 1000, "height": 400}
+        # Dead keys in plot_summary and plot_sample_report must be removed
+        assert "colors" not in cfg["plot_sample_report"]
+        assert "title_box_plot" not in cfg["plot_sample_report"]
+        assert "figsize" not in cfg["plot_summary"]
+        assert "colors" not in cfg["plot_summary"]
+        assert "plot_dimensions" not in cfg["plot_summary"]

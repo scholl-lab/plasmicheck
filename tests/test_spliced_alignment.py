@@ -304,14 +304,36 @@ class TestExtractJunctionMetadata:
 
     @pytest.mark.unit
     def test_exon_lengths_indel_accumulation(self, tmp_path: Path) -> None:
-        """Test that D and =/X indels within an exon are accumulated into that exon."""
+        """Test that reference deletions (D) do not consume plasmid query bases in exon lengths."""
         output_file = tmp_path / "cDNA_positions.txt"
-        # 50M 2D 48M 100N 60M -> exon 1 is 50+2+48 = 100, exon 2 is 60
+        # 50M 2D 48M 100N 60M -> exon 1 has 50 + 48 = 98 plasmid bases (2D consumes reference only), exon 2 is 60
         mock_read = self._create_mock_read(
             cigartuples=[(0, 50), (2, 2), (0, 48), (3, 100), (0, 60)],
             reference_name="chr1",
             reference_start=1000,
             reference_end=1260,
+        )
+        mock_bamfile = MagicMock()
+        mock_bamfile.fetch.return_value = [mock_read]
+        with patch("pysam.AlignmentFile", return_value=mock_bamfile):
+            extract_plasmid_cdna_positions("plasmid.fa", "test.bam", str(output_file))
+
+        content = output_file.read_text()
+        assert "SpliceJunctionCount: 1" in content
+        assert "ExonCount: 2" in content
+        assert "ExonLengths: 98,60" in content
+        assert "IntronLengths: 100" in content
+
+    @pytest.mark.unit
+    def test_exon_lengths_insertion_accumulation(self, tmp_path: Path) -> None:
+        """Test that query insertions (I) consume plasmid bases and accumulate into exon lengths."""
+        output_file = tmp_path / "cDNA_positions.txt"
+        # 50M 3I 47M 100N 60M -> exon 1 is 50+3+47 = 100 plasmid bases, exon 2 is 60
+        mock_read = self._create_mock_read(
+            cigartuples=[(0, 50), (1, 3), (0, 47), (3, 100), (0, 60)],
+            reference_name="chr1",
+            reference_start=1000,
+            reference_end=1257,
         )
         mock_bamfile = MagicMock()
         mock_bamfile.fetch.return_value = [mock_read]

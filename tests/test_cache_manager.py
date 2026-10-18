@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
 
 import pytest
 
-from plasmicheck.cache_manager import CacheManager
+from plasmicheck.cache_manager import CacheManager, _resolve_md5
 
 
 @pytest.fixture
@@ -339,6 +340,43 @@ def test_spliced_cache_differentiates_padding(
 
     assert cache.get_spliced(str(plasmid), str(human), padding=1000) is not None
     assert cache.get_spliced(str(plasmid), str(human), padding=500) is None
+
+
+@pytest.mark.unit
+def test_spliced_cache_rejects_v2_key(
+    tmp_path: Path,
+    sample_bam: Path,
+    sample_spliced_fasta: Path,
+    sample_cdna_positions: Path,
+) -> None:
+    """Test that existing v2 cache entries are not hit after bumping to v3."""
+    cache_root = tmp_path / "cache"
+    cache = CacheManager(cache_root)
+
+    plasmid = tmp_path / "plasmid.fasta"
+    plasmid.write_text(">plasmid\nACGT\n")
+    human = tmp_path / "human.fasta"
+    human.write_text(">chr1\nATGC\n")
+
+    p_md5 = _resolve_md5(str(plasmid))
+    h_md5 = _resolve_md5(str(human))
+    v2_raw = f"{p_md5}:{h_md5}:1000:v2"
+    v2_key = hashlib.md5(v2_raw.encode()).hexdigest()
+
+    # Manually populate manifest with v2 key
+    cache.manifest[v2_key] = {
+        "bam_path": str(sample_bam),
+        "fasta_path": str(sample_spliced_fasta),
+        "cdna_path": str(sample_cdna_positions),
+        "bam_size": sample_bam.stat().st_size,
+        "fasta_size": sample_spliced_fasta.stat().st_size,
+        "cdna_size": sample_cdna_positions.stat().st_size,
+        "last_access": 0,
+    }
+    cache._save_manifest()
+
+    # Querying spliced cache should miss because it looks for :v3
+    assert cache.get_spliced(str(plasmid), str(human), padding=1000) is None
 
 
 # Atomic write tests

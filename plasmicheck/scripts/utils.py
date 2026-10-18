@@ -171,3 +171,50 @@ def quality_control(file_paths: list[str], expected_formats: list[str] | str | N
         validate_file_format(file_paths, expected_formats)
 
     logging.debug("Quality control checks passed.")
+
+
+def verdict_bounds(threshold: float, unclear_range: dict[str, float]) -> tuple[float, float]:
+    """Calculate the lower and upper bounds for the unclear verdict band.
+
+    At default_threshold, retains unclear_range['upper_bound'].
+    For custom thresholds, threshold acts as the upper decision boundary.
+    """
+    default_thresh = float(get_config().get("default_threshold", 0.8))
+    upper = unclear_range["upper_bound"] if threshold == default_thresh else threshold
+    return unclear_range["lower_bound"], upper
+
+
+def categorize_value(value: float, threshold: float, unclear_range: dict[str, float]) -> str:
+    """Categorize a ratio value as Clean, Unclear, or Contaminated."""
+    lower, upper = verdict_bounds(threshold, unclear_range)
+    if value > upper:
+        return "Contaminated"
+    if lower <= value <= upper:
+        return "Unclear"
+    return "Clean"
+
+
+def ensure_plotly_assets(output_root: str) -> None:
+    """Copy plotly.min.js to {output_root}/assets/ if not already present."""
+    import shutil
+
+    import plotly
+
+    plotly_dir = os.path.dirname(plotly.__file__)
+    plotly_js_source = os.path.join(plotly_dir, "package_data", "plotly.min.js")
+
+    assets_dir = os.path.join(output_root, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+
+    dest = os.path.join(assets_dir, "plotly.min.js")
+    if not os.path.exists(dest):
+        shutil.copy2(plotly_js_source, dest)
+        logging.info(f"Copied plotly.min.js to {dest}")
+
+
+def truncate_comma_separated(value: str, max_items: int = 5) -> str:
+    """Truncate comma-separated list of items to at most max_items, appending ',...' if truncated."""
+    items = value.split(",")
+    if len(items) <= max_items:
+        return value
+    return ",".join(items[:max_items]) + ",..."

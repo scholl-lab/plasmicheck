@@ -450,10 +450,7 @@ class TestReadCompareOutputsBothLayouts:
         summary_file.write_text("Category\tMetric\tCount\nVerdict\tContaminated\t1\n")
 
         # Read outputs
-        reads_df, summary_df = read_compare_outputs(str(tmp_path))
-
-        # reads_df is empty as reads assignment files are intentionally not loaded
-        assert reads_df.empty
+        summary_df = read_compare_outputs(str(tmp_path))
 
         assert len(summary_df) == 1
         assert summary_df.iloc[0]["Sample"] == "sampleA"
@@ -475,10 +472,7 @@ class TestReadCompareOutputsBothLayouts:
         summary_file.write_text("Category\tMetric\tCount\nVerdict\tNotContaminated\t1\n")
 
         # Read outputs
-        reads_df, summary_df = read_compare_outputs(str(tmp_path))
-
-        # reads_df is empty as reads assignment files are intentionally not loaded
-        assert reads_df.empty
+        summary_df = read_compare_outputs(str(tmp_path))
 
         assert len(summary_df) == 1
         assert summary_df.iloc[0]["Sample"] == "sampleB"
@@ -508,10 +502,7 @@ class TestReadCompareOutputsBothLayouts:
         )
 
         # Read outputs
-        reads_df, summary_df = read_compare_outputs(str(tmp_path))
-
-        # reads_df is empty as reads assignment files are intentionally not loaded
-        assert reads_df.empty
+        summary_df = read_compare_outputs(str(tmp_path))
 
         assert len(summary_df) == 2
         assert set(summary_df["Sample"]) == {"sample1", "sample2"}
@@ -1084,3 +1075,78 @@ def test_summary_report_autoescape(tmp_path: Path) -> None:
     content = report_file.read_text()
     assert "<script>alert('cmd')</script>" not in content
     assert "&lt;script&gt;alert(&#39;cmd&#39;)&lt;/script&gt;" in content
+
+
+@pytest.mark.unit
+def test_truncate_list_for_html_semantics() -> None:
+    """Verify _truncate_list_for_html normalizes missing values to N/A."""
+    from plasmicheck.scripts.generate_summary_reports import _truncate_list_for_html
+
+    assert _truncate_list_for_html("") == "N/A"
+    assert _truncate_list_for_html("NA") == "N/A"
+    assert _truncate_list_for_html("nan") == "N/A"
+    assert _truncate_list_for_html("1,2,3,4,5") == "1,2,3,4,5"
+    assert _truncate_list_for_html("1,2,3,4,5,6") == "1,2,3,4,5,..."
+
+
+@pytest.mark.unit
+def test_read_compare_outputs_returns_single_dataframe(tmp_path: Path) -> None:
+    """Verify read_compare_outputs returns a single DataFrame rather than a tuple."""
+    sample_dir = tmp_path / "sampleA" / "plasmidX"
+    sample_dir.mkdir(parents=True)
+    summary_file = sample_dir / "comparison_result.summary.tsv"
+    summary_file.write_text("Category\tMetric\tCount\nVerdict\tClean\t1\n")
+
+    result: object = read_compare_outputs(str(tmp_path))
+    assert not isinstance(result, tuple)
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) == 1
+
+
+@pytest.mark.unit
+def test_plot_boxplot_custom_threshold(tmp_path: Path) -> None:
+    """Verify plot_boxplot accepts custom threshold and unclear range."""
+    boxplot_data = pd.DataFrame({"Plasmid1": [0.1, 0.5, 0.9]}, index=["s1", "s2", "s3"])
+    unclear = {"lower_bound": 0.5, "upper_bound": 1.2}
+
+    interactive_html, _png_path = plot_boxplot(
+        boxplot_data,
+        str(tmp_path),
+        threshold=1.2,
+        unclear_range=unclear,
+    )
+    assert Path(interactive_html).exists()
+    content = Path(interactive_html).read_text()
+    assert "Unclear (0.5-1.2)" in content
+    assert any(
+        s in content
+        for s in ("Contaminated (> 1.2)", "Contaminated (&gt; 1.2)", r"Contaminated (\u003e 1.2)")
+    )
+
+
+@pytest.mark.unit
+def test_summary_reports_main_effective_threshold_reclassification(tmp_path: Path) -> None:
+    """Verify main() reclassifies stored verdicts using effective threshold from TSV."""
+    from plasmicheck.scripts.generate_summary_reports import main
+
+    sample_dir = tmp_path / "sample1" / "plasmid1"
+    sample_dir.mkdir(parents=True)
+    summary_file = sample_dir / "comparison_result.summary.tsv"
+    # Stored verdict is Contaminated (based on default 0.8), Ratio is 0.9, but Threshold in TSV is 1.2
+    summary_file.write_text(
+        "Category\tMetric\tCount\n"
+        "Ratio\tRatio\t0.9\n"
+        "Threshold\tThreshold\t1.2\n"
+        "Verdict\tVerdict\tSample is contaminated with plasmid DNA\n"
+    )
+
+    out_dir = tmp_path / "output"
+    out_dir.mkdir()
+
+    main(str(tmp_path), str(out_dir))
+
+    report_file = out_dir / "summary_report_interactive.html"
+    assert report_file.exists()
+    content = report_file.read_text()
+    # With threshold 1.2 and unclear 0.6..1.2, ratio 0.9 is Unclear
+    assert "Unclear" in content

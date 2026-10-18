@@ -843,22 +843,22 @@
             </div>
         </div>
 
-        {% set contam_cutoff = unclear_range.upper_bound if threshold >= unclear_range.lower_bound and threshold <= unclear_range.upper_bound else threshold %}
+        {% set contam_cutoff = contam_cutoff | default(unclear_range.upper_bound) %}
         <div class="pc-hero-gauge-box">
             <div class="pc-hero-ratio-row">
                 <span class="pc-hero-ratio-title">
                     Contamination Scale (Plasmid / Human Ratio)
-                    <span class="pc-info-badge" data-tooltip="Ratio = Plasmid Reads / Human Reads (excluding Tied shared-exon reads and Backbone_Only reads). Samples below {{ unclear_range.lower_bound }} are Clean; {{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }} is the Unclear buffer zone around the {{ threshold }} midpoint; above {{ contam_cutoff }} is Contaminated.">?</span>
+                    <span class="pc-info-badge" data-tooltip="Ratio = Plasmid Reads / Human Reads (excluding Tied shared-exon reads and Backbone_Only reads). Samples below {{ unclear_range.lower_bound }} are Clean; {{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }} is the Unclear buffer zone for threshold {{ threshold }}; above {{ contam_cutoff }} is Contaminated.">?</span>
                 </span>
                 <div class="pc-hero-ratio-right">
                     <span class="pc-hero-ratio-val">{{ "%.3f"|format(ratio) if ratio is number else ratio }}</span>
-                    <span class="pc-hero-ratio-thresh" data-tooltip="Nominal midpoint threshold: {{ threshold }} (Unclear buffer zone: {{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }}, Contaminated cutoff: >{{ contam_cutoff }})">Cutoff: &gt;{{ contam_cutoff }}</span>
+                    <span class="pc-hero-ratio-thresh" data-tooltip="Threshold: {{ threshold }} (Unclear buffer zone: {{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }}, Contaminated cutoff: >{{ contam_cutoff }})">Cutoff: &gt;{{ contam_cutoff }}</span>
                 </div>
             </div>
             <div class="pc-gauge-outer">
                 <div class="pc-gauge">
                     <div class="pc-gauge-seg pc-gauge-seg-clean" data-tooltip="Clean (<{{ unclear_range.lower_bound }}): Plasmid-assigned reads are well below human genomic background."></div>
-                    <div class="pc-gauge-seg pc-gauge-seg-unclear" data-tooltip="Unclear ({{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }}): Borderline buffer zone centered at {{ threshold }}; evaluate alongside Backbone Coverage and Splice-Junction Reads."></div>
+                    <div class="pc-gauge-seg pc-gauge-seg-unclear" data-tooltip="Unclear ({{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }}): Borderline buffer zone for threshold {{ threshold }}; evaluate alongside Backbone Coverage and Splice-Junction Reads."></div>
                     <div class="pc-gauge-seg pc-gauge-seg-contam" data-tooltip="Contaminated (>{{ contam_cutoff }}): Plasmid cDNA reads exceed human genomic reads above the unclear buffer."></div>
                     <div class="pc-gauge-marker" data-tooltip="Observed Ratio: {{ '%.3f'|format(ratio) if ratio is number else ratio }} ({{ '{:,}'.format(plasmid_count | default(0)) }} Plasmid / {{ '{:,}'.format(human_count | default(0)) }} Human reads)">
                         <span class="pc-gauge-marker-badge">{{ "%.3f"|format(ratio) if ratio is number else ratio }}</span>
@@ -868,13 +868,13 @@
                     <span class="pc-gauge-tick pc-gauge-tick-start">0.0</span>
                     <span class="pc-gauge-tick pc-gauge-tick-low">{{ unclear_range.lower_bound }}</span>
                     <span class="pc-gauge-tick pc-gauge-tick-high">{{ contam_cutoff }}</span>
-                    <span class="pc-gauge-tick pc-gauge-tick-end">10+</span>
+                    <span class="pc-gauge-tick pc-gauge-tick-end">{{ gauge_max_label | default('10+') }}</span>
                 </div>
                 <div class="pc-gauge-zones">
                     <div class="pc-gauge-zone pc-gauge-zone-clean {% if verdict_class == 'clean' %}is-active{% endif %}" data-tooltip="Clean (<{{ unclear_range.lower_bound }}): No evidence of plasmid contamination above background.">
                         <strong>Clean</strong> &lt;{{ unclear_range.lower_bound }}
                     </div>
-                    <div class="pc-gauge-zone pc-gauge-zone-unclear {% if verdict_class == 'unclear' %}is-active{% endif %}" data-tooltip="Unclear ({{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }}): Borderline ratio around {{ threshold }}; check Backbone Depth and Splice Junctions.">
+                    <div class="pc-gauge-zone pc-gauge-zone-unclear {% if verdict_class == 'unclear' %}is-active{% endif %}" data-tooltip="Unclear ({{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }}): Borderline ratio (threshold: {{ threshold }}); check Backbone Depth and Splice Junctions.">
                         <strong>Unclear</strong> {{ unclear_range.lower_bound }}&ndash;{{ unclear_range.upper_bound }}
                     </div>
                     <div class="pc-gauge-zone pc-gauge-zone-contaminated {% if verdict_class == 'contaminated' %}is-active{% endif %}" data-tooltip="Contaminated (>{{ contam_cutoff }}): High plasmid-to-human read ratio indicating plasmid DNA contamination.">
@@ -979,12 +979,6 @@
                     </tr>
                 </tbody>
             </table>
-
-            {% if backbone_warning %}
-            <div class="pc-notice" style="margin-top: 1rem; margin-bottom: 0;">
-                {{ backbone_warning }}
-            </div>
-            {% endif %}
         </section>
 
         <!-- Coverage Analysis -->
@@ -1083,6 +1077,18 @@
                     <div class="pc-metric-label">Reads without mismatches near insert</div>
                     <div class="pc-metric-value">{{ "{:,}".format(mismatches_without) }}</div>
                 </div>
+                {% if junction_metrics and junction_metrics.vector_insert_junction_reads is defined and junction_metrics.vector_insert_junction_reads != 'N/A' %}
+                <div class="pc-metric">
+                    <div class="pc-metric-label">Vector-insert junction reads</div>
+                    <div class="pc-metric-value">{{ junction_metrics.vector_insert_junction_reads }}</div>
+                </div>
+                {% endif %}
+                {% if junction_metrics and junction_metrics.vector_insert_bridge_pairs is defined and junction_metrics.vector_insert_bridge_pairs != 'N/A' %}
+                <div class="pc-metric">
+                    <div class="pc-metric-label">Vector-insert bridge pairs</div>
+                    <div class="pc-metric-value">{{ junction_metrics.vector_insert_bridge_pairs }}</div>
+                </div>
+                {% endif %}
             </div>
         </section>
 
@@ -1109,6 +1115,24 @@
                     <tr>
                         <td>Splice-Junction Spanning Reads</td>
                         <td class="pc-num">{{ junction_metrics.splice_junction_reads }} ({{ junction_metrics.splice_junctions_covered }}/{{ junction_metrics.splice_junction_count }} junctions)</td>
+                    </tr>
+                    {% endif %}
+                    {% if junction_metrics.splice_junction_events is defined and junction_metrics.splice_junction_events != 'N/A' %}
+                    <tr>
+                        <td>Splice-Junction Events</td>
+                        <td class="pc-num">{{ junction_metrics.splice_junction_events }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if junction_metrics.exon_intron_boundary_reads is defined and junction_metrics.exon_intron_boundary_reads != 'N/A' %}
+                    <tr>
+                        <td>Exon-Intron Boundary Reads</td>
+                        <td class="pc-num">{{ junction_metrics.exon_intron_boundary_reads }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if junction_metrics.estimated_contamination_fraction is defined and junction_metrics.estimated_contamination_fraction != 'N/A' %}
+                    <tr>
+                        <td>Estimated Contamination Fraction</td>
+                        <td class="pc-num">{{ junction_metrics.estimated_contamination_fraction }}</td>
                     </tr>
                     {% endif %}
                     {% if junction_metrics.exon_lengths != 'N/A' %}
