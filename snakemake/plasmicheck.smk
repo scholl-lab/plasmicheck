@@ -1,11 +1,13 @@
 # Snakemake cohort workflow for PlasmiCheck plasmid contamination detection (#129).
-# Extracts each sample BAM once and aligns against all plasmid constructs in a single pass.
+# Extracts each sample BAM once and screens all plasmid constructs in a single pipeline run.
 
 import csv
 import os
 import shlex
+from pathlib import Path
 from typing import Any
 
+from plasmicheck.output_paths import OutputPaths
 from plasmicheck.scripts.utils import sanitize_filename
 
 DEFAULT_HUMAN_FASTA = "reference/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
@@ -89,6 +91,24 @@ def _read_lines(file_path: str) -> list[str]:
         ]
 
 
+def _validate_sample_map(raw_samples: dict[str, str]) -> dict[str, str]:
+    """Sanitize and validate uniqueness of sample IDs and BAM paths."""
+    if not raw_samples:
+        raise ValueError("No samples configured.")
+    validated: dict[str, str] = {}
+    for raw_id, raw_bam in raw_samples.items():
+        sample_id = sanitize_filename(str(raw_id).strip())
+        bam_path = str(raw_bam).strip()
+        if not sample_id:
+            raise ValueError(f"Invalid empty sample key: {raw_id!r}")
+        if not bam_path:
+            raise ValueError(f"Missing BAM path for sample '{sample_id}'")
+        if sample_id in validated:
+            raise ValueError(f"Duplicate sample key: {sample_id}")
+        validated[sample_id] = bam_path
+    return validated
+
+
 def _bams_list_to_sample_map(bam_files: list[str]) -> dict[str, str]:
     """Convert a list of BAM file paths to {sanitized_sample_id: bam_path}."""
     if not bam_files:
@@ -99,7 +119,7 @@ def _bams_list_to_sample_map(bam_files: list[str]) -> dict[str, str]:
         if sample_id in samples:
             raise ValueError(f"Duplicate sample key: {sample_id}")
         samples[sample_id] = bam
-    return samples
+    return _validate_sample_map(samples)
 
 
 def _parse_samples_tsv(tsv_path: str, cfg: dict[str, Any]) -> dict[str, str]:
@@ -133,15 +153,16 @@ def _parse_samples_tsv(tsv_path: str, cfg: dict[str, Any]) -> dict[str, str]:
         for row in reader[1:]:
             if not row or len(row) <= sample_idx:
                 continue
-            sample_id = row[sample_idx].strip()
-            if not sample_id:
+            raw_id = row[sample_idx].strip()
+            if not raw_id:
                 continue
+            sample_id = sanitize_filename(raw_id)
             if bam_idx is not None:
                 if len(row) <= bam_idx or not row[bam_idx].strip():
                     raise ValueError(f"Missing BAM path for sample '{sample_id}' in {tsv_path}")
                 bam_path = row[bam_idx].strip()
             else:
-                bam_path = os.path.join(str(bam_folder), f"{sample_id}{bam_ext}")
+                bam_path = os.path.join(str(bam_folder), f"{raw_id}{bam_ext}")
             if sample_id in samples and samples[sample_id] != bam_path:
                 raise ValueError(f"Duplicate sample key: {sample_id}")
             samples[sample_id] = bam_path
@@ -151,14 +172,15 @@ def _parse_samples_tsv(tsv_path: str, cfg: dict[str, Any]) -> dict[str, str]:
                 raise ValueError(
                     f"Expected 'sample\\tbam' columns in {tsv_path}, got: {row!r}"
                 )
-            sample_id, bam_path = row[0].strip(), row[1].strip()
+            sample_id = sanitize_filename(row[0].strip())
+            bam_path = row[1].strip()
             if sample_id in samples:
                 raise ValueError(f"Duplicate sample key: {sample_id}")
             samples[sample_id] = bam_path
 
     if not samples:
         raise ValueError(f"No samples resolved from {tsv_path}")
-    return samples
+    return _validate_sample_map(samples)
 
 
 def resolve_samples(cfg: dict[str, Any]) -> dict[str, str]:
@@ -170,7 +192,15 @@ def resolve_samples(cfg: dict[str, Any]) -> dict[str, str]:
     if isinstance(samples_src, dict):
         if not samples_src:
             raise ValueError("No samples configured.")
-        return {str(k).strip(): str(v).strip() for k, v in samples_src.items()}
+        sanitized: dict[str, str] = {}
+        for k, v in samples_src.items():
+            sid = sanitize_filename(str(k).strip())
+            if not sid:
+                raise ValueError(f"Invalid empty sample key: {k!r}")
+            if sid in sanitized:
+                raise ValueError(f"Duplicate sample key: {sid}")
+            sanitized[sid] = str(v).strip()
+        return _validate_sample_map(sanitized)
 
     if isinstance(samples_src, list):
         return _bams_list_to_sample_map([str(x).strip() for x in samples_src if str(x).strip()])
@@ -216,6 +246,74 @@ def resolve_plasmids(cfg: dict[str, Any], output_dir: str) -> tuple[str, list[st
     return pf, files
 
 
+def _construct_names(constructs: list[str]) -> list[str]:
+    """Return unique sanitized construct names in order."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for p in constructs:
+        name = sanitize_filename(os.path.splitext(os.path.basename(p))[0])
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
+
+
+def expected_sample_outputs(output_dir: str, sample: str, constructs: list[str]) -> list[str]:
+    """Return expected (.summary.tsv, .reads_assignment.tsv) paths for a sample across all constructs."""
+    sample_id = sanitize_filename(sample)
+    expected: list[str] = []
+    for plasmid_name in _construct_names(constructs):
+        paths = OutputPaths(
+            output_root=Path(output_dir),
+            sample_name=sample_id,
+            plasmid_name=plasmid_name,
+        )
+        expected.append(f"{paths.comparison_prefix}.summary.tsv")
+        expected.append(f"{paths.comparison_prefix}.reads_assignment.tsv")
+    return expected
+
+
+def verify_sample_outputs(output_dir: str, sample: str, constructs: list[str]) -> None:
+    """Verify that every expected construct output for a sample exists and is non-empty."""
+    expected = expected_sample_outputs(output_dir, sample, constructs)
+    if not expected:
+        raise RuntimeError(f"No constructs configured for sample '{sample}'.")
+    missing = [p for p in expected if not os.path.isfile(p) or os.path.getsize(p) == 0]
+    if missing:
+        raise RuntimeError(
+            f"Incomplete construct scan for sample '{sample}'; missing outputs: {', '.join(missing)}"
+        )
+
+
+def expected_cohort_summary_files(
+    output_dir: str, samples: list[str], constructs: list[str]
+) -> list[str]:
+    """Return explicit .summary.tsv paths for the configured cohort (samples x constructs)."""
+    summary_files: list[str] = []
+    construct_names = _construct_names(constructs)
+    for sample in samples:
+        sample_id = sanitize_filename(sample)
+        for plasmid_name in construct_names:
+            paths = OutputPaths(
+                output_root=Path(output_dir),
+                sample_name=sample_id,
+                plasmid_name=plasmid_name,
+            )
+            summary_files.append(f"{paths.comparison_prefix}.summary.tsv")
+    return summary_files
+
+
+def write_summary_manifest(
+    manifest_path: str, output_dir: str, samples: list[str], constructs: list[str]
+) -> list[str]:
+    """Write explicit manifest of configured .summary.tsv paths and return the list."""
+    files = expected_cohort_summary_files(output_dir, samples, constructs)
+    os.makedirs(os.path.dirname(os.path.abspath(manifest_path)), exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(files) + ("\n" if files else ""))
+    return files
+
+
 def get_rule_resource(cfg: dict[str, Any], rule_name: str, key: str) -> int:
     """Return per-rule resource value ('threads', 'mem_mb', 'runtime') with config override."""
     defaults = DEFAULT_RESOURCES[rule_name]
@@ -238,12 +336,6 @@ def build_pipeline_flags(cfg: dict[str, Any]) -> str:
     elif cfg.get("include_unmapped") is True and "regions_bed" not in cfg:
         flags.append("--include-unmapped")
 
-    if cfg.get("target_bed"):
-        flags.append(f"--target-bed {shlex.quote(str(cfg['target_bed']))}")
-    if cfg.get("gtf"):
-        flags.append(f"--gtf {shlex.quote(str(cfg['gtf']))}")
-    if cfg.get("vcf"):
-        flags.append(f"--vcf {shlex.quote(str(cfg['vcf']))}")
     if cfg.get("threshold") is not None:
         flags.append(f"--threshold {shlex.quote(str(cfg['threshold']))}")
     if cfg.get("padding") is not None:
@@ -294,6 +386,7 @@ plasmid_files = CONSTRUCT_FILES
 
 PIPELINE_FLAGS = build_pipeline_flags(config)
 SUMMARY_FLAGS = build_summary_flags(config)
+SUMMARY_MANIFEST = os.path.join(OUTPUT_DIR, ".summary_manifest.txt")
 
 
 # ----------------------------------------------------------------------------------- #
@@ -311,7 +404,7 @@ rule all:
 
 
 rule prepare_constructs:
-    """Build human reference index and stage plasmid construct references once."""
+    """Build human reference index and populate CacheManager for all plasmid constructs once."""
     input:
         human_fasta=HUMAN_FASTA,
         plasmids_file=PLASMIDS_FILE,
@@ -320,6 +413,8 @@ rule prepare_constructs:
         done=f"{LOG_DIR}/prepare_constructs.done",
     params:
         cache_dir=CACHE_DIR,
+        padding=int(config["padding"]) if config.get("padding") is not None else 1000,
+        overwrite="1" if config.get("overwrite") else "0",
     threads: get_rule_resource(config, "prepare_constructs", "threads")
     resources:
         mem_mb=get_rule_resource(config, "prepare_constructs", "mem_mb"),
@@ -330,27 +425,19 @@ rule prepare_constructs:
     shell:
         r"""
         mkdir -p "$(dirname {output.done:q})" {params.cache_dir:q}
-        plasmicheck index -f {input.human_fasta:q}
-        if [ -n "{input.constructs}" ]; then
-            for plasmid in {input.constructs:q}; do
-                name="$(basename "${{plasmid%.*}}")"
-                plasmicheck convert -i "$plasmid" -o "{params.cache_dir:q}/${{name}}.fasta" -w
-                plasmicheck index -f "{params.cache_dir:q}/${{name}}.fasta" -w
-            done
-        elif [ -f {input.plasmids_file:q} ]; then
-            while IFS= read -r plasmid || [ -n "$plasmid" ]; do
-                case "$plasmid" in ""|\#*) continue ;; esac
-                name="$(basename "${{plasmid%.*}}")"
-                plasmicheck convert -i "$plasmid" -o "{params.cache_dir:q}/${{name}}.fasta" -w
-                plasmicheck index -f "{params.cache_dir:q}/${{name}}.fasta" -w
-            done < {input.plasmids_file:q}
-        fi
+        python3 -c 'import sys; from plasmicheck.scripts.run_pipeline import prepare_references; prepare_references(sys.argv[1], sys.argv[2], cache_dir=sys.argv[3], padding=int(sys.argv[4]), overwrite=sys.argv[5] == "1", threads=int(sys.argv[6]))' \
+            {input.human_fasta:q} \
+            {input.plasmids_file:q} \
+            {params.cache_dir:q} \
+            {params.padding} \
+            {params.overwrite} \
+            {threads}
         touch {output.done:q}
         """
 
 
 rule scan_sample:
-    """Screen a single sample BAM against all plasmid constructs in one pass."""
+    """Screen a single sample BAM against all plasmid constructs in one pipeline run."""
     input:
         bam=lambda wildcards: SAMPLE_BAMS[wildcards.sample],
         human_fasta=HUMAN_FASTA,
@@ -362,6 +449,9 @@ rule scan_sample:
     params:
         output_dir=OUTPUT_DIR,
         extra_flags=PIPELINE_FLAGS,
+        expected_outputs=lambda wildcards: expected_sample_outputs(
+            OUTPUT_DIR, wildcards.sample, CONSTRUCT_FILES
+        ),
     threads: get_rule_resource(config, "scan_sample", "threads")
     resources:
         mem_mb=get_rule_resource(config, "scan_sample", "mem_mb"),
@@ -372,30 +462,39 @@ rule scan_sample:
     shell:
         r"""
         mkdir -p "$(dirname {output.done:q})" {params.output_dir:q}
+        rm -f {params.expected_outputs:q}
         plasmicheck pipeline \
             -hf {input.human_fasta:q} \
             -pf {input.plasmids_file:q} \
             -sf1 {input.bam:q} \
+            --sample-name {wildcards.sample:q} \
             -o {params.output_dir:q} \
             --threads {threads} \
             --log-file {output.log:q} \
             {params.extra_flags}
+        for f in {params.expected_outputs:q}; do
+            [ -s "$f" ] || {{ echo "Missing or empty construct output: $f" >&2; exit 1; }}
+        done
         touch {output.done:q}
         """
 
 
 rule summary_reports:
-    """Aggregate per-sample plasmid scan results into cohort summary tables and reports."""
+    """Aggregate configured per-sample plasmid scan results into cohort summary tables and reports."""
     input:
         done=expand(f"{LOG_DIR}/{{sample}}.done", sample=SAMPLES),
+        plasmids_file=PLASMIDS_FILE,
     output:
         done=f"{LOG_DIR}/summary_reports.done",
         verdict_tsv=f"{SUMMARY_DIR}/data/verdict_table.tsv",
         ratio_tsv=f"{SUMMARY_DIR}/data/ratio_table.tsv",
         report_html=f"{SUMMARY_DIR}/summary_report_interactive.html",
     params:
-        input_dir=OUTPUT_DIR,
         summary_dir=SUMMARY_DIR,
+        manifest=SUMMARY_MANIFEST,
+        summary_files=lambda wildcards: expected_cohort_summary_files(
+            OUTPUT_DIR, SAMPLES, CONSTRUCT_FILES
+        ),
         extra_flags=SUMMARY_FLAGS,
     threads: get_rule_resource(config, "summary_reports", "threads")
     resources:
@@ -406,9 +505,10 @@ rule summary_reports:
         CONDA_ENV
     shell:
         r"""
-        mkdir -p "$(dirname {output.done:q})" {params.summary_dir:q}
+        mkdir -p "$(dirname {output.done:q})" "$(dirname {params.manifest:q})" {params.summary_dir:q}
+        printf '%s\n' {params.summary_files:q} > {params.manifest:q}
         plasmicheck summary_reports \
-            -i {params.input_dir:q} \
+            -i {params.manifest:q} \
             -o {params.summary_dir:q} \
             {params.extra_flags}
         touch {output.done:q}

@@ -112,27 +112,6 @@ properties:
     default: true
     description: Include unmapped reads alongside regions_bed during BAM extraction.
 
-  target_bed:
-    type:
-      - "string"
-      - "null"
-    default: null
-    description: Optional capture target BED file for depth-normalised excess metrics.
-
-  gtf:
-    type:
-      - "string"
-      - "null"
-    default: null
-    description: Optional MANE/GENCODE GTF annotation file for splice junction discovery.
-
-  vcf:
-    type:
-      - "string"
-      - "null"
-    default: null
-    description: Optional VCF or variant TSV for construct-insert variant flagging.
-
   threshold:
     type:
       - "number"

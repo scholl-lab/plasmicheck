@@ -66,7 +66,16 @@ logging.getLogger("fontTools").setLevel(logging.ERROR)
 
 # Helper Functions
 def find_tsv_files(input_dir: str, pattern: str) -> list[str]:
-    """Recursively find all tsv files matching the pattern in the input directory."""
+    """Recursively find all tsv files matching the pattern in input_dir or listed in a manifest file."""
+    if os.path.isfile(input_dir):
+        with open(input_dir, encoding="utf-8") as fh:
+            return [
+                line.strip()
+                for line in fh
+                if line.strip()
+                and not line.strip().startswith("#")
+                and line.strip().endswith(pattern)
+            ]
     tsv_files: list[str] = []
     for root, _, files in os.walk(input_dir):
         for file in files:
@@ -1244,7 +1253,8 @@ def _find_sample_report_relpaths(
     out_abs = os.path.abspath(output_folder)
     search_roots: list[str] = []
     if input_dir:
-        search_roots.append(os.path.abspath(input_dir))
+        in_abs = os.path.abspath(input_dir)
+        search_roots.append(os.path.dirname(in_abs) if os.path.isfile(in_abs) else in_abs)
     parent1 = os.path.dirname(out_abs)
     parent2 = os.path.dirname(parent1)
     for cand_root in (out_abs, parent1, parent2):

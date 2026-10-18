@@ -9,6 +9,36 @@ from plasmicheck.config import get_config
 from .utils import run_command
 
 
+def _bam_to_fastq_cmd(
+    input_file: str,
+    samtools_threads: int,
+    regions_bed: str | None = None,
+    include_unmapped: bool = False,
+) -> str:
+    """Build shell command that extracts collated FASTQ records from a BAM file."""
+    t_arg = quote(str(samtools_threads))
+    bam_arg = quote(input_file)
+    if not regions_bed:
+        return f"samtools collate -@ {t_arg} -u -O {bam_arg} | samtools fastq -@ {t_arg} -F 0x900 -"
+    if not os.path.isfile(regions_bed):
+        raise FileNotFoundError(f"Regions BED file not found: {regions_bed}")
+    bed_arg = quote(regions_bed)
+    if not include_unmapped:
+        return (
+            f"samtools view -@ {t_arg} -u -F 4 -L {bed_arg} {bam_arg} "
+            f"| samtools collate -@ {t_arg} -u -O - "
+            f"| samtools fastq -@ {t_arg} -F 0x904 -"
+        )
+    return (
+        f"{{ samtools view -@ {t_arg} -u -F 4 -L {bed_arg} {bam_arg} "
+        f"| samtools collate -@ {t_arg} -u -O - "
+        f"| samtools fastq -@ {t_arg} -F 0x904 -; "
+        f"samtools view -@ {t_arg} -u -f 4 {bam_arg} "
+        f"| samtools collate -@ {t_arg} -u -O - "
+        f"| samtools fastq -@ {t_arg} -f 4 -F 0x900 -; }}"
+    )
+
+
 def align_reads(
     reference_index: str,
     input_file: str,
@@ -18,6 +48,8 @@ def align_reads(
     minimap2_threads: int | None = None,
     samtools_threads: int | None = None,
     samtools_sort_memory: str | None = None,
+    regions_bed: str | None = None,
+    include_unmapped: bool = False,
 ) -> None:
     # Resolve defaults from config when not provided
     cfg = get_config()
@@ -41,9 +73,11 @@ def align_reads(
     sort_flag = "-N " if alignment_type == "human" else ""
 
     if input_file.endswith(".bam"):
+        extract_cmd = _bam_to_fastq_cmd(
+            input_file, samtools_threads, regions_bed=regions_bed, include_unmapped=include_unmapped
+        )
         command = (
-            f"samtools collate -@ {quote(str(samtools_threads))} -u -O {quote(input_file)} "
-            f"| samtools fastq -@ {quote(str(samtools_threads))} -F 0x900 - "
+            f"{extract_cmd} "
             f"| minimap2 -t {quote(str(minimap2_threads))} -ax sr {quote(reference_index)} - "
             f"| samtools view -@ {quote(str(samtools_threads))} -u -F 4 - "
             f"| samtools sort {sort_flag}-@ {quote(str(samtools_threads))} "

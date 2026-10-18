@@ -207,6 +207,17 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     parser_align.add_argument(
         "-a", "--alignment_type", help="Type of alignment: 'human' or 'plasmid'", required=True
     )
+    parser_align.add_argument(
+        "--regions",
+        default=None,
+        help="Optional BED file restricting BAM read extraction to target regions",
+    )
+    parser_align.add_argument(
+        "--include-unmapped",
+        action="store_true",
+        default=False,
+        help="Include unmapped reads alongside --regions during BAM extraction",
+    )
 
     # Compare Command
     parser_compare = subparsers.add_parser(
@@ -382,6 +393,22 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         default=False,
         help="Anonymize read IDs in output TSV and delete intermediate BAMs",
     )
+    parser_pipeline.add_argument(
+        "--regions",
+        default=None,
+        help="Optional BED file restricting BAM read extraction to target regions",
+    )
+    parser_pipeline.add_argument(
+        "--include-unmapped",
+        action="store_true",
+        default=False,
+        help="Include unmapped reads alongside --regions during BAM extraction",
+    )
+    parser_pipeline.add_argument(
+        "--sample-name",
+        default=None,
+        help="Override sample identifier used for output directories and reports",
+    )
 
     # Report Command
     parser_report = subparsers.add_parser(
@@ -504,9 +531,21 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
     elif args.command == "align":
         from .scripts.align_reads import align_reads
 
+        align_kwargs: dict[str, object] = {}
+        if args.regions is not None:
+            align_kwargs["regions_bed"] = args.regions
+        if args.include_unmapped:
+            align_kwargs["include_unmapped"] = True
+
         input_files: list[str] = args.input_files
         if len(input_files) == 1:
-            align_reads(args.reference_index, input_files[0], args.output_bam, args.alignment_type)
+            align_reads(
+                args.reference_index,
+                input_files[0],
+                args.output_bam,
+                args.alignment_type,
+                **align_kwargs,  # type: ignore[arg-type]
+            )
         elif len(input_files) == 2:
             align_reads(
                 args.reference_index,
@@ -514,6 +553,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
                 args.output_bam,
                 args.alignment_type,
                 fastq2=input_files[1],
+                **align_kwargs,  # type: ignore[arg-type]
             )
         else:
             parser.error(f"align expects 1 or 2 input files, got {len(input_files)}")
@@ -548,6 +588,13 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         from .scripts.run_pipeline import run_pipeline
 
         progress_enabled = sys.stderr.isatty() and not args.no_progress
+        pipeline_kwargs: dict[str, object] = {}
+        if args.regions is not None:
+            pipeline_kwargs["regions_bed"] = args.regions
+        if args.include_unmapped:
+            pipeline_kwargs["include_unmapped"] = True
+        if args.sample_name is not None:
+            pipeline_kwargs["sample_name"] = args.sample_name
 
         run_pipeline(
             args.human_fasta,
@@ -573,6 +620,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             cache_dir=args.cache_dir,
             no_cache=args.no_cache,
             anonymize=args.anonymize,
+            **pipeline_kwargs,  # type: ignore[arg-type]
         )
     elif args.command == "report":
         from .scripts.generate_report import main as generate_report

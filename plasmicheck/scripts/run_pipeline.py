@@ -21,7 +21,7 @@ from ..cache_manager import CacheManager
 from ..config import get_config
 from ..output_paths import OutputPaths
 from ..thread_config import allocate_threads, detect_cpu_count
-from .align_reads import align_reads
+from .align_reads import _bam_to_fastq_cmd, align_reads
 from .compare_alignments import compare_alignments
 from .convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta
 from .create_indexes import create_indexes
@@ -165,6 +165,7 @@ def build_plan(
     sequencing_files_r1: str,
     sequencing_files_r2: str | None = None,
     cdna_output: str | None = None,
+    sample_name: str | None = None,
 ) -> PipelinePlan:
     """Build an execution plan without running anything."""
     plasmid_file_list = get_file_list(plasmid_files)
@@ -172,6 +173,11 @@ def build_plan(
         sequencing_files_r1=sequencing_files_r1,
         sequencing_files_r2=sequencing_files_r2,
     )
+    if sample_name is not None:
+        if not sanitize_filename(sample_name.strip()):
+            raise ValueError("--sample-name must not be empty.")
+        if len(seq_inputs) > 1:
+            raise ValueError("--sample-name can only be used with a single sequencing input.")
 
     plan = PipelinePlan(
         human_fasta=human_fasta,
@@ -189,7 +195,11 @@ def build_plan(
         for plasmid_file in plasmid_file_list:
             combo_idx += 1
             sequencing_file = seq_input.file1
-            bam_basename = sanitize_filename(os.path.splitext(os.path.basename(sequencing_file))[0])
+            bam_basename = (
+                sanitize_filename(sample_name.strip())
+                if sample_name
+                else sanitize_filename(os.path.splitext(os.path.basename(sequencing_file))[0])
+            )
             file_basename = sanitize_filename(os.path.splitext(os.path.basename(plasmid_file))[0])
             combo_label = f"{os.path.basename(plasmid_file)} x {os.path.basename(sequencing_file)}"
             plan.combinations.append((combo_label, seq_input))
@@ -434,6 +444,215 @@ def _progress_context(enabled: bool, total: int) -> Generator[_ProgressTracker, 
 # ---------------------------------------------------------------------------
 
 
+def _prepare_plasmid_in_dir(
+    plasmid_file: str,
+    p_dir: Path,
+    file_basename: str,
+    human_fasta: str,
+    human_index_path: str,
+    *,
+    cache: CacheManager | None,
+    get_md5: Any,
+    shift_bases: int = 500,
+    generate_shifted: bool = False,
+    overwrite: bool = False,
+    padding: int = 1000,
+    mm2_threads: int = 2,
+    sam_threads: int = 2,
+) -> None:
+    """Convert, index, and spliced-align a single plasmid into p_dir with CacheManager backing."""
+    p_dir.mkdir(parents=True, exist_ok=True)
+    from .format_detection import detect_format
+
+    plasmid_file_type = detect_format(plasmid_file)
+    logging.info(f"Processing plasmid file: {plasmid_file}")
+
+    # Step 1: Convert the plasmid file to a FASTA file
+    staged_fasta = p_dir / f"{file_basename}.fasta"
+    if not os.path.exists(staged_fasta) or overwrite:
+        logging.info(f"Converting {plasmid_file} to FASTA format.")
+        convert_plasmidfile_to_fasta(
+            plasmid_file,
+            str(staged_fasta),
+            plasmid_file_type,
+            shift_bases,
+            generate_shifted,
+            overwrite,
+            preserve_genbank=True,
+        )
+
+    # Step 2: Generate indices
+    staged_index = p_dir / f"{file_basename}.mmi"
+    staged_fai = p_dir / f"{file_basename}.fasta.fai"
+    cached_index = None
+    if cache:
+        try:
+            cached_index = cache.get_index(str(staged_fasta))
+        except (OSError, PermissionError) as e:
+            logging.warning(f"Cache read error: {e}")
+
+    if cached_index:
+        shutil.copy2(str(cached_index["mmi"]), str(staged_index))
+        shutil.copy2(str(cached_index["fai"]), str(staged_fai))
+    else:
+        create_indexes(str(staged_fasta), overwrite, threads=mm2_threads)
+        if cache:
+            try:
+                cache.put_index(str(staged_fasta), str(staged_index), str(staged_fai))
+            except (OSError, PermissionError) as e:
+                logging.warning(f"Cache write error: {e}")
+
+    # Step 3: Spliced alignment
+    staged_spliced_bam = p_dir / "spliced_alignment.bam"
+    staged_spliced_fasta = p_dir / "spliced_reference.fasta"
+    staged_cdna = p_dir / "cDNA_positions.txt"
+
+    cached_spliced = None
+    plasmid_md5 = ""
+    human_md5 = ""
+    if cache:
+        try:
+            plasmid_md5 = get_md5(str(staged_fasta))
+            human_md5 = get_md5(human_fasta)
+            cached_spliced = cache.get_spliced(plasmid_md5, human_md5, padding=padding)
+        except (OSError, PermissionError) as e:
+            logging.warning(f"Cache read error: {e}")
+
+    if cached_spliced:
+        shutil.copy2(str(cached_spliced["bam"]), str(staged_spliced_bam))
+        shutil.copy2(str(cached_spliced["fasta"]), str(staged_spliced_fasta))
+        shutil.copy2(str(cached_spliced["cdna_positions"]), str(staged_cdna))
+        if os.path.exists(str(staged_spliced_bam)):
+            pysam.index(str(staged_spliced_bam))
+    else:
+        logging.info(f"Performing spliced alignment for {plasmid_file}...")
+        spanned_regions = spliced_alignment(
+            human_index_path,
+            str(staged_fasta),
+            str(staged_spliced_bam),
+            padding,
+            threads_minimap2=mm2_threads,
+            threads_samtools=sam_threads,
+        )
+        logging.info("Extracting human reference regions...")
+        extract_human_reference(human_fasta, spanned_regions, str(staged_spliced_fasta))
+
+        logging.info("Extracting cDNA positions from spliced alignment...")
+        extract_plasmid_cdna_positions(str(staged_fasta), str(staged_spliced_bam), str(staged_cdna))
+
+        if cache:
+            try:
+                cache.put_spliced(
+                    plasmid_md5,
+                    human_md5,
+                    str(staged_spliced_bam),
+                    str(staged_spliced_fasta),
+                    str(staged_cdna),
+                    padding=padding,
+                )
+            except (OSError, PermissionError) as e:
+                logging.warning(f"Cache write error: {e}")
+
+    # Step 4: Index spliced FASTA (with cache support)
+    staged_spliced_index = p_dir / "spliced_reference.mmi"
+    staged_spliced_fai = p_dir / "spliced_reference.fasta.fai"
+    cached_spliced_idx = None
+    if cache:
+        try:
+            cached_spliced_idx = cache.get_index(str(staged_spliced_fasta))
+        except (OSError, PermissionError) as e:
+            logging.warning(f"Cache read error: {e}")
+
+    if cached_spliced_idx:
+        shutil.copy2(str(cached_spliced_idx["mmi"]), str(staged_spliced_index))
+        shutil.copy2(str(cached_spliced_idx["fai"]), str(staged_spliced_fai))
+    else:
+        create_indexes(str(staged_spliced_fasta), overwrite=True, threads=mm2_threads)
+        if cache:
+            try:
+                cache.put_index(
+                    str(staged_spliced_fasta),
+                    str(staged_spliced_index),
+                    str(staged_spliced_fai),
+                )
+            except (OSError, PermissionError) as e:
+                logging.warning(f"Cache write error: {e}")
+
+
+def prepare_references(
+    human_fasta: str,
+    plasmid_files: str | list[str],
+    *,
+    cache_dir: str | None = None,
+    shift_bases: int = 500,
+    generate_shifted: bool = False,
+    overwrite: bool = False,
+    padding: int = 1000,
+    threads: int | None = None,
+) -> None:
+    """Build human reference index and populate CacheManager for all plasmid constructs."""
+    plasmid_file_list = (
+        get_file_list(plasmid_files)
+        if isinstance(plasmid_files, str)
+        else [str(p).strip() for p in plasmid_files if str(p).strip()]
+    )
+    if not plasmid_file_list:
+        raise ValueError("No plasmid files provided for reference preparation.")
+
+    total_threads = threads if threads is not None else detect_cpu_count()[0]
+    mm2_threads, sam_threads = allocate_threads(total_threads)
+
+    quality_control([human_fasta], expected_formats=["fasta"])
+    quality_control(plasmid_file_list, expected_formats=["genbank", "xdna", "snapgene", "fasta"])
+
+    cache_path = Path(cache_dir) if cache_dir else Path.home() / ".plasmicheck" / "cache"
+    cache = CacheManager(cache_path)
+
+    human_index_path = os.path.join(
+        os.path.dirname(human_fasta),
+        os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
+    )
+    create_indexes(human_fasta, overwrite, threads=mm2_threads)
+    human_fai_path = f"{human_fasta}.fai"
+    if os.path.exists(human_index_path) and os.path.exists(human_fai_path):
+        with contextlib.suppress(OSError, PermissionError):
+            cache.put_index(human_fasta, human_index_path, human_fai_path)
+
+    md5_cache: dict[str, str] = {}
+
+    def _get_md5(path: str) -> str:
+        if path not in md5_cache:
+            if os.path.exists(path):
+                md5_cache[path] = calculate_md5(path)
+            else:
+                md5_cache[path] = hashlib.md5(path.encode()).hexdigest()
+        return md5_cache[path]
+
+    with tempfile.TemporaryDirectory(prefix="plasmicheck_prep_") as tmp_dir:
+        prep_dir = Path(tmp_dir)
+        prepared: set[str] = set()
+        for plasmid_file in plasmid_file_list:
+            if plasmid_file in prepared:
+                continue
+            file_basename = sanitize_filename(os.path.splitext(os.path.basename(plasmid_file))[0])
+            _prepare_plasmid_in_dir(
+                plasmid_file,
+                prep_dir / file_basename,
+                file_basename,
+                human_fasta,
+                human_index_path,
+                cache=cache,
+                get_md5=_get_md5,
+                shift_bases=shift_bases,
+                generate_shifted=generate_shifted,
+                overwrite=overwrite,
+                padding=padding,
+                mm2_threads=mm2_threads,
+                sam_threads=sam_threads,
+            )
+            prepared.add(plasmid_file)
+
+
 def run_pipeline(
     human_fasta: str,
     plasmid_files: str,
@@ -458,9 +677,14 @@ def run_pipeline(
     cache_dir: str | None = None,
     no_cache: bool = False,
     anonymize: bool = False,
+    regions_bed: str | None = None,
+    include_unmapped: bool = False,
+    sample_name: str | None = None,
 ) -> None:
     if sequencing_files_r1 is None:
         raise ValueError("-sf1 (sequencing_files_r1) is required.")
+    if regions_bed is not None and not os.path.isfile(regions_bed):
+        raise FileNotFoundError(f"Regions BED file not found: {regions_bed}")
 
     anonymize_key = secrets.token_bytes(16) if anonymize else None
     if anonymize and keep_intermediate:
@@ -488,6 +712,7 @@ def run_pipeline(
         sequencing_files_r1=sequencing_files_r1,
         sequencing_files_r2=sequencing_files_r2,
         cdna_output=cdna_output,
+        sample_name=sample_name,
     )
 
     # Initialize cache
@@ -570,10 +795,15 @@ def run_pipeline(
         for seq_input in plan.sequencing_inputs:
             sequencing_file = seq_input.file1
             fastq2 = seq_input.file2
+            bam_basename = (
+                sanitize_filename(sample_name.strip())
+                if sample_name
+                else sanitize_filename(os.path.splitext(os.path.basename(sequencing_file))[0])
+            )
             sample_temp_fastq: str | None = None
             try:
                 if (
-                    len(plan.plasmid_files) > 1
+                    (len(plan.plasmid_files) > 1 or regions_bed is not None)
                     and sequencing_file.endswith(".bam")
                     and os.path.exists(sequencing_file)
                     and os.path.getsize(sequencing_file) > 64
@@ -581,7 +811,7 @@ def run_pipeline(
                     os.makedirs(output_folder, exist_ok=True)
                     sample_temp_fastq = os.path.join(
                         output_folder,
-                        f".tmp_{sanitize_filename(os.path.basename(sequencing_file))}_{os.getpid()}.fastq",
+                        f".tmp_{bam_basename}_{os.getpid()}.fastq",
                     )
                     logging.info(
                         f"Pre-collating paired reads from BAM once for {sequencing_file}..."
@@ -590,12 +820,20 @@ def run_pipeline(
 
                     from .utils import run_command as _run_cmd
 
-                    _run_cmd(
-                        f"samtools collate -@ {_quote(str(sam_threads))} -u -O {_quote(sequencing_file)} "
-                        f"| samtools fastq -@ {_quote(str(sam_threads))} -F 0x900 - > {_quote(sample_temp_fastq)}"
+                    extract_cmd = _bam_to_fastq_cmd(
+                        sequencing_file,
+                        sam_threads,
+                        regions_bed=regions_bed,
+                        include_unmapped=include_unmapped,
                     )
+                    _run_cmd(f"{extract_cmd} > {_quote(sample_temp_fastq)}")
 
                 align_input = sample_temp_fastq if sample_temp_fastq else sequencing_file
+                align_extra_kwargs: dict[str, Any] = (
+                    {"regions_bed": regions_bed, "include_unmapped": include_unmapped}
+                    if (regions_bed is not None and not sample_temp_fastq)
+                    else {}
+                )
 
                 for plasmid_file in plan.plasmid_files:
                     combo_label = (
@@ -606,9 +844,6 @@ def run_pipeline(
                     try:
                         logging.info(f"Processing sequencing file: {sequencing_file}")
 
-                        bam_basename = sanitize_filename(
-                            os.path.splitext(os.path.basename(sequencing_file))[0]
-                        )
                         file_basename = sanitize_filename(
                             os.path.splitext(os.path.basename(plasmid_file))[0]
                         )
@@ -624,139 +859,21 @@ def run_pipeline(
 
                         p_dir = prep_dir / file_basename
                         if plasmid_file not in prepared_plasmids:
-                            p_dir.mkdir(parents=True, exist_ok=True)
-                            from .format_detection import detect_format
-
-                            plasmid_file_type = detect_format(plasmid_file)
-                            logging.info(f"Processing plasmid file: {plasmid_file}")
-
-                            # Step 1: Convert the plasmid file to a FASTA file
-                            staged_fasta = p_dir / f"{file_basename}.fasta"
-                            if not os.path.exists(staged_fasta) or overwrite:
-                                logging.info(f"Converting {plasmid_file} to FASTA format.")
-                                convert_plasmidfile_to_fasta(
-                                    plasmid_file,
-                                    str(staged_fasta),
-                                    plasmid_file_type,
-                                    shift_bases,
-                                    generate_shifted,
-                                    overwrite,
-                                    preserve_genbank=True,
-                                )
-
-                            # Step 2: Generate indices
-                            staged_index = p_dir / f"{file_basename}.mmi"
-                            staged_fai = p_dir / f"{file_basename}.fasta.fai"
-                            cached_index = None
-                            if cache:
-                                try:
-                                    cached_index = cache.get_index(str(staged_fasta))
-                                except (OSError, PermissionError) as e:
-                                    logging.warning(f"Cache read error: {e}")
-
-                            if cached_index:
-                                shutil.copy2(str(cached_index["mmi"]), str(staged_index))
-                                shutil.copy2(str(cached_index["fai"]), str(staged_fai))
-                            else:
-                                create_indexes(str(staged_fasta), overwrite, threads=mm2_threads)
-                                if cache:
-                                    try:
-                                        cache.put_index(
-                                            str(staged_fasta), str(staged_index), str(staged_fai)
-                                        )
-                                    except (OSError, PermissionError) as e:
-                                        logging.warning(f"Cache write error: {e}")
-
-                            # Step 3: Spliced alignment
-                            staged_spliced_bam = p_dir / "spliced_alignment.bam"
-                            staged_spliced_fasta = p_dir / "spliced_reference.fasta"
-                            staged_cdna = p_dir / "cDNA_positions.txt"
-
-                            cached_spliced = None
-                            if cache:
-                                try:
-                                    plasmid_md5 = _get_md5(str(staged_fasta))
-                                    human_md5 = _get_md5(human_fasta)
-                                    cached_spliced = cache.get_spliced(
-                                        plasmid_md5, human_md5, padding=padding
-                                    )
-                                except (OSError, PermissionError) as e:
-                                    logging.warning(f"Cache read error: {e}")
-
-                            if cached_spliced:
-                                shutil.copy2(str(cached_spliced["bam"]), str(staged_spliced_bam))
-                                shutil.copy2(
-                                    str(cached_spliced["fasta"]), str(staged_spliced_fasta)
-                                )
-                                shutil.copy2(
-                                    str(cached_spliced["cdna_positions"]), str(staged_cdna)
-                                )
-                                if os.path.exists(str(staged_spliced_bam)):
-                                    pysam.index(str(staged_spliced_bam))
-                            else:
-                                logging.info(f"Performing spliced alignment for {plasmid_file}...")
-                                spanned_regions = spliced_alignment(
-                                    human_index_path,
-                                    str(staged_fasta),
-                                    str(staged_spliced_bam),
-                                    padding,
-                                    threads_minimap2=mm2_threads,
-                                    threads_samtools=sam_threads,
-                                )
-                                logging.info("Extracting human reference regions...")
-                                extract_human_reference(
-                                    human_fasta, spanned_regions, str(staged_spliced_fasta)
-                                )
-
-                                logging.info("Extracting cDNA positions from spliced alignment...")
-                                extract_plasmid_cdna_positions(
-                                    str(staged_fasta), str(staged_spliced_bam), str(staged_cdna)
-                                )
-
-                                if cache:
-                                    try:
-                                        cache.put_spliced(
-                                            plasmid_md5,
-                                            human_md5,
-                                            str(staged_spliced_bam),
-                                            str(staged_spliced_fasta),
-                                            str(staged_cdna),
-                                            padding=padding,
-                                        )
-                                    except (OSError, PermissionError) as e:
-                                        logging.warning(f"Cache write error: {e}")
-
-                            # Step 4: Index spliced FASTA (with cache support)
-                            staged_spliced_index = p_dir / "spliced_reference.mmi"
-                            staged_spliced_fai = p_dir / "spliced_reference.fasta.fai"
-                            cached_spliced_idx = None
-                            if cache:
-                                try:
-                                    cached_spliced_idx = cache.get_index(str(staged_spliced_fasta))
-                                except (OSError, PermissionError) as e:
-                                    logging.warning(f"Cache read error: {e}")
-
-                            if cached_spliced_idx:
-                                shutil.copy2(
-                                    str(cached_spliced_idx["mmi"]), str(staged_spliced_index)
-                                )
-                                shutil.copy2(
-                                    str(cached_spliced_idx["fai"]), str(staged_spliced_fai)
-                                )
-                            else:
-                                create_indexes(
-                                    str(staged_spliced_fasta), overwrite=True, threads=mm2_threads
-                                )
-                                if cache:
-                                    try:
-                                        cache.put_index(
-                                            str(staged_spliced_fasta),
-                                            str(staged_spliced_index),
-                                            str(staged_spliced_fai),
-                                        )
-                                    except (OSError, PermissionError) as e:
-                                        logging.warning(f"Cache write error: {e}")
-
+                            _prepare_plasmid_in_dir(
+                                plasmid_file,
+                                p_dir,
+                                file_basename,
+                                human_fasta,
+                                human_index_path,
+                                cache=cache,
+                                get_md5=_get_md5,
+                                shift_bases=shift_bases,
+                                generate_shifted=generate_shifted,
+                                overwrite=overwrite,
+                                padding=padding,
+                                mm2_threads=mm2_threads,
+                                sam_threads=sam_threads,
+                            )
                             prepared_plasmids.add(plasmid_file)
 
                         # Copy staged artifacts into OutputPaths
@@ -834,6 +951,7 @@ def run_pipeline(
                                     minimap2_threads=half_mm2,
                                     samtools_threads=half_sam,
                                     samtools_sort_memory=sort_memory,
+                                    **align_extra_kwargs,
                                 )
                                 f2 = pool.submit(
                                     align_reads,
@@ -845,6 +963,7 @@ def run_pipeline(
                                     minimap2_threads=half_mm2,
                                     samtools_threads=half_sam,
                                     samtools_sort_memory=sort_memory,
+                                    **align_extra_kwargs,
                                 )
                                 f1.result()
                                 f2.result()
@@ -858,6 +977,7 @@ def run_pipeline(
                                 minimap2_threads=mm2_threads,
                                 samtools_threads=sam_threads,
                                 samtools_sort_memory=sort_memory,
+                                **align_extra_kwargs,
                             )
                             align_reads(
                                 spliced_index,
@@ -868,6 +988,7 @@ def run_pipeline(
                                 minimap2_threads=mm2_threads,
                                 samtools_threads=sam_threads,
                                 samtools_sort_memory=sort_memory,
+                                **align_extra_kwargs,
                             )
                         if md5_level in ["all", "intermediate"]:
                             if os.path.exists(plasmid_bam):
@@ -921,6 +1042,9 @@ def run_pipeline(
                             )
 
                         command_line = " ".join(_shown(a) for a in sys.argv)
+                        report_extra_kwargs: dict[str, Any] = (
+                            {"sample_name": bam_basename} if sample_name else {}
+                        )
                         generate_report(
                             reads_assignment_file,
                             summary_file,
@@ -935,6 +1059,7 @@ def run_pipeline(
                             plot_backend=plot_backend,
                             reports_dir=str(paths.reports_dir),
                             anonymize=anonymize,
+                            **report_extra_kwargs,
                         )
 
                         # Write MD5 checksums for the output files

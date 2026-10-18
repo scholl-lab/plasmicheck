@@ -13,9 +13,9 @@ Config-driven Snakemake workflow (`snakemake/plasmicheck.smk`) for screening a c
 
 ## 3-Rule DAG Architecture
 
-1. **`prepare_constructs` (1 job):** Indexes `human_fasta` and converts/indexes plasmid constructs once into the shared `cache_dir`.
-2. **`scan_sample` (1 job per sample BAM):** Runs `plasmicheck pipeline -hf <human_fasta> -pf <plasmids_file> -sf1 <bam> -o <output_dir> --threads <threads>` once per sample, extracting/collating the BAM once and aligning against all constructs in a single pass (<2 h walltime).
-3. **`summary_reports` (1 job):** Aggregates all per-sample comparison outputs via `plasmicheck summary_reports -i <output_dir> -o <summary_dir>`.
+1. **`prepare_constructs` (1 job):** Indexes `human_fasta` and populates the content-addressed `CacheManager` (`cache_dir`) with all plasmid construct indexes, spliced alignments, and spliced human reference indexes once.
+2. **`scan_sample` (1 job per sample BAM):** Runs `plasmicheck pipeline -hf <human_fasta> -pf <plasmids_file> -sf1 <bam> --sample-name <sample> -o <output_dir> --threads <threads>` once per sample, extracting the BAM once and screening all constructs in a single pipeline run (<2 h walltime) before verifying all expected per-construct outputs.
+3. **`summary_reports` (1 job):** Aggregates the explicit manifest of configured `(sample, construct)` comparison outputs via `plasmicheck summary_reports -i <manifest> -o <summary_dir>`.
 
 ## Usage
 
@@ -36,5 +36,5 @@ snakemake -s snakemake/plasmicheck.smk \
 - **`samples`:** Sample sheet TSV (`sample\tbam` or `corrected_id` with `bam_folder`), mapping `{sample_id: bam_path}`, list of BAM paths, or newline-delimited BAM list file (fallback: `data/bams.txt`).
 - **`plasmids_file` / `constructs`:** Path to newline-delimited construct list (fallback: `data/plasmids.txt`) or explicit list of construct files (`.gb`, `.xdna`, `.dna`, `.fasta`).
 - **`human_fasta`:** Path to the human reference genome FASTA.
-- **Optional flags forwarded to `plasmicheck pipeline`:** `regions_bed`, `include_unmapped` (default `true`), `target_bed`, `gtf`, `vcf`, `threshold`, `padding`, `static_report`, `archive_output`, `overwrite`.
+- **Optional flags forwarded to `plasmicheck pipeline`:** `regions_bed`, `include_unmapped` (default `true`), `threshold`, `padding`, `static_report`, `archive_output`, `overwrite`, `extra_args`.
 - **`resources`:** Per-rule overrides (`prepare_constructs`, `scan_sample`, `summary_reports`) for `threads`, `mem_mb`, and `runtime` (minutes, max `120`).

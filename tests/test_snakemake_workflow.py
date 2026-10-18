@@ -257,9 +257,6 @@ class TestResolvePlasmidsAndFlags:
                 "cache_dir": "/tmp/pc_cache",
                 "regions_bed": "loci.bed",
                 "include_unmapped": True,
-                "target_bed": "exome_targets.bed",
-                "gtf": "MANE.gtf.gz",
-                "vcf": "variants.vcf.gz",
                 "threshold": 0.75,
                 "padding": 500,
                 "static_report": True,
@@ -271,9 +268,6 @@ class TestResolvePlasmidsAndFlags:
             "--cache-dir /tmp/pc_cache",
             "--regions loci.bed",
             "--include-unmapped",
-            "--target-bed exome_targets.bed",
-            "--gtf MANE.gtf.gz",
-            "--vcf variants.vcf.gz",
             "--threshold 0.75",
             "--padding 500",
             "--static-report",
@@ -292,6 +286,420 @@ class TestResolvePlasmidsAndFlags:
         assert "--threshold 0.75" in summary_flags
         assert "--static-report" in summary_flags
         assert "--substring_to_remove .merged.dedup.bqsr" in summary_flags
+
+    def test_generated_pipeline_flags_execute_in_cli(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify flags emitted by build_pipeline_flags are accepted and forwarded by plasmicheck.cli.main."""
+        import shlex
+        import sys
+        from unittest.mock import patch
+
+        from plasmicheck import cli
+
+        ns = _load_smk_namespace(config={"samples": {"S1": "s1.bam"}})
+        bed_file = tmp_path / "construct_loci.bed"
+        bed_file.write_text("chr1\t100\t500\n", encoding="utf-8")
+
+        flags_str = ns["build_pipeline_flags"](
+            {
+                "cache_dir": str(tmp_path / "cache"),
+                "regions_bed": str(bed_file),
+                "include_unmapped": True,
+                "threshold": 0.75,
+                "padding": 500,
+                "static_report": True,
+                "archive_output": True,
+                "overwrite": True,
+            }
+        )
+        argv = [
+            "plasmicheck",
+            "pipeline",
+            "-hf",
+            "human.fa",
+            "-pf",
+            "plasmids.txt",
+            "-sf1",
+            "sample.bam",
+            "--sample-name",
+            "APA01",
+            "-o",
+            str(tmp_path / "out"),
+            *shlex.split(flags_str),
+        ]
+        monkeypatch.setattr(sys, "argv", argv)
+        with (
+            patch.object(cli, "setup_logging"),
+            patch.object(cli, "check_requirements"),
+            patch("plasmicheck.scripts.run_pipeline.run_pipeline") as mock_run_pipeline,
+        ):
+            cli.main()
+
+        mock_run_pipeline.assert_called_once()
+        kwargs = mock_run_pipeline.call_args.kwargs
+        assert kwargs["regions_bed"] == str(bed_file)
+        assert kwargs["include_unmapped"] is True
+        assert kwargs["sample_name"] == "APA01"
+        assert kwargs["cache_dir"] == str(tmp_path / "cache")
+
+    def test_bed_restricted_bam_extraction_command(self, tmp_path: Path) -> None:
+        """Verify _bam_to_fastq_cmd restricts BAM extraction to BED regions and optional unmapped reads."""
+        from plasmicheck.scripts.align_reads import _bam_to_fastq_cmd
+
+        bed = tmp_path / "regions.bed"
+        bed.write_text("chr11\t128890000\t128940000\n", encoding="utf-8")
+
+        cmd_with_unmapped = _bam_to_fastq_cmd(
+            "sample.bam", 2, regions_bed=str(bed), include_unmapped=True
+        )
+        assert f"-L {bed}" in cmd_with_unmapped or f"'{bed}'" in cmd_with_unmapped
+        assert "-f 4" in cmd_with_unmapped
+
+        cmd_regions_only = _bam_to_fastq_cmd(
+            "sample.bam", 2, regions_bed=str(bed), include_unmapped=False
+        )
+        assert "-f 4" not in cmd_regions_only
+
+        with pytest.raises(FileNotFoundError, match="Regions BED file not found"):
+            _bam_to_fastq_cmd("sample.bam", 2, regions_bed=str(tmp_path / "missing.bed"))
+
+
+@pytest.mark.unit
+class TestCohortExecutionAndGuards:
+    def test_prepare_references_populates_cache_and_first_scan_reuses_it(
+        self, tmp_path: Path
+    ) -> None:
+        """Verify prepare_references registers indexes and spliced artifacts in CacheManager and first scan hits cache."""
+        from unittest.mock import patch
+
+        from plasmicheck.cache_manager import CacheManager
+        from plasmicheck.scripts.run_pipeline import prepare_references, run_pipeline
+
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\n" + "ACGT" * 50 + "\n", encoding="utf-8")
+        plasmid_gb = tmp_path / "pKCNJ5.gb"
+        plasmid_gb.write_text(
+            "LOCUS       pKCNJ5 40 bp DNA circular\nORIGIN\n 1 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt\n//\n",
+            encoding="utf-8",
+        )
+        plasmids_txt = tmp_path / "plasmids.txt"
+        plasmids_txt.write_text(f"{plasmid_gb}\n", encoding="utf-8")
+        cache_dir = tmp_path / "cache"
+
+        def fake_convert(infile: str, outfile: str, *args: object, **kwargs: object) -> None:
+            Path(outfile).write_text(">pKCNJ5\n" + "ACGT" * 10 + "\n", encoding="utf-8")
+
+        def fake_create_indexes(fasta: str, *args: object, **kwargs: object) -> None:
+            base = os.path.splitext(fasta)[0]
+            Path(f"{base}.mmi").write_bytes(b"MMI_INDEX")
+            Path(f"{fasta}.fai").write_text("seq\t40\t6\t40\t41\n", encoding="utf-8")
+
+        def fake_spliced_alignment(
+            human_idx: str, plasmid_fa: str, out_bam: str, *args: object, **kwargs: object
+        ) -> list[tuple[str, int, int]]:
+            Path(out_bam).write_bytes(b"BAM_DATA")
+            return [("chr1", 0, 100)]
+
+        def fake_extract_human(
+            human_fa: str, regions: object, out_fa: str, *args: object, **kwargs: object
+        ) -> None:
+            Path(out_fa).write_text(">chr1_slice\n" + "ACGT" * 25 + "\n", encoding="utf-8")
+
+        def fake_extract_cdna(
+            plasmid_fa: str, spliced_bam: str, out_txt: str, *args: object, **kwargs: object
+        ) -> None:
+            Path(out_txt).write_text(
+                "cDNA start position in plasmid: 1\ncDNA end position in plasmid: 40\n",
+                encoding="utf-8",
+            )
+
+        with (
+            patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            patch(
+                "plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta",
+                side_effect=fake_convert,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.create_indexes",
+                side_effect=fake_create_indexes,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.spliced_alignment",
+                side_effect=fake_spliced_alignment,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.extract_human_reference",
+                side_effect=fake_extract_human,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions",
+                side_effect=fake_extract_cdna,
+            ),
+        ):
+            prepare_references(
+                str(human_fasta),
+                str(plasmids_txt),
+                cache_dir=str(cache_dir),
+                padding=1000,
+                threads=2,
+            )
+
+        cache = CacheManager(cache_dir)
+        info = cache.info()
+        # Expect human index + plasmid index + spliced alignment + spliced reference index = 4 entries
+        assert info["total_entries"] >= 3
+
+        # Now run first sample scan and verify cached plasmid/spliced artifacts are reused without recomputation
+        seq_fq = tmp_path / "sample.fastq"
+        seq_fq.write_text("@r1\nACGT\n+\nIIII\n", encoding="utf-8")
+        out_dir = tmp_path / "output"
+
+        with (
+            patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            patch(
+                "plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta",
+                side_effect=fake_convert,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.create_indexes",
+                side_effect=fake_create_indexes,
+            ) as mock_idx_scan,
+            patch("plasmicheck.scripts.run_pipeline.spliced_alignment") as mock_spliced_scan,
+            patch("plasmicheck.scripts.run_pipeline.extract_human_reference") as mock_ext_scan,
+            patch(
+                "plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"
+            ) as mock_cdna_scan,
+            patch("plasmicheck.scripts.run_pipeline.pysam.index"),
+            patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            patch("plasmicheck.scripts.run_pipeline.generate_report"),
+        ):
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmids_txt),
+                output_folder=str(out_dir),
+                sequencing_files_r1=str(seq_fq),
+                cache_dir=str(cache_dir),
+                padding=1000,
+                md5_level="none",
+            )
+
+        mock_spliced_scan.assert_not_called()
+        mock_ext_scan.assert_not_called()
+        mock_cdna_scan.assert_not_called()
+        # create_indexes is only called for the upfront human_fasta check, never for plasmid or spliced FASTA
+        assert [c.args[0] for c in mock_idx_scan.call_args_list] == [str(human_fasta)]
+
+    def test_distinct_samples_sharing_bam_basename_do_not_collide(self, tmp_path: Path) -> None:
+        """Verify samples: {A: /a/sample.bam, B: /b/sample.bam} write isolated outputs and preserve sample IDs."""
+        from unittest.mock import patch
+
+        from plasmicheck.scripts.generate_summary_reports import read_compare_outputs
+        from plasmicheck.scripts.run_pipeline import run_pipeline
+
+        ns = _load_smk_namespace(config={"samples": {"A": "/a/sample.bam", "B": "/b/sample.bam"}})
+        assert ns["SAMPLE_BAMS"] == {"A": "/a/sample.bam", "B": "/b/sample.bam"}
+
+        # Colliding sanitized keys in dict must raise ValueError
+        with pytest.raises(ValueError, match="Duplicate sample key"):
+            ns["resolve_samples"]({"samples": {"S/1": "/a/sample.bam", "S:1": "/b/sample.bam"}})
+
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        bam_a = dir_a / "sample.bam"
+        bam_b = dir_b / "sample.bam"
+        bam_a.write_text("", encoding="utf-8")
+        bam_b.write_text("", encoding="utf-8")
+
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n", encoding="utf-8")
+        plasmid_gb = tmp_path / "p1.gb"
+        plasmid_gb.write_text("LOCUS       p1 1 bp\nORIGIN\n 1 a\n//\n", encoding="utf-8")
+        out_dir = tmp_path / "output"
+
+        def write_fake_compare(
+            plasmid_bam: str,
+            human_bam: str,
+            output_basename: str,
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            ratio = "1.5" if f"{os.sep}A{os.sep}" in output_basename else "0.1"
+            verdict = (
+                "Sample is contaminated with plasmid DNA"
+                if ratio == "1.5"
+                else "Sample is not contaminated with plasmid DNA"
+            )
+            Path(f"{output_basename}.summary.tsv").write_text(
+                f"Category\tCount\nPlasmid\t10\nHuman\t10\nRatio\t{ratio}\nVerdict\t{verdict}\n",
+                encoding="utf-8",
+            )
+            Path(f"{output_basename}.reads_assignment.tsv").write_text(
+                "ReadName\tAssignedTo\tPlasmidScore\tHumanScore\n",
+                encoding="utf-8",
+            )
+
+        with (
+            patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+            patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            patch(
+                "plasmicheck.scripts.run_pipeline.compare_alignments",
+                side_effect=write_fake_compare,
+            ),
+            patch("plasmicheck.scripts.run_pipeline.generate_report") as mock_report,
+        ):
+            for sample_id, bam_path in (("A", bam_a), ("B", bam_b)):
+                run_pipeline(
+                    human_fasta=str(human_fasta),
+                    plasmid_files=str(plasmid_gb),
+                    output_folder=str(out_dir),
+                    sequencing_files_r1=str(bam_path),
+                    sample_name=sample_id,
+                    no_cache=True,
+                    md5_level="none",
+                )
+
+        assert (out_dir / "A" / "p1" / "data" / "comparison_result.summary.tsv").is_file()
+        assert (out_dir / "B" / "p1" / "data" / "comparison_result.summary.tsv").is_file()
+        assert not (out_dir / "sample").exists()
+
+        reported_sample_names = [c.kwargs.get("sample_name") for c in mock_report.call_args_list]
+        assert reported_sample_names == ["A", "B"]
+
+        df = read_compare_outputs(str(out_dir))
+        assert set(df["Sample"].unique()) == {"A", "B"}
+
+    def test_partial_construct_failure_blocks_done_marker(self, tmp_path: Path) -> None:
+        """Verify one successful plus one failed construct fails verification and prevents .done creation."""
+        import subprocess
+        from unittest.mock import patch
+
+        from plasmicheck.scripts.run_pipeline import run_pipeline
+
+        ns = _load_smk_namespace(config={"samples": {"S1": "s1.bam"}})
+        expected_sample_outputs = ns["expected_sample_outputs"]
+        verify_sample_outputs = ns["verify_sample_outputs"]
+
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr1\nACGT\n", encoding="utf-8")
+        p_ok = tmp_path / "p_ok.gb"
+        p_fail = tmp_path / "p_fail.gb"
+        p_ok.write_text("LOCUS       pok 1 bp\nORIGIN\n 1 a\n//\n", encoding="utf-8")
+        p_fail.write_text("LOCUS       pfail 1 bp\nORIGIN\n 1 a\n//\n", encoding="utf-8")
+        plasmids_txt = tmp_path / "plasmids.txt"
+        plasmids_txt.write_text(f"{p_ok}\n{p_fail}\n", encoding="utf-8")
+        bam = tmp_path / "s1.bam"
+        bam.write_text("", encoding="utf-8")
+        out_dir = tmp_path / "output"
+
+        def compare_one_fails(
+            plasmid_bam: str,
+            human_bam: str,
+            output_basename: str,
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            if "p_fail" in output_basename:
+                raise RuntimeError("Simulated construct failure")
+            Path(f"{output_basename}.summary.tsv").write_text(
+                "Category\tCount\nPlasmid\t1\nHuman\t10\nRatio\t0.1\nVerdict\tClean\n",
+                encoding="utf-8",
+            )
+            Path(f"{output_basename}.reads_assignment.tsv").write_text(
+                "ReadName\tAssignedTo\tPlasmidScore\tHumanScore\n",
+                encoding="utf-8",
+            )
+
+        with (
+            patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            patch("plasmicheck.scripts.run_pipeline.create_indexes"),
+            patch("plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta"),
+            patch("plasmicheck.scripts.run_pipeline.spliced_alignment", return_value=[]),
+            patch("plasmicheck.scripts.run_pipeline.extract_human_reference"),
+            patch("plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions"),
+            patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            patch(
+                "plasmicheck.scripts.run_pipeline.compare_alignments",
+                side_effect=compare_one_fails,
+            ),
+            patch("plasmicheck.scripts.run_pipeline.generate_report"),
+        ):
+            # run_pipeline logs partial failure and continues
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmids_txt),
+                output_folder=str(out_dir),
+                sequencing_files_r1=str(bam),
+                sample_name="S1",
+                no_cache=True,
+                md5_level="none",
+            )
+
+        constructs = [str(p_ok), str(p_fail)]
+        with pytest.raises(RuntimeError, match="p_fail"):
+            verify_sample_outputs(str(out_dir), "S1", constructs)
+
+        # Also test the exact shell guard from rule scan_sample
+        done_file = tmp_path / "logs" / "S1.done"
+        done_file.parent.mkdir(parents=True, exist_ok=True)
+        expected_files = expected_sample_outputs(str(out_dir), "S1", constructs)
+        quoted_files = " ".join(f"'{f}'" for f in expected_files)
+        proc = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'for f in {quoted_files}; do [ -s "$f" ] || exit 1; done; touch "{done_file}"',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode != 0
+        assert not done_file.exists()
+
+    def test_summary_manifest_excludes_stale_removed_samples_and_constructs(
+        self, tmp_path: Path
+    ) -> None:
+        """Verify removing a sample and a construct from config excludes their stale TSVs from cohort summaries."""
+        from plasmicheck.output_paths import OutputPaths
+        from plasmicheck.scripts.generate_summary_reports import read_compare_outputs
+
+        ns = _load_smk_namespace(config={"samples": {"S1": "s1.bam", "S2": "s2.bam"}})
+        write_summary_manifest = ns["write_summary_manifest"]
+
+        out_dir = tmp_path / "output"
+        for sample in ("S1", "S2"):
+            for plasmid in ("p1", "p2"):
+                paths = OutputPaths(output_root=out_dir, sample_name=sample, plasmid_name=plasmid)
+                paths.ensure_directories()
+                Path(f"{paths.comparison_prefix}.summary.tsv").write_text(
+                    "Category\tCount\nPlasmid\t5\nHuman\t20\nRatio\t0.25\n"
+                    "Verdict\tSample is not contaminated with plasmid DNA\n",
+                    encoding="utf-8",
+                )
+
+        manifest = out_dir / ".summary_manifest.txt"
+
+        # Initial run with 2 samples x 2 constructs
+        write_summary_manifest(
+            str(manifest), str(out_dir), ["S1", "S2"], ["data/p1.gb", "data/p2.gb"]
+        )
+        df_full = read_compare_outputs(str(manifest))
+        assert set(df_full["Sample"].unique()) == {"S1", "S2"}
+        assert set(df_full["Plasmid"].unique()) == {"p1", "p2"}
+
+        # Remove S2 and p2 from config while leaving their files on disk in out_dir
+        write_summary_manifest(str(manifest), str(out_dir), ["S1"], ["data/p1.gb"])
+        df_pruned = read_compare_outputs(str(manifest))
+        assert set(df_pruned["Sample"].unique()) == {"S1"}
+        assert set(df_pruned["Plasmid"].unique()) == {"p1"}
 
 
 @pytest.mark.unit
@@ -331,9 +739,6 @@ class TestCohortDag97x21:
             "cache_dir": str(tmp_path / "cache"),
             "regions_bed": "config/construct_regions.bed",
             "include_unmapped": True,
-            "target_bed": "config/targets_union_pad100.bed",
-            "gtf": "config/MANE.GRCh38.v1.4.gtf.gz",
-            "vcf": "results/hotspot_rescue.tsv",
             "resources": {
                 "prepare_constructs": {"threads": 4, "mem_mb": 16000, "runtime": 60},
                 "scan_sample": {"threads": 4, "mem_mb": 8000, "runtime": 60},
@@ -347,6 +752,14 @@ class TestCohortDag97x21:
         assert len(ns["SAMPLES"]) == 97
         assert len(ns["CONSTRUCT_FILES"]) == 21
         assert "jobs" not in ns
+        assert (
+            len(
+                ns["expected_cohort_summary_files"](
+                    ns["OUTPUT_DIR"], ns["SAMPLES"], ns["CONSTRUCT_FILES"]
+                )
+            )
+            == 97 * 21
+        )
 
         done_targets = ns["expand"](f"{ns['LOG_DIR']}/{{sample}}.done", sample=ns["SAMPLES"])
         assert len(done_targets) == 97  # 1 job per sample BAM, NOT 97 * 21 = 2,037
@@ -356,9 +769,8 @@ class TestCohortDag97x21:
         defined_rules = re.findall(r"^rule\s+(\w+)\s*:", smk_text, flags=re.MULTILINE)
         assert defined_rules == ["all", "prepare_constructs", "scan_sample", "summary_reports"]
         assert "itertools.product" not in smk_text
-        assert "-pf {input.plasmids_file:q} -sf1 {input.bam:q}" in smk_text or (
-            "-pf {input.plasmids_file:q}" in smk_text and "-sf1 {input.bam:q}" in smk_text
-        )
+        assert "-pf {input.plasmids_file:q}" in smk_text and "-sf1 {input.bam:q}" in smk_text
+        assert "--sample-name {wildcards.sample:q}" in smk_text
 
         # Verify all per-rule walltimes are < 2 hours (120 min)
         for rule_name in ("prepare_constructs", "scan_sample", "summary_reports"):

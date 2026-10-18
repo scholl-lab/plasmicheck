@@ -32,12 +32,9 @@ log_dir: "logs"
 cache_dir: ".plasmicheck_cache"
 conda_env: "plasmicheck"
 
-# Optional extraction & cohort analysis inputs (forwarded to plasmicheck pipeline when set)
+# Optional BED-restricted extraction (forwarded to plasmicheck pipeline when set)
 regions_bed: null
 include_unmapped: true
-target_bed: null
-gtf: null
-vcf: null
 
 # Optional reporting and verdict settings
 threshold: 0.8

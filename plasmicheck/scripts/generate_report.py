@@ -1298,6 +1298,7 @@ def main(
     plot_backend: str = "matplotlib",
     reports_dir: str | None = None,
     anonymize: bool = False,
+    sample_name: str | None = None,
 ) -> None:
     if anonymize:
 
@@ -1465,11 +1466,15 @@ def main(
     )
     mismatches_with, mismatches_without = _parse_mismatches(mismatches_near_insert)
 
-    # Derive sample and plasmid display names from file paths
+    # Derive sample and plasmid display names from file paths unless explicitly provided
     sample_name = (
-        os.path.splitext(os.path.basename(sequencing_file))[0]
-        if sequencing_file not in ("None", "")
-        else ""
+        sample_name
+        if sample_name
+        else (
+            os.path.splitext(os.path.basename(sequencing_file))[0]
+            if sequencing_file not in ("None", "")
+            else ""
+        )
     )
     plasmid_name = (
         os.path.splitext(os.path.basename(plasmid_gb))[0] if plasmid_gb not in ("None", "") else ""
