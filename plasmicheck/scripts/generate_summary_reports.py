@@ -1193,12 +1193,429 @@ def _format_table_float(val: Any, decimals: int = 4, sci_threshold: float = 0.0)
         if math.isnan(fval):
             return "N/A"
         if fval == int(fval) and isinstance(val, str) and "." not in val:
-            return val
+            return f"{int(fval):,}"
         if sci_threshold > 0 and 0 < abs(fval) < sci_threshold:
             return f"{fval:.2e}"
         return f"{fval:.{decimals}f}"
     except (ValueError, TypeError):
         return val
+
+
+def _format_int_comma(val: Any) -> str:
+    """Format integer-like counts with thousands separators, or return '—' when missing."""
+    import math
+
+    if val is None or (isinstance(val, float) and math.isnan(val)):
+        return "—"
+    sval = str(val).strip()
+    if sval in ("", "NA", "N/A", "nan", "None"):
+        return "—"
+    try:
+        fval = float(sval)
+        if math.isnan(fval):
+            return "—"
+        return f"{round(fval):,}"
+    except (ValueError, TypeError):
+        return sval
+
+
+def _short_verdict(val: Any) -> tuple[str, str, int]:
+    """Map full or short verdict string to (short_label, css_suffix, sort_rank)."""
+    txt = str(val or "").strip()
+    lower = txt.lower()
+    if "not contaminated" in lower or lower == "clean":
+        return ("Clean", "clean", 2)
+    if "contaminated" in lower:
+        return ("Contaminated", "contam", 0)
+    if "unclear" in lower:
+        return ("Unclear", "unclear", 1)
+    return (txt or "No Result", "unclear", 3)
+
+
+def _find_sample_report_relpaths(
+    sample: str,
+    plasmid: str,
+    output_folder: str,
+    input_dir: str | None = None,
+) -> tuple[str, str]:
+    """Locate interactive and static single-sample report paths relative to output_folder."""
+    import contextlib
+
+    out_abs = os.path.abspath(output_folder)
+    search_roots: list[str] = []
+    if input_dir:
+        search_roots.append(os.path.abspath(input_dir))
+    parent1 = os.path.dirname(out_abs)
+    parent2 = os.path.dirname(parent1)
+    for cand_root in (out_abs, parent1, parent2):
+        if cand_root and cand_root not in search_roots and os.path.isdir(cand_root):
+            search_roots.append(cand_root)
+
+    for root in search_roots:
+        sample_dirs = [os.path.join(root, sample)]
+        with contextlib.suppress(OSError):
+            for entry in os.scandir(root):
+                if (
+                    entry.is_dir()
+                    and entry.name != "summary"
+                    and (entry.name == sample or entry.name.startswith(sample))
+                    and entry.path not in sample_dirs
+                ):
+                    sample_dirs.append(entry.path)
+
+        for sdir in sample_dirs:
+            if not os.path.isdir(sdir):
+                continue
+            for sub in (
+                os.path.join(sdir, plasmid, "reports"),
+                os.path.join(sdir, plasmid),
+            ):
+                inter_cand = os.path.join(sub, "report_interactive.html")
+                static_cand = os.path.join(sub, "report_non_interactive.html")
+                inter_rel = (
+                    os.path.relpath(inter_cand, out_abs) if os.path.exists(inter_cand) else ""
+                )
+                static_rel = (
+                    os.path.relpath(static_cand, out_abs) if os.path.exists(static_cand) else ""
+                )
+                if inter_rel or static_rel:
+                    return (inter_rel, static_rel)
+    return ("", "")
+
+
+def _build_cohort_overview(
+    combined_df: pd.DataFrame,
+    verdict_df: pd.DataFrame,
+    ratio_df: pd.DataFrame,
+    p_values_df: pd.DataFrame,
+    junction_df: pd.DataFrame | None,
+    summary_df: pd.DataFrame | None,
+    output_folder: str,
+    input_dir: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, bool]]:
+    """Build unified per-(Sample, Plasmid) rows and cohort KPI counts for the summary report."""
+    import contextlib
+    import math
+
+    pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for df in (verdict_df, ratio_df, combined_df):
+        if df is not None and not df.empty and {"Sample", "Plasmid"}.issubset(df.columns):
+            for _, r in df.iterrows():
+                key = (str(r["Sample"]), str(r["Plasmid"]))
+                if key not in seen:
+                    seen.add(key)
+                    pairs.append(key)
+
+    verdict_lookup: dict[tuple[str, str], str] = {}
+    if (
+        verdict_df is not None
+        and not verdict_df.empty
+        and {"Sample", "Plasmid", "Value"}.issubset(verdict_df.columns)
+    ):
+        for _, r in verdict_df.iterrows():
+            verdict_lookup[(str(r["Sample"]), str(r["Plasmid"]))] = str(r["Value"])
+
+    ratio_lookup: dict[tuple[str, str], float] = {}
+    if (
+        ratio_df is not None
+        and not ratio_df.empty
+        and {"Sample", "Plasmid", "Value"}.issubset(ratio_df.columns)
+    ):
+        for _, r in ratio_df.iterrows():
+            with contextlib.suppress(ValueError, TypeError):
+                fval = float(r["Value"])
+                if not math.isnan(fval):
+                    ratio_lookup[(str(r["Sample"]), str(r["Plasmid"]))] = fval
+
+    counts_lookup: dict[tuple[str, str, str], float] = {}
+    if (
+        combined_df is not None
+        and not combined_df.empty
+        and {"Sample", "Plasmid", "Category", "Value"}.issubset(combined_df.columns)
+    ):
+        for _, r in combined_df.iterrows():
+            with contextlib.suppress(ValueError, TypeError):
+                counts_lookup[(str(r["Sample"]), str(r["Plasmid"]), str(r["Category"]))] = float(
+                    r["Value"]
+                )
+
+    pval_lookup: dict[tuple[str, str], float] = {}
+    if (
+        p_values_df is not None
+        and not p_values_df.empty
+        and {"Sample", "Plasmid", "p_value_corrected"}.issubset(p_values_df.columns)
+    ):
+        for _, r in p_values_df.iterrows():
+            try:
+                fval = float(r["p_value_corrected"])
+                if not math.isnan(fval):
+                    pval_lookup[(str(r["Sample"]), str(r["Plasmid"]))] = fval
+            except (ValueError, TypeError):
+                pass
+
+    backbone_depth_lookup: dict[tuple[str, str], float] = {}
+    backbone_breadth_lookup: dict[tuple[str, str], float] = {}
+    if (
+        summary_df is not None
+        and not summary_df.empty
+        and {"Sample", "Plasmid", "Category", "Value"}.issubset(summary_df.columns)
+    ):
+        bb_rows = summary_df[summary_df["Category"].isin(["MeanDepthBackbone", "BreadthBackbone"])]
+        for _, r in bb_rows.iterrows():
+            key = (str(r["Sample"]), str(r["Plasmid"]))
+            cat = str(r["Category"])
+            try:
+                fval = float(r["Value"])
+                if not math.isnan(fval):
+                    if cat == "MeanDepthBackbone":
+                        backbone_depth_lookup[key] = fval
+                    elif cat == "BreadthBackbone":
+                        backbone_breadth_lookup[key] = fval
+            except (ValueError, TypeError):
+                pass
+
+    junc_lookup: dict[tuple[str, str], dict[str, Any]] = {}
+    if (
+        junction_df is not None
+        and not junction_df.empty
+        and {"Sample", "Plasmid"}.issubset(junction_df.columns)
+    ):
+        for _, r in junction_df.iterrows():
+            junc_lookup[(str(r["Sample"]), str(r["Plasmid"]))] = {
+                str(k): v for k, v in r.to_dict().items()
+            }
+
+    rows: list[dict[str, Any]] = []
+    kpi_counts = {
+        "total_pairs": len(pairs),
+        "contaminated": 0,
+        "unclear": 0,
+        "clean": 0,
+        "samples": len({s for s, _ in pairs}),
+        "plasmids": len({p for _, p in pairs}),
+    }
+    has_backbone_col = False
+    has_splice_col = False
+    has_report_links = False
+
+    for sample, plasmid in pairs:
+        key = (sample, plasmid)
+        v_short, v_class, v_rank = _short_verdict(verdict_lookup.get(key, ""))
+        if v_short == "Contaminated":
+            kpi_counts["contaminated"] += 1
+        elif v_short == "Unclear":
+            kpi_counts["unclear"] += 1
+        elif v_short == "Clean":
+            kpi_counts["clean"] += 1
+
+        ratio_val = ratio_lookup.get(key)
+        ratio_str = f"{ratio_val:.4f}" if ratio_val is not None else "—"
+        ratio_sort = ratio_val if ratio_val is not None else -1.0
+
+        p_reads = counts_lookup.get((sample, plasmid, "Plasmid"))
+        h_reads = counts_lookup.get((sample, plasmid, "Human"))
+        t_reads = counts_lookup.get((sample, plasmid, "Tied"))
+
+        bb_depth = backbone_depth_lookup.get(key)
+        bb_breadth = backbone_breadth_lookup.get(key)
+        if bb_depth is not None or bb_breadth is not None:
+            has_backbone_col = True
+            d_str = f"{bb_depth:,.1f}x" if bb_depth is not None else "0.0x"
+            if bb_breadth is not None:
+                b_pct = bb_breadth * 100.0 if bb_breadth <= 1.0 else bb_breadth
+                b_str = f"{b_pct:.0f}%"
+            else:
+                b_str = "0%"
+            backbone_str = f"{d_str} ({b_str})"
+            backbone_sort = bb_depth if bb_depth is not None else 0.0
+        else:
+            backbone_str = "—"
+            backbone_sort = -1.0
+
+        jrow = junc_lookup.get(key, {})
+        est_contam_str = "—"
+        est_contam_raw = ""
+        est_contam_sort = -1.0
+        raw_ecf = jrow.get("EstimatedContaminationFraction")
+        if raw_ecf is not None and str(raw_ecf).strip() not in ("", "NA", "N/A", "nan"):
+            try:
+                ecf_val = float(raw_ecf)
+                if not math.isnan(ecf_val):
+                    has_splice_col = True
+                    est_contam_str = f"{ecf_val * 100.0:.1f}%"
+                    est_contam_raw = f"{ecf_val:.4f}"
+                    est_contam_sort = ecf_val
+            except (ValueError, TypeError):
+                pass
+
+        ee_raw = jrow.get("SpliceJunctionEvents", jrow.get("SpliceJunctionReads"))
+        ei_raw = jrow.get("ExonIntronBoundaryReads")
+        ee_str = _format_int_comma(ee_raw)
+        ei_str = _format_int_comma(ei_raw)
+        if ee_str != "—" or ei_str != "—":
+            has_splice_col = True
+            splice_str = f"{ee_str} / {ei_str}"
+            try:
+                splice_sort = float(str(ee_raw))
+            except (ValueError, TypeError):
+                splice_sort = 0.0
+        else:
+            splice_str = "—"
+            splice_sort = -1.0
+
+        pval = pval_lookup.get(key)
+        if pval is not None:
+            pvalue_str = str(_format_table_float(pval, decimals=4, sci_threshold=1e-3))
+            pvalue_sort = pval
+        else:
+            pvalue_str = "—"
+            pvalue_sort = 999.0
+
+        inter_rel, static_rel = _find_sample_report_relpaths(
+            sample, plasmid, output_folder, input_dir=input_dir
+        )
+        if inter_rel or static_rel:
+            has_report_links = True
+
+        rows.append(
+            {
+                "sample": sample,
+                "plasmid": plasmid,
+                "verdict_short": v_short,
+                "verdict_class": v_class,
+                "verdict_rank": v_rank,
+                "ratio_str": ratio_str,
+                "ratio_sort": ratio_sort,
+                "est_contam_str": est_contam_str,
+                "est_contam_raw": est_contam_raw,
+                "est_contam_sort": est_contam_sort,
+                "plasmid_reads_str": _format_int_comma(p_reads),
+                "plasmid_reads_sort": p_reads if p_reads is not None else -1.0,
+                "human_reads_str": _format_int_comma(h_reads),
+                "human_reads_sort": h_reads if h_reads is not None else -1.0,
+                "tied_reads_str": _format_int_comma(t_reads),
+                "tied_reads_sort": t_reads if t_reads is not None else -1.0,
+                "backbone_str": backbone_str,
+                "backbone_sort": backbone_sort,
+                "splice_str": splice_str,
+                "splice_sort": splice_sort,
+                "pvalue_str": pvalue_str,
+                "pvalue_sort": pvalue_sort,
+                "report_relpath": inter_rel,
+                "static_report_relpath": static_rel or inter_rel,
+            }
+        )
+
+    rows.sort(
+        key=lambda r: (
+            r["verdict_rank"],
+            -r["ratio_sort"],
+            r["sample"],
+            r["plasmid"],
+        )
+    )
+    flags = {
+        "has_backbone_col": has_backbone_col,
+        "has_splice_col": has_splice_col,
+        "has_report_links": has_report_links,
+    }
+    return rows, kpi_counts, flags
+
+
+def _format_junction_display_df(junction_df: pd.DataFrame) -> pd.DataFrame:
+    """Format junction metadata DataFrame with concise human-readable columns for HTML display."""
+    import math
+
+    display_df = junction_df.copy()
+    display_df.columns.name = None
+
+    # Sort by EstimatedContaminationFraction descending when available
+    if "EstimatedContaminationFraction" in display_df.columns:
+        import pandas as pd
+
+        display_df["_ecf_sort"] = pd.to_numeric(
+            display_df["EstimatedContaminationFraction"], errors="coerce"
+        ).fillna(-1.0)
+        display_df = display_df.sort_values(
+            by=["_ecf_sort", "Sample", "Plasmid"], ascending=[False, True, True]
+        ).drop(columns=["_ecf_sort"])
+
+    if "EstimatedContaminationFraction" in display_df.columns:
+
+        def _fmt_ecf(v: Any) -> str:
+            sval = str(v or "").strip()
+            if sval in ("", "NA", "N/A", "nan", "None"):
+                return "N/A"
+            try:
+                fval = float(sval)
+                if math.isnan(fval):
+                    return "N/A"
+                return f"{fval * 100.0:.1f}% ({fval:.4f})"
+            except (ValueError, TypeError):
+                return sval
+
+        display_df["EstimatedContaminationFraction"] = display_df[
+            "EstimatedContaminationFraction"
+        ].apply(_fmt_ecf)
+
+    for int_col in (
+        "SpliceJunctionCount",
+        "ExonCount",
+        "SpliceJunctionReads",
+        "SpliceJunctionEvents",
+        "SpliceJunctionsCovered",
+        "ExonIntronBoundaryReads",
+        "VectorInsertJunctionReads",
+        "VectorInsertBridgePairs",
+    ):
+        if int_col in display_df.columns:
+            display_df[int_col] = display_df[int_col].apply(
+                lambda v: _format_int_comma(v) if str(v).strip() not in ("NA", "N/A") else "N/A"
+            )
+
+    for col in ["ExonLengths", "IntronLengths"]:
+        if col in display_df.columns:
+            display_df[col] = display_df[col].apply(
+                lambda v: (
+                    _truncate_list_for_html(str(v)) if v is not None and str(v) != "nan" else "N/A"
+                )
+            )
+
+    preferred_order = [
+        "Sample",
+        "Plasmid",
+        "EstimatedContaminationFraction",
+        "SpliceJunctionsCovered",
+        "SpliceJunctionCount",
+        "ExonCount",
+        "SpliceJunctionEvents",
+        "ExonIntronBoundaryReads",
+        "SpliceJunctionReads",
+        "VectorInsertJunctionReads",
+        "VectorInsertBridgePairs",
+        "ExonLengths",
+        "IntronLengths",
+    ]
+    ordered_cols = [c for c in preferred_order if c in display_df.columns] + [
+        c for c in display_df.columns if c not in preferred_order
+    ]
+    display_df = display_df[ordered_cols]
+
+    rename_map = {
+        "EstimatedContaminationFraction": "Est. Contamination",
+        "SpliceJunctionsCovered": "Junctions Covered",
+        "SpliceJunctionCount": "Total Junctions",
+        "ExonCount": "Exons",
+        "SpliceJunctionEvents": "Plasmid Span Events (EE)",
+        "ExonIntronBoundaryReads": "Human Intron Clips (EI)",
+        "SpliceJunctionReads": "Spanning Reads",
+        "VectorInsertJunctionReads": "Vector Junctions (VI)",
+        "VectorInsertBridgePairs": "Bridge Pairs",
+        "ExonLengths": "Exon Sizes (bp)",
+        "IntronLengths": "Intron Sizes (bp)",
+    }
+    return display_df.rename(columns=rename_map)
 
 
 # Report Generation Functions
@@ -1236,6 +1653,8 @@ def generate_report(
     verdict_by_plasmid_png: str | None = None,
     verdict_by_sample_interactive: str = "",
     verdict_by_sample_png: str | None = None,
+    summary_df: pd.DataFrame | None = None,
+    input_dir: str | None = None,
 ) -> None:
     import pandas as pd
     from jinja2 import Environment, FileSystemLoader
@@ -1339,17 +1758,40 @@ def generate_report(
         if verdict_by_sample_png:
             verdict_by_sample_png_base64 = encode_image_to_base64(verdict_by_sample_png)
 
+    overview_rows, cohort_kpis, overview_flags = _build_cohort_overview(
+        combined_df=combined_df,
+        verdict_df=verdict_df,
+        ratio_df=ratio_df,
+        p_values_df=p_values_df,
+        junction_df=junction_df,
+        summary_df=summary_df,
+        output_folder=output_folder,
+        input_dir=input_dir,
+    )
+
     # Format display copies of DataFrames for clean HTML rendering
     combined_display_df = combined_df.copy()
     if "Value" in combined_display_df.columns:
         combined_display_df["Value"] = combined_display_df["Value"].apply(
             lambda v: _format_table_float(v, decimals=4)
         )
+    if {"Sample", "Plasmid", "Category", "Value"}.issubset(combined_display_df.columns):
+        combined_display_df = combined_display_df[["Sample", "Plasmid", "Category", "Value"]]
+
+    verdict_display_df = verdict_df.copy()
+    if {"Sample", "Plasmid", "Value"}.issubset(verdict_display_df.columns):
+        verdict_display_df = verdict_display_df[["Sample", "Plasmid", "Value"]].rename(
+            columns={"Value": "Verdict"}
+        )
 
     ratio_display_df = ratio_df.copy()
     if "Value" in ratio_display_df.columns:
         ratio_display_df["Value"] = ratio_display_df["Value"].apply(
             lambda v: _format_table_float(v, decimals=4)
+        )
+    if {"Sample", "Plasmid", "Value"}.issubset(ratio_display_df.columns):
+        ratio_display_df = ratio_display_df[["Sample", "Plasmid", "Value"]].rename(
+            columns={"Value": "Ratio (Plasmid / Human)"}
         )
 
     p_values_display_df = p_values_df.copy()
@@ -1358,12 +1800,17 @@ def generate_report(
             p_values_display_df[col] = p_values_display_df[col].apply(
                 lambda v: _format_table_float(v, decimals=4, sci_threshold=1e-3)
             )
+    p_values_display_df = p_values_display_df.rename(
+        columns={"p_value": "P-Value", "p_value_corrected": "Adj. P-Value"}
+    )
 
     # Convert sorted DataFrames to HTML
     combined_html = combined_display_df.to_html(
         classes="table table-striped table-bordered", index=False
     )
-    verdict_html = verdict_df.to_html(classes="table table-striped table-bordered", index=False)
+    verdict_html = verdict_display_df.to_html(
+        classes="table table-striped table-bordered", index=False
+    )
     ratio_html = ratio_display_df.to_html(classes="table table-striped table-bordered", index=False)
     p_value_html = p_values_display_df.to_html(
         classes="table table-striped table-bordered", index=False
@@ -1382,17 +1829,10 @@ def generate_report(
             classes="table table-striped table-bordered", index=False
         )
 
-    # Convert junction metadata DataFrame to HTML with truncation
+    # Convert junction metadata DataFrame to HTML with human-readable columns & truncation
     junction_table_html = ""
     if junction_df is not None and not junction_df.empty:
-        # Truncate long comma-separated values for HTML display
-        display_df = junction_df.copy()
-        display_df.columns.name = None
-        for col in ["ExonLengths", "IntronLengths"]:
-            if col in display_df.columns:
-                display_df[col] = display_df[col].apply(
-                    lambda v: _truncate_list_for_html(str(v)) if pd.notna(v) else "N/A"
-                )
+        display_df = _format_junction_display_df(junction_df)
         junction_table_html = display_df.to_html(
             classes="table table-striped table-bordered", index=False
         )
@@ -1402,6 +1842,9 @@ def generate_report(
 
     # Render interactive HTML report
     html_content_interactive = template.render(
+        overview_rows=overview_rows,
+        cohort_kpis=cohort_kpis,
+        overview_flags=overview_flags,
         combined_df=combined_html,
         verdict_df=verdict_html,
         ratio_df=ratio_html,
@@ -1441,6 +1884,9 @@ def generate_report(
     # Save non-interactive HTML report (only if static_report=True)
     if static_report and heatmap_png_base64 and boxplot_png_base64:
         html_content_non_interactive = template.render(
+            overview_rows=overview_rows,
+            cohort_kpis=cohort_kpis,
+            overview_flags=overview_flags,
             combined_df=combined_html,
             verdict_df=verdict_html,
             ratio_df=ratio_html,
@@ -1741,4 +2187,6 @@ def main(
         verdict_by_plasmid_png=verdict_by_plasmid_png,
         verdict_by_sample_interactive=verdict_by_sample_interactive,
         verdict_by_sample_png=verdict_by_sample_png,
+        summary_df=summary_df,
+        input_dir=input_dir,
     )

@@ -1150,3 +1150,49 @@ def test_summary_reports_main_effective_threshold_reclassification(tmp_path: Pat
     content = report_file.read_text()
     # With threshold 1.2 and unclear 0.6..1.2, ratio 0.9 is Unclear
     assert "Unclear" in content
+
+
+@pytest.mark.unit
+def test_summary_report_cohort_matrix_and_links(tmp_path: Path) -> None:
+    """Verify summary report renders unified cohort matrix, sample report links, and readable junction headers."""
+    from plasmicheck.scripts.generate_summary_reports import main
+
+    sample_dir = tmp_path / "sample1_merged" / "plasmid1"
+    reports_dir = sample_dir / "reports"
+    reports_dir.mkdir(parents=True)
+    (reports_dir / "report_interactive.html").write_text("<html>sample report</html>")
+    summary_file = sample_dir / "comparison_result.summary.tsv"
+    summary_file.write_text(
+        "Category\tCount\n"
+        "Plasmid\t1200\n"
+        "Human\t300\n"
+        "Tied\t50\n"
+        "Ratio\t4.0\n"
+        "Threshold\t0.8\n"
+        "Verdict\tSample is contaminated with plasmid DNA\n"
+        "MeanDepthBackbone\t150.5\n"
+        "BreadthBackbone\t0.98\n"
+        "SpliceJunctionCount\t5\n"
+        "ExonCount\t6\n"
+        "SpliceJunctionReads\t1100\n"
+        "SpliceJunctionEvents\t2200\n"
+        "SpliceJunctionsCovered\t5\n"
+        "ExonIntronBoundaryReads\t40\n"
+        "EstimatedContaminationFraction\t0.9650\n"
+    )
+
+    out_dir = tmp_path / "summary"
+    out_dir.mkdir()
+
+    main(str(tmp_path), str(out_dir), substring_to_remove="_merged")
+
+    report_file = out_dir / "summary_report_interactive.html"
+    assert report_file.exists()
+    content = report_file.read_text()
+    assert "cohortOverviewTable" in content
+    assert "96.5%" in content
+    assert "150.5x (98%)" in content
+    assert "2,200 / 40" in content
+    assert "../sample1_merged/plasmid1/reports/report_interactive.html" in content
+    assert "Plasmid Span Events (EE)" in content
+    assert "Human Intron Clips (EI)" in content

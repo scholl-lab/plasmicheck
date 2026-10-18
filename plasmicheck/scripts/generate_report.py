@@ -1145,6 +1145,18 @@ def generate_report(
     resolved_cutoff = (
         contam_cutoff if contam_cutoff is not None else unclear.get("upper_bound", threshold)
     )
+    report_output_dir = reports_dir if reports_dir is not None else output_folder
+    out_abs = os.path.abspath(report_output_dir)
+    summary_report_relpath = ""
+    for rel_cand in (
+        "../../../summary/summary_report_interactive.html",
+        "../../../summary/reports/summary_interactive.html",
+        "../../summary/summary_report_interactive.html",
+        "../../summary/reports/summary_interactive.html",
+    ):
+        if os.path.exists(os.path.normpath(os.path.join(out_abs, rel_cand))):
+            summary_report_relpath = rel_cand
+            break
 
     # Render the interactive HTML report
     html_content_interactive = template.render(
@@ -1192,12 +1204,11 @@ def generate_report(
         coverage_metrics=coverage_metrics or {},
         coverage_fallback=coverage_fallback,
         junction_metrics=junction_metrics or {},
+        summary_report_relpath=summary_report_relpath,
         **resolved_igv,
     )
 
     # Save interactive HTML report
-    # Use reports_dir if provided, otherwise output_folder (backward compatibility)
-    report_output_dir = reports_dir if reports_dir is not None else output_folder
     html_report_interactive = os.path.join(report_output_dir, "report_interactive.html")
     with open(html_report_interactive, "w") as f:
         f.write(html_content_interactive)

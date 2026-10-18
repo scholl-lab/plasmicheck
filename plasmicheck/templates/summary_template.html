@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PlasmiCheck &mdash; Summary Report</title>
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.min.css">
+    <title>PlasmiCheck &mdash; Cohort Summary Report</title>
 
     {% if plotly_mode is not defined %}{% set plotly_mode = 'embedded' %}{% endif %}
 
@@ -32,6 +31,7 @@
             --pc-text-secondary: #334155;
             --pc-text-muted: #475569;
             --pc-accent: #2563eb;
+            --pc-accent-soft: #eff6ff;
             --pc-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
         }
 
@@ -57,7 +57,7 @@
         .pc-header {
             background: var(--pc-surface);
             border-bottom: 1px solid var(--pc-border);
-            padding: 0.75rem 0;
+            padding: 0.7rem 0;
             position: sticky;
             top: 0;
             z-index: 30;
@@ -77,9 +77,9 @@
             align-items: center;
             gap: 0.85rem;
         }
-        .pc-logo { height: 40px; width: auto; }
+        .pc-logo { height: 38px; width: auto; }
         .pc-header h1 {
-            font-size: 1.45rem;
+            font-size: 1.5rem;
             font-weight: 700;
             margin: 0;
             line-height: 1.3;
@@ -90,12 +90,12 @@
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 0.35rem;
+            gap: 0.3rem;
         }
         .pc-nav a {
             color: var(--pc-text-secondary);
             text-decoration: none;
-            font-size: 0.82rem;
+            font-size: 0.81rem;
             font-weight: 500;
             padding: 0.3rem 0.65rem;
             border-radius: 6px;
@@ -105,46 +105,67 @@
         .pc-nav a:hover,
         .pc-nav a:focus-visible {
             background: var(--pc-surface-subtle);
-            color: var(--pc-accent);
+            color: #1d4ed8;
         }
 
         /* -- Main Container -------------------------------- */
         .pc-main {
             max-width: 1360px;
             margin: 0 auto;
-            padding: 1.5rem;
+            padding: 1.35rem 1.5rem 2.5rem;
         }
 
-        /* -- Cohort Parameters Bar ------------------------- */
-        .pc-params-bar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.75rem 2rem;
+        /* -- Cohort Executive KPI Strip -------------------- */
+        .pc-kpi-strip {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.85rem;
             margin-bottom: 1.25rem;
-            padding: 0.85rem 1.25rem;
+        }
+        @media (max-width: 1024px) {
+            .pc-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        .pc-kpi-card {
             background: var(--pc-surface);
             border: 1px solid var(--pc-border);
             border-radius: 10px;
+            padding: 0.85rem 1.1rem;
             box-shadow: var(--pc-shadow);
-            font-size: 0.86rem;
-        }
-        .pc-param-item {
             display: flex;
-            align-items: baseline;
-            gap: 0.45rem;
-            line-height: 1.4;
+            flex-direction: column;
+            gap: 0.2rem;
+            text-align: left;
+            cursor: pointer;
+            transition: border-color 0.15s ease, transform 0.12s ease;
         }
-        .pc-param-label {
+        .pc-kpi-card:hover {
+            border-color: var(--pc-accent);
+        }
+        .pc-kpi-card.is-static {
+            cursor: default;
+        }
+        .pc-kpi-card.is-static:hover {
+            border-color: var(--pc-border);
+        }
+        .pc-kpi-label {
+            font-size: 0.76rem;
+            font-weight: 600;
             color: var(--pc-text-muted);
-            font-weight: 600;
-            font-size: 0.78rem;
+            line-height: 1.35;
+            letter-spacing: 0.01em;
         }
-        .pc-param-val {
-            font-weight: 600;
-            color: var(--pc-text);
+        .pc-kpi-val {
+            font-size: 1.55rem;
+            font-weight: 700;
+            line-height: 1.2;
             font-variant-numeric: tabular-nums;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            font-size: 0.84rem;
+            color: var(--pc-text);
+        }
+        .pc-kpi-sub {
+            font-size: 0.76rem;
+            color: var(--pc-text-muted);
+            line-height: 1.35;
+            font-variant-numeric: tabular-nums;
         }
 
         /* -- Collapsible Section Cards --------------------- */
@@ -153,16 +174,17 @@
             border: 1px solid var(--pc-border);
             border-radius: 10px;
             box-shadow: var(--pc-shadow);
-            margin-bottom: 1.25rem;
+            margin-bottom: 1.15rem;
             overflow: hidden;
         }
         .pc-section > summary {
-            padding: 1rem 1.5rem;
+            padding: 0.9rem 1.35rem;
             cursor: pointer;
             list-style: none;
             display: flex;
             align-items: center;
-            gap: 0.65rem;
+            justify-content: space-between;
+            gap: 0.75rem;
             background: var(--pc-surface);
             border-bottom: 1px solid transparent;
             user-select: none;
@@ -172,7 +194,12 @@
             background: #fcfdff;
         }
         .pc-section > summary::-webkit-details-marker { display: none; }
-        .pc-section > summary::before {
+        .pc-summary-left {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+        }
+        .pc-summary-left::before {
             content: '';
             display: inline-block;
             width: 0.42rem;
@@ -183,7 +210,7 @@
             transition: transform 0.18s ease;
             flex-shrink: 0;
         }
-        .pc-section[open] > summary::before {
+        .pc-section[open] > summary .pc-summary-left::before {
             transform: rotate(45deg);
         }
         .pc-section > summary h2 {
@@ -194,16 +221,28 @@
             color: var(--pc-text);
             letter-spacing: -0.01em;
         }
+        .pc-summary-hint {
+            font-size: 0.78rem;
+            color: var(--pc-text-muted);
+            font-weight: 500;
+            line-height: 1.4;
+        }
         .pc-section-body {
-            padding: 1.35rem 1.5rem;
+            padding: 1.2rem 1.35rem;
+        }
+        .pc-section-lead {
+            font-size: 0.84rem;
+            color: var(--pc-text-muted);
+            line-height: 1.5;
+            margin: 0 0 0.9rem 0;
         }
 
         /* -- Grids & Panels -------------------------------- */
         .pc-grid-2 {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 1.25rem;
-            margin-bottom: 1.25rem;
+            gap: 1.15rem;
+            margin-bottom: 1.15rem;
         }
         .pc-grid-2:last-child {
             margin-bottom: 0;
@@ -215,15 +254,15 @@
             background: #fcfdff;
             border: 1px solid var(--pc-border);
             border-radius: 8px;
-            padding: 1rem 1.15rem;
+            padding: 0.95rem 1.1rem;
         }
         .pc-panel h3 {
-            font-size: 0.95rem;
+            font-size: 0.92rem;
             font-weight: 600;
             line-height: 1.4;
             color: var(--pc-text-secondary);
-            margin: 0 0 0.75rem 0;
-            padding-bottom: 0.45rem;
+            margin: 0 0 0.65rem 0;
+            padding-bottom: 0.4rem;
             border-bottom: 1px solid var(--pc-border);
         }
         .plot {
@@ -244,15 +283,15 @@
         .plot .plotly-graph-div,
         .plot .js-plotly-plot {
             width: 100% !important;
-            height: 420px !important;
+            height: 400px !important;
         }
 
-        /* -- Semantic Verdict Badges in Tables ------------- */
+        /* -- Semantic Verdict Badges ----------------------- */
         .pc-v-badge {
             display: inline-flex;
             align-items: center;
             gap: 0.35rem;
-            padding: 0.18rem 0.6rem;
+            padding: 0.16rem 0.58rem;
             border-radius: 9999px;
             font-size: 0.76rem;
             font-weight: 600;
@@ -285,64 +324,160 @@
         }
         .pc-v-contam::before { background: #ef4444; }
 
-        /* -- Tables & DataTables overrides ----------------- */
+        /* -- Interactive Cohort Table Toolbar -------------- */
+        .pc-table-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .pc-filter-pills {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .pc-filter-pill {
+            appearance: none;
+            background: var(--pc-surface);
+            border: 1px solid var(--pc-border-strong);
+            color: var(--pc-text-secondary);
+            font-size: 0.78rem;
+            font-weight: 600;
+            line-height: 1.35;
+            padding: 0.28rem 0.7rem;
+            border-radius: 9999px;
+            cursor: pointer;
+            font-variant-numeric: tabular-nums;
+            transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+        }
+        .pc-filter-pill:hover {
+            border-color: var(--pc-accent);
+            color: #1d4ed8;
+        }
+        .pc-filter-pill[aria-pressed="true"] {
+            background: var(--pc-accent);
+            border-color: var(--pc-accent);
+            color: #ffffff;
+        }
+        .pc-toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+        }
+        .pc-search-input {
+            border: 1px solid var(--pc-border-strong);
+            border-radius: 6px;
+            padding: 0.32rem 0.65rem;
+            font-size: 0.81rem;
+            line-height: 1.4;
+            color: var(--pc-text);
+            background: var(--pc-surface);
+            min-width: 220px;
+        }
+        .pc-search-input:focus {
+            outline: 2px solid var(--pc-accent);
+            outline-offset: 1px;
+            border-color: var(--pc-accent);
+        }
+        .pc-table-count {
+            font-size: 0.78rem;
+            color: var(--pc-text-muted);
+            font-variant-numeric: tabular-nums;
+            line-height: 1.4;
+            white-space: nowrap;
+        }
+
+        /* -- Clean Tables ---------------------------------- */
         .table-container {
             width: 100%;
             overflow-x: auto;
         }
+        .table-container-scroll {
+            max-height: 440px;
+            overflow-y: auto;
+        }
         table.table,
-        table.dataTable {
-            width: 100% !important;
-            border-collapse: separate !important;
-            border-spacing: 0 !important;
-            font-size: 0.84rem;
+        table.pc-cohort-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.83rem;
             font-variant-numeric: tabular-nums;
-            margin: 0.5rem 0 !important;
+            margin: 0;
             border: 1px solid var(--pc-border);
-            border-radius: 6px;
-            overflow: hidden;
+            border-radius: 8px;
+            background: var(--pc-surface);
         }
         table.table thead th,
-        table.dataTable thead th {
-            background: var(--pc-surface-subtle) !important;
-            color: var(--pc-text-secondary) !important;
-            font-weight: 600 !important;
-            font-size: 0.78rem;
-            line-height: 1.4;
-            padding: 0.55rem 0.75rem !important;
-            border-bottom: 1px solid var(--pc-border-strong) !important;
+        table.pc-cohort-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--pc-surface-subtle);
+            color: var(--pc-text-secondary);
+            font-weight: 600;
+            font-size: 0.76rem;
+            line-height: 1.35;
+            padding: 0.55rem 0.75rem;
+            border-bottom: 1px solid var(--pc-border-strong);
             text-align: left;
+            white-space: nowrap;
+            user-select: none;
+        }
+        table.pc-cohort-table thead th[data-sort-col] {
+            cursor: pointer;
+        }
+        table.pc-cohort-table thead th[data-sort-col]:hover {
+            color: #1e3a8a;
+            background: #e2e8f0;
+        }
+        table.table thead th.pc-num,
+        table.pc-cohort-table thead th.pc-num {
+            text-align: right;
         }
         table.table tbody td,
-        table.dataTable tbody td {
-            padding: 0.5rem 0.75rem !important;
-            border-bottom: 1px solid var(--pc-border) !important;
+        table.pc-cohort-table tbody td {
+            padding: 0.48rem 0.75rem;
+            border-bottom: 1px solid var(--pc-border);
             color: var(--pc-text);
             line-height: 1.45;
             vertical-align: middle;
         }
-        table.table tbody tr:last-child td,
-        table.dataTable tbody tr:last-child td {
-            border-bottom: none !important;
-        }
-        table.table tbody tr:hover,
-        table.dataTable tbody tr:hover {
-            background: #f8fafc !important;
-        }
-        .dataTables_wrapper .dataTables_filter input,
-        .dataTables_wrapper .dataTables_length select {
-            border: 1px solid var(--pc-border-strong);
-            border-radius: 6px;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.82rem;
-            color: var(--pc-text);
-            background: var(--pc-surface);
-        }
-        .dataTables_wrapper .dataTables_info,
-        .dataTables_wrapper .dataTables_paginate {
+        table.table tbody td.pc-num,
+        table.pc-cohort-table tbody td.pc-num {
+            text-align: right;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 0.8rem;
-            color: var(--pc-text-muted) !important;
-            margin-top: 0.4rem;
+        }
+        table.table tbody tr:last-child td,
+        table.pc-cohort-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        table.table tbody tr:hover td,
+        table.pc-cohort-table tbody tr:hover td {
+            background: #f8fafc;
+        }
+        .pc-report-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            color: var(--pc-accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.78rem;
+            line-height: 1.35;
+            padding: 0.18rem 0.5rem;
+            border-radius: 5px;
+            background: var(--pc-accent-soft);
+            border: 1px solid #bfdbfe;
+            white-space: nowrap;
+        }
+        .pc-report-link:hover {
+            background: #dbeafe;
+            color: #1d4ed8;
         }
 
         /* -- Provenance Footer ----------------------------- */
@@ -350,14 +485,15 @@
             background: var(--pc-surface);
             border: 1px solid var(--pc-border);
             border-radius: 10px;
-            padding: 1rem 1.5rem;
-            font-size: 0.82rem;
+            padding: 0.9rem 1.35rem;
+            font-size: 0.8rem;
             line-height: 1.5;
             color: var(--pc-text-muted);
-            margin-top: 1.5rem;
+            margin-top: 1.25rem;
         }
         .details p {
-            margin: 0.25rem 0;
+            margin: 0.2rem 0;
+            line-height: 1.5;
         }
         .details p span {
             font-weight: 600;
@@ -366,56 +502,185 @@
     </style>
 </head>
 <body>
+    {% set contam_cutoff = contam_cutoff | default(unclear_range.upper_bound) %}
     <header class="pc-header">
         <div class="pc-header-inner">
             <div class="pc-brand">
-                <img src="{{ logo_base64 }}" alt="plasmicheck Logo" class="pc-logo">
-                <h1>plasmicheck Summary Report</h1>
+                <img src="{{ logo_base64 }}" alt="PlasmiCheck Logo" class="pc-logo">
+                <h1>PlasmiCheck Cohort Summary</h1>
             </div>
             <nav class="pc-nav" aria-label="Report Sections">
-                <a href="#sec-verdicts">Overview</a>
-                <a href="#sec-contamination">Contamination</a>
-                {% if coverage_outside_heatmap_content %}<a href="#sec-outside">Outside Insert</a>{% endif %}
-                {% if depth_heatmap_content or breadth_heatmap_content %}<a href="#sec-coverage">Backbone Coverage</a>{% endif %}
-                {% if mismatches_heatmap_content %}<a href="#sec-mismatches">Mismatches</a>{% endif %}
+                {% if overview_rows is defined and overview_rows %}<a href="#sec-cohort-matrix">Results Matrix</a>{% endif %}
+                <a href="#sec-verdicts">Overview Plots</a>
+                {% if junction_table %}<a href="#sec-junctions">Splice Evidence</a>{% endif %}
+                {% if coverage_outside_heatmap_content or depth_heatmap_content or breadth_heatmap_content %}<a href="#sec-coverage">Backbone Coverage</a>{% endif %}
+                {% if mismatches_heatmap_content %}<a href="#sec-mismatches">Boundary Mismatches</a>{% endif %}
                 {% if resistance_gene_table %}<a href="#sec-resistance">Resistance Genes</a>{% endif %}
-                {% if junction_table %}<a href="#sec-junctions">Splice Junctions</a>{% endif %}
+                <a href="#sec-raw-tables">Raw Tables</a>
             </nav>
         </div>
     </header>
 
     <main class="pc-main">
-        <!-- Cohort Parameters Strip -->
-        {% set contam_cutoff = contam_cutoff | default(unclear_range.upper_bound) %}
-        <div class="pc-params-bar">
-            <div class="pc-param-item" title="Samples with Plasmid/Human ratio below {{ unclear_range.lower_bound }} are classified as Clean.">
-                <span class="pc-param-label">Clean Cutoff</span>
-                <span class="pc-param-val" style="color: #065f46;">&lt; {{ unclear_range.lower_bound }}</span>
-            </div>
-            <div class="pc-param-item" title="Uncertainty buffer ({{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }}) for threshold {{ threshold }}.">
-                <span class="pc-param-label">Unclear Zone</span>
-                <span class="pc-param-val" style="color: #92400e;">{{ unclear_range.lower_bound }} &ndash; {{ unclear_range.upper_bound }}</span>
-            </div>
-            <div class="pc-param-item" title="Samples with Plasmid/Human ratio above {{ contam_cutoff }} exceed the unclear buffer zone and are classified as Contaminated.">
-                <span class="pc-param-label">Contaminated Cutoff</span>
-                <span class="pc-param-val" style="color: #991b1b;">&gt; {{ contam_cutoff }}</span>
-            </div>
-            <div class="pc-param-item">
-                <span class="pc-param-label">Version</span>
-                <span class="pc-param-val">v{{ version }}</span>
-            </div>
-            <div class="pc-param-item">
-                <span class="pc-param-label">Run Date</span>
-                <span class="pc-param-val">{{ run_date }}</span>
+        <!-- Cohort Executive KPI Strip -->
+        {% if cohort_kpis is defined and cohort_kpis.total_pairs > 0 %}
+        <div class="pc-kpi-strip" role="region" aria-label="Cohort Verdict Summary">
+            <button type="button" class="pc-kpi-card" data-kpi-filter="all" title="Show all {{ cohort_kpis.total_pairs }} sample-plasmid pairs">
+                <span class="pc-kpi-label">Pairs Analyzed</span>
+                <span class="pc-kpi-val">{{ cohort_kpis.total_pairs }}</span>
+                <span class="pc-kpi-sub">{{ cohort_kpis.samples }} samples &times; {{ cohort_kpis.plasmids }} plasmids</span>
+            </button>
+            <button type="button" class="pc-kpi-card" data-kpi-filter="Contaminated" title="Filter table to Contaminated pairs (Ratio > {{ contam_cutoff }})">
+                <span class="pc-kpi-label">Contaminated</span>
+                <span class="pc-kpi-val" style="color: #b91c1c;">{{ cohort_kpis.contaminated }}</span>
+                <span class="pc-kpi-sub">Ratio &gt; {{ contam_cutoff }}</span>
+            </button>
+            <button type="button" class="pc-kpi-card" data-kpi-filter="Unclear" title="Filter table to Unclear pairs (Ratio {{ unclear_range.lower_bound }}–{{ unclear_range.upper_bound }})">
+                <span class="pc-kpi-label">Unclear</span>
+                <span class="pc-kpi-val" style="color: #b45309;">{{ cohort_kpis.unclear }}</span>
+                <span class="pc-kpi-sub">Zone {{ unclear_range.lower_bound }}&ndash;{{ unclear_range.upper_bound }}</span>
+            </button>
+            <button type="button" class="pc-kpi-card" data-kpi-filter="Clean" title="Filter table to Clean pairs (Ratio < {{ unclear_range.lower_bound }})">
+                <span class="pc-kpi-label">Clean</span>
+                <span class="pc-kpi-val" style="color: #047857;">{{ cohort_kpis.clean }}</span>
+                <span class="pc-kpi-sub">Ratio &lt; {{ unclear_range.lower_bound }}</span>
+            </button>
+            <div class="pc-kpi-card is-static">
+                <span class="pc-kpi-label">Run Metadata</span>
+                <span class="pc-kpi-val" style="font-size: 1.05rem; margin-top: 0.2rem;">v{{ version }}</span>
+                <span class="pc-kpi-sub">{{ run_date }}</span>
             </div>
         </div>
+        {% endif %}
 
-        <!-- Section 0: Verdict Overview -->
-        <details open id="sec-verdicts" class="pc-section">
+        <!-- Primary Section 1: Unified Cohort Results Matrix -->
+        {% if overview_rows is defined and overview_rows %}
+        <details open id="sec-cohort-matrix" class="pc-section">
             <summary>
-                <h2>Verdict Overview</h2>
+                <div class="pc-summary-left">
+                    <h2>Cohort Results Matrix</h2>
+                </div>
+                <span class="pc-summary-hint">Sorted by severity &middot; Click column headers to sort</span>
             </summary>
             <div class="pc-section-body">
+                <div class="pc-table-toolbar">
+                    <div class="pc-filter-pills" role="group" aria-label="Filter by Verdict">
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="all" aria-pressed="true">
+                            All ({{ cohort_kpis.total_pairs }})
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Contaminated" aria-pressed="false">
+                            Contaminated ({{ cohort_kpis.contaminated }})
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Unclear" aria-pressed="false">
+                            Unclear ({{ cohort_kpis.unclear }})
+                        </button>
+                        <button type="button" class="pc-filter-pill" data-verdict-filter="Clean" aria-pressed="false">
+                            Clean ({{ cohort_kpis.clean }})
+                        </button>
+                    </div>
+                    <div class="pc-toolbar-right">
+                        <input
+                            type="search"
+                            id="cohortSearchInput"
+                            class="pc-search-input"
+                            placeholder="Filter sample or plasmid..."
+                            aria-label="Filter sample or plasmid"
+                        >
+                        <span class="pc-table-count" id="cohortRowCount">
+                            {{ overview_rows|length }} of {{ overview_rows|length }} pairs
+                        </span>
+                    </div>
+                </div>
+
+                <div class="table-container table-container-scroll">
+                    <table class="pc-cohort-table" id="cohortOverviewTable">
+                        <thead>
+                            <tr>
+                                <th data-sort-col="0" data-sort-type="text">Sample</th>
+                                <th data-sort-col="1" data-sort-type="text">Plasmid</th>
+                                <th data-sort-col="2" data-sort-type="num">Verdict</th>
+                                <th class="pc-num" data-sort-col="3" data-sort-type="num" title="Plasmid-assigned reads divided by Human-assigned reads">Ratio (P/H)</th>
+                                {% if overview_flags.has_splice_col %}
+                                <th class="pc-num" data-sort-col="4" data-sort-type="num" title="Estimated cDNA contamination fraction at multi-exon splice junctions">Est. Contam.</th>
+                                {% endif %}
+                                <th class="pc-num" data-sort-col="5" data-sort-type="num">Plasmid Reads</th>
+                                <th class="pc-num" data-sort-col="6" data-sort-type="num">Human Reads</th>
+                                <th class="pc-num" data-sort-col="7" data-sort-type="num">Tied Reads</th>
+                                {% if overview_flags.has_backbone_col %}
+                                <th class="pc-num" data-sort-col="8" data-sort-type="num" title="Vector backbone mean depth and breadth (>=1x)">Backbone Depth (Breadth)</th>
+                                {% endif %}
+                                {% if overview_flags.has_splice_col %}
+                                <th class="pc-num" data-sort-col="9" data-sort-type="num" title="Plasmid exon-exon spanning events (EE) vs. Human exon-intron clipped reads (EI)">Splice Events (EE / EI)</th>
+                                {% endif %}
+                                <th class="pc-num" data-sort-col="10" data-sort-type="num" title="Benjamini-Hochberg adjusted outlier p-value across cohort">Adj. P-Value</th>
+                                {% if overview_flags.has_report_links %}
+                                <th style="text-align: right;">Sample Report</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in overview_rows %}
+                            <tr data-verdict="{{ row.verdict_short }}">
+                                <td data-sort="{{ row.sample }}"><strong>{{ row.sample }}</strong></td>
+                                <td data-sort="{{ row.plasmid }}">{{ row.plasmid }}</td>
+                                <td data-sort="{{ row.verdict_rank }}">
+                                    <span class="pc-v-badge pc-v-{{ row.verdict_class }}">{{ row.verdict_short }}</span>
+                                </td>
+                                <td class="pc-num" data-sort="{{ row.ratio_sort }}">
+                                    {% if row.verdict_short == 'Contaminated' %}
+                                        <strong style="color: #991b1b;">{{ row.ratio_str }}</strong>
+                                    {% else %}
+                                        {{ row.ratio_str }}
+                                    {% endif %}
+                                </td>
+                                {% if overview_flags.has_splice_col %}
+                                <td class="pc-num" data-sort="{{ row.est_contam_sort }}" {% if row.est_contam_raw %}title="Raw fraction: {{ row.est_contam_raw }}"{% endif %}>
+                                    {% if row.est_contam_str != '—' and row.est_contam_sort > 0 %}
+                                        <strong>{{ row.est_contam_str }}</strong>
+                                    {% else %}
+                                        {{ row.est_contam_str }}
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                                <td class="pc-num" data-sort="{{ row.plasmid_reads_sort }}">{{ row.plasmid_reads_str }}</td>
+                                <td class="pc-num" data-sort="{{ row.human_reads_sort }}">{{ row.human_reads_str }}</td>
+                                <td class="pc-num" data-sort="{{ row.tied_reads_sort }}">{{ row.tied_reads_str }}</td>
+                                {% if overview_flags.has_backbone_col %}
+                                <td class="pc-num" data-sort="{{ row.backbone_sort }}">{{ row.backbone_str }}</td>
+                                {% endif %}
+                                {% if overview_flags.has_splice_col %}
+                                <td class="pc-num" data-sort="{{ row.splice_sort }}">{{ row.splice_str }}</td>
+                                {% endif %}
+                                <td class="pc-num" data-sort="{{ row.pvalue_sort }}">{{ row.pvalue_str }}</td>
+                                {% if overview_flags.has_report_links %}
+                                <td style="text-align: right;">
+                                    {% set target_href = row.report_relpath if interactive else row.static_report_relpath %}
+                                    {% if target_href %}
+                                        <a class="pc-report-link" href="{{ target_href }}">Open &rarr;</a>
+                                    {% else %}
+                                        &mdash;
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- Primary Section 2: Verdict Overview & Contamination Ratio Plots -->
+        <details open id="sec-verdicts" class="pc-section">
+            <summary>
+                <div class="pc-summary-left">
+                    <h2>Verdict Overview &amp; Contamination Distribution</h2>
+                </div>
+                <span class="pc-summary-hint">Clean &lt; {{ unclear_range.lower_bound }} &middot; Unclear {{ unclear_range.lower_bound }}&ndash;{{ unclear_range.upper_bound }} &middot; Contam &gt; {{ contam_cutoff }}</span>
+            </summary>
+            <div class="pc-section-body">
+                {% if verdict_by_plasmid_content or verdict_by_sample_content %}
                 <div class="pc-grid-2">
                     <div class="pc-panel">
                         <h3>Verdicts by Plasmid</h3>
@@ -438,16 +703,9 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        </details>
+                {% endif %}
 
-        <!-- Section 1: Contamination Analysis -->
-        <details open id="sec-contamination" class="pc-section">
-            <summary>
-                <h2>Contamination Analysis</h2>
-            </summary>
-            <div class="pc-section-body">
-                <div class="pc-grid-2">
+                <div class="pc-grid-2" id="sec-contamination">
                     <div class="pc-panel">
                         <h3>Contamination Ratio Heatmap</h3>
                         <div class="plot">
@@ -469,47 +727,72 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="pc-grid-2">
-                    <div class="pc-panel">
-                        <h3>Verdicts</h3>
-                        <div class="table-container">
-                            {{ verdict_df|safe }}
-                        </div>
-                    </div>
-                    <div class="pc-panel">
-                        <h3>Contamination Ratios</h3>
-                        <div class="table-container">
-                            {{ ratio_df|safe }}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="pc-grid-2">
-                    <div class="pc-panel">
-                        <h3>P-Value Table</h3>
-                        <div class="table-container">
-                            {{ p_value_table|safe }}
-                        </div>
-                    </div>
-                    <div class="pc-panel">
-                        <h3>Summary Table</h3>
-                        <div class="table-container">
-                            {{ combined_df|safe }}
-                        </div>
-                    </div>
-                </div>
             </div>
         </details>
 
-        <!-- Section 2: Coverage Outside Insert -->
-        {% if coverage_outside_heatmap_content %}
-        <details open id="sec-outside" class="pc-section">
+        <!-- Primary Section 3: Splice Junction & Vector Boundary Evidence -->
+        {% if junction_table %}
+        <details open id="sec-junctions" class="pc-section">
             <summary>
-                <h2>Coverage Outside Insert</h2>
+                <div class="pc-summary-left">
+                    <h2>Splice Junction &amp; Vector Boundary Evidence</h2>
+                </div>
+                <span class="pc-summary-hint">Multi-exon cDNA splice spans (EE), human intron clips (EI), and vector junctions (VI)</span>
             </summary>
             <div class="pc-section-body">
+                <p class="pc-section-lead">
+                    <strong>Plasmid Span Events (EE)</strong> count reads aligning continuously across exon&ndash;exon junctions without intervening human introns;
+                    <strong>Human Intron Clips (EI)</strong> count native genomic reads soft-clipped at exon&ndash;intron splice sites;
+                    <strong>Vector Junctions (VI)</strong> count reads crossing the 5'/3' cloning boundaries.
+                </p>
+                <div class="table-container table-container-scroll">
+                    {{ junction_table|safe }}
+                </div>
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- Secondary Section 4: Backbone & Outside-Insert Coverage (Collapsed by default for clean browsing) -->
+        {% if coverage_outside_heatmap_content or depth_heatmap_content or breadth_heatmap_content %}
+        <details id="sec-coverage" class="pc-section">
+            <summary>
+                <div class="pc-summary-left">
+                    <h2>Backbone &amp; Outside-Insert Coverage</h2>
+                </div>
+                <span class="pc-summary-hint">Click to expand coverage depth, breadth &amp; outside-insert heatmaps</span>
+            </summary>
+            <div class="pc-section-body">
+                {% if depth_heatmap_content or breadth_heatmap_content %}
                 <div class="pc-grid-2">
+                    {% if depth_heatmap_content %}
+                    <div class="pc-panel">
+                        <h3>Backbone Mean Depth Heatmap</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ depth_heatmap_content|safe }}
+                            {% else %}
+                                <img src="{{ depth_heatmap_content }}" alt="Backbone Mean Depth Heatmap">
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if breadth_heatmap_content %}
+                    <div class="pc-panel">
+                        <h3>Backbone Breadth (&ge;1x) Heatmap</h3>
+                        <div class="plot">
+                            {% if interactive %}
+                                {{ breadth_heatmap_content|safe }}
+                            {% else %}
+                                <img src="{{ breadth_heatmap_content }}" alt="Backbone Breadth Heatmap">
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if coverage_outside_heatmap_content %}
+                <div class="pc-grid-2" id="sec-outside">
                     <div class="pc-panel">
                         <h3>Coverage Outside Insert Heatmap</h3>
                         <div class="plot">
@@ -533,52 +816,19 @@
                     </div>
                     {% endif %}
                 </div>
+                {% endif %}
             </div>
         </details>
         {% endif %}
 
-        <!-- Section 3: Coverage Analysis -->
-        {% if depth_heatmap_content or breadth_heatmap_content %}
-        <details open id="sec-coverage" class="pc-section">
-            <summary>
-                <h2>Coverage Analysis</h2>
-            </summary>
-            <div class="pc-section-body">
-                <div class="pc-grid-2">
-                    {% if depth_heatmap_content %}
-                    <div class="pc-panel">
-                        <h3>Backbone Mean Depth Heatmap</h3>
-                        <div class="plot">
-                            {% if interactive %}
-                                {{ depth_heatmap_content|safe }}
-                            {% else %}
-                                <img src="{{ depth_heatmap_content }}" alt="Backbone Mean Depth Heatmap">
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endif %}
-                    {% if breadth_heatmap_content %}
-                    <div class="pc-panel">
-                        <h3>Backbone Breadth Heatmap</h3>
-                        <div class="plot">
-                            {% if interactive %}
-                                {{ breadth_heatmap_content|safe }}
-                            {% else %}
-                                <img src="{{ breadth_heatmap_content }}" alt="Backbone Breadth Heatmap">
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </details>
-        {% endif %}
-
-        <!-- Section 4: Mismatch Analysis -->
+        <!-- Secondary Section 5: Boundary Mismatch Analysis (Collapsed by default) -->
         {% if mismatches_heatmap_content %}
-        <details open id="sec-mismatches" class="pc-section">
+        <details id="sec-mismatches" class="pc-section">
             <summary>
-                <h2>Mismatch Analysis</h2>
+                <div class="pc-summary-left">
+                    <h2>Boundary Mismatch Analysis</h2>
+                </div>
+                <span class="pc-summary-hint">Reads overlapping insert boundaries (&plusmn;100 bp) with mismatches or clipping</span>
             </summary>
             <div class="pc-section-body">
                 <div class="pc-grid-2">
@@ -592,128 +842,266 @@
                             {% endif %}
                         </div>
                     </div>
-                    <div class="pc-panel" style="display: flex; flex-direction: column; justify-content: space-between;">
-                        <div>
-                            <h3>Boundary Mismatch &amp; Clipping Interpretation</h3>
-                            <p style="font-size: 0.86rem; color: var(--pc-text-secondary); line-height: 1.6; margin: 0 0 0.85rem 0;">
-                                Counts reads overlapping the <strong>cDNA insert boundaries (&plusmn;100 bp)</strong> that exhibit sequence mismatches (<code>NM &gt; 0</code>) or soft/hard clipping (<code>S</code>/<code>H</code> CIGAR operations) when aligned to the plasmid reference.
-                            </p>
-                            <div style="display: grid; gap: 0.65rem; font-size: 0.83rem; line-height: 1.5;">
-                                <div style="background: #f0f9ff; border: 1px solid #bae6fd; padding: 0.65rem 0.9rem; border-radius: 8px;">
-                                    <strong style="color: #0369a1;">Native Genomic Reads (Clean Sample)</strong><br>
-                                    <span style="color: var(--pc-text-secondary);">Reads spanning exon&ndash;intron or UTR boundaries diverge from the plasmid vector cloning site, producing soft-clipped tails and elevated boundary mismatch counts relative to clean insert interiors.</span>
-                                </div>
-                                <div style="background: #fef2f2; border: 1px solid #fecaca; padding: 0.65rem 0.9rem; border-radius: 8px;">
-                                    <strong style="color: #991b1b;">Plasmid-Derived Reads (Contaminated Sample)</strong><br>
-                                    <span style="color: var(--pc-text-secondary);">Reads crossing the vector&ndash;insert junction align contiguously into the plasmid backbone without clipping, while high total read depth at the insert boundary can also elevate raw boundary counts alongside high backbone coverage.</span>
-                                </div>
+                    <div class="pc-panel">
+                        <h3>How to Interpret Boundary Mismatches</h3>
+                        <p class="pc-section-lead">
+                            Counts reads within <strong>&plusmn;100 bp of the cDNA cloning boundaries</strong> that show mismatches (<code>NM &gt; 0</code>) or soft/hard clipping (<code>S</code>/<code>H</code>) on the plasmid reference:
+                        </p>
+                        <div style="display: grid; gap: 0.65rem; font-size: 0.83rem; line-height: 1.5;">
+                            <div style="background: #f0f9ff; border: 1px solid #bae6fd; padding: 0.6rem 0.85rem; border-radius: 8px;">
+                                <strong style="color: #0369a1;">Native Genomic Reads (Clean):</strong>
+                                <span style="color: var(--pc-text-secondary);">Intron/UTR tails diverge at the cloning site, causing soft-clipping without vector backbone coverage.</span>
+                            </div>
+                            <div style="background: #fef2f2; border: 1px solid #fecaca; padding: 0.6rem 0.85rem; border-radius: 8px;">
+                                <strong style="color: #991b1b;">Plasmid Reads (Contaminated):</strong>
+                                <span style="color: var(--pc-text-secondary);">Reads span smoothly into the vector backbone (<code>VI</code> junctions) alongside elevated backbone breadth.</span>
                             </div>
                         </div>
-                        <p style="font-size: 0.78rem; color: var(--pc-text-muted); margin: 0.85rem 0 0 0; border-top: 1px solid var(--pc-border); padding-top: 0.55rem;">
-                            Evaluate alongside <strong>Coverage Outside Insert</strong> and <strong>Backbone Breadth</strong> to distinguish true vector-junction reads from native genomic boundary clipping.
-                        </p>
                     </div>
                 </div>
             </div>
         </details>
         {% endif %}
 
-        <!-- Section 5: Resistance Gene Coverage -->
+        <!-- Secondary Section 6: Resistance Gene Coverage (Collapsed by default) -->
         {% if resistance_gene_table %}
-        <details open id="sec-resistance" class="pc-section">
+        <details id="sec-resistance" class="pc-section">
             <summary>
-                <h2>Resistance Gene Coverage</h2>
+                <div class="pc-summary-left">
+                    <h2>Resistance Gene Coverage</h2>
+                </div>
+                <span class="pc-summary-hint">Depth and breadth across annotated plasmid selection markers</span>
             </summary>
             <div class="pc-section-body">
-                <div class="pc-panel">
-                    <h3>Resistance Gene Table</h3>
-                    <div class="table-container">
-                        {{ resistance_gene_table|safe }}
-                    </div>
+                <div class="table-container table-container-scroll">
+                    {{ resistance_gene_table|safe }}
                 </div>
             </div>
         </details>
         {% endif %}
 
-        <!-- Section 6: Splice Junction Metadata -->
-        {% if junction_table %}
-        <details open id="sec-junctions" class="pc-section">
+        <!-- Secondary Section 7: Statistical & Raw Export Tables (Collapsed by default unless overview_rows is absent) -->
+        <details {% if overview_rows is not defined or not overview_rows %}open{% endif %} id="sec-raw-tables" class="pc-section">
             <summary>
-                <h2>Splice Junction Metadata</h2>
+                <div class="pc-summary-left">
+                    <h2>Statistical &amp; Raw Data Tables</h2>
+                </div>
+                <span class="pc-summary-hint">Individual Verdict, Ratio, P-Value, and Read Count export tables</span>
             </summary>
             <div class="pc-section-body">
-                <div class="pc-panel">
-                    <h3>Splice Junction Table</h3>
-                    <div class="table-container">
-                        {{ junction_table|safe }}
+                <div class="pc-grid-2">
+                    <div class="pc-panel">
+                        <h3>Verdicts</h3>
+                        <div class="table-container table-container-scroll">
+                            {{ verdict_df|safe }}
+                        </div>
+                    </div>
+                    <div class="pc-panel">
+                        <h3>Contamination Ratios</h3>
+                        <div class="table-container table-container-scroll">
+                            {{ ratio_df|safe }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pc-grid-2">
+                    <div class="pc-panel">
+                        <h3>P-Value Table</h3>
+                        <div class="table-container table-container-scroll">
+                            {{ p_value_table|safe }}
+                        </div>
+                    </div>
+                    <div class="pc-panel">
+                        <h3>Summary Table</h3>
+                        <div class="table-container table-container-scroll">
+                            {{ combined_df|safe }}
+                        </div>
                     </div>
                 </div>
             </div>
         </details>
-        {% endif %}
 
         <footer class="details">
             <p><span>Verdict Cutoffs:</span> Clean &lt; {{ unclear_range.lower_bound }} | Unclear {{ unclear_range.lower_bound }} &ndash; {{ unclear_range.upper_bound }} | Contaminated &gt; {{ contam_cutoff }} (threshold: {{ threshold }})</p>
-            <p><span>Script Version:</span> {{ version }}</p>
-            <p><span>Run Date:</span> {{ run_date }}</p>
+            <p><span>Script Version:</span> {{ version }} &middot; <span>Run Date:</span> {{ run_date }}</p>
             <p><span>Command Line:</span> {{ command_line }}</p>
         </footer>
     </main>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
-    <script src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.min.js"></script>
     <script>
-        function decorateVerdictCells() {
-            document.querySelectorAll('table.dataTable tbody td, table.table tbody td').forEach(function(td) {
-                if (td.querySelector('.pc-v-badge')) return;
-                var txt = (td.textContent || '').trim();
-                if (txt === 'Sample is contaminated with plasmid DNA' || txt === 'Contaminated') {
-                    td.innerHTML = '<span class="pc-v-badge pc-v-contam">' + txt + '</span>';
-                } else if (txt === 'Sample is not contaminated with plasmid DNA' || txt === 'Clean') {
-                    td.innerHTML = '<span class="pc-v-badge pc-v-clean">' + txt + '</span>';
-                } else if (txt === 'Sample contamination status is unclear' || txt === 'Unclear') {
-                    td.innerHTML = '<span class="pc-v-badge pc-v-unclear">' + txt + '</span>';
-                }
-            });
-        }
-        $(document).ready(function() {
-            $('table').DataTable({
-                pageLength: 10,
-                drawCallback: function() {
-                    decorateVerdictCells();
-                }
-            });
-            decorateVerdictCells();
-        });
-        {% if interactive %}
         (function() {
+            function decorateLegacyTables() {
+                document.querySelectorAll('table.table').forEach(function(tbl) {
+                    var ths = tbl.querySelectorAll('thead th');
+                    var numCols = [];
+                    ths.forEach(function(th, idx) {
+                        var h = (th.textContent || '').trim();
+                        if (h !== 'Sample' && h !== 'Plasmid' && h !== 'Verdict' && h !== 'Category' && h !== 'Gene Name') {
+                            th.classList.add('pc-num');
+                            numCols.push(idx);
+                        }
+                    });
+                    tbl.querySelectorAll('tbody tr').forEach(function(tr) {
+                        var tds = tr.querySelectorAll('td');
+                        tds.forEach(function(td, idx) {
+                            if (numCols.indexOf(idx) !== -1) {
+                                td.classList.add('pc-num');
+                            }
+                            if (td.querySelector('.pc-v-badge')) return;
+                            var txt = (td.textContent || '').trim();
+                            if (txt === 'Sample is contaminated with plasmid DNA' || txt === 'Contaminated') {
+                                td.innerHTML = '<span class="pc-v-badge pc-v-contam">Contaminated</span>';
+                            } else if (txt === 'Sample is not contaminated with plasmid DNA' || txt === 'Clean') {
+                                td.innerHTML = '<span class="pc-v-badge pc-v-clean">Clean</span>';
+                            } else if (txt === 'Sample contamination status is unclear' || txt === 'Unclear') {
+                                td.innerHTML = '<span class="pc-v-badge pc-v-unclear">Unclear</span>';
+                            }
+                        });
+                    });
+                });
+            }
+
+            function initCohortTable() {
+                var table = document.getElementById('cohortOverviewTable');
+                if (!table) return;
+                var tbody = table.querySelector('tbody');
+                var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+                var totalRows = rows.length;
+                var searchInput = document.getElementById('cohortSearchInput');
+                var countEl = document.getElementById('cohortRowCount');
+                var filterPills = Array.prototype.slice.call(document.querySelectorAll('[data-verdict-filter]'));
+                var kpiCards = Array.prototype.slice.call(document.querySelectorAll('[data-kpi-filter]'));
+                var activeVerdict = 'all';
+                var sortCol = null;
+                var sortAsc = true;
+
+                function applyFilters() {
+                    var q = searchInput ? (searchInput.value || '').trim().toLowerCase() : '';
+                    var shown = 0;
+                    rows.forEach(function(tr) {
+                        var v = tr.getAttribute('data-verdict') || '';
+                        var matchVerdict = (activeVerdict === 'all' || v === activeVerdict);
+                        var matchText = !q || (tr.textContent || '').toLowerCase().indexOf(q) !== -1;
+                        var vis = matchVerdict && matchText;
+                        tr.style.display = vis ? '' : 'none';
+                        if (vis) shown++;
+                    });
+                    if (countEl) {
+                        countEl.textContent = shown + ' of ' + totalRows + ' pairs';
+                    }
+                }
+
+                function setVerdictFilter(verdict) {
+                    activeVerdict = verdict;
+                    filterPills.forEach(function(btn) {
+                        var match = btn.getAttribute('data-verdict-filter') === verdict;
+                        btn.setAttribute('aria-pressed', match ? 'true' : 'false');
+                    });
+                    applyFilters();
+                }
+
+                filterPills.forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        setVerdictFilter(btn.getAttribute('data-verdict-filter') || 'all');
+                    });
+                });
+
+                kpiCards.forEach(function(card) {
+                    card.addEventListener('click', function() {
+                        var f = card.getAttribute('data-kpi-filter') || 'all';
+                        setVerdictFilter(f);
+                        var sec = document.getElementById('sec-cohort-matrix');
+                        if (sec) {
+                            sec.open = true;
+                            sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    });
+                });
+
+                if (searchInput) {
+                    searchInput.addEventListener('input', applyFilters);
+                }
+
+                var headers = Array.prototype.slice.call(table.querySelectorAll('thead th[data-sort-col]'));
+                headers.forEach(function(th) {
+                    th.addEventListener('click', function() {
+                        var colIdx = parseInt(th.getAttribute('data-sort-col') || '0', 10);
+                        var sortType = th.getAttribute('data-sort-type') || 'text';
+                        if (sortCol === colIdx) {
+                            sortAsc = !sortAsc;
+                        } else {
+                            sortCol = colIdx;
+                            sortAsc = (sortType === 'text');
+                        }
+                        rows.sort(function(a, b) {
+                            var cellA = a.children[colIdx];
+                            var cellB = b.children[colIdx];
+                            var rawA = cellA ? (cellA.getAttribute('data-sort') || cellA.textContent || '').trim() : '';
+                            var rawB = cellB ? (cellB.getAttribute('data-sort') || cellB.textContent || '').trim() : '';
+                            if (sortType === 'num') {
+                                var numA = parseFloat(rawA);
+                                var numB = parseFloat(rawB);
+                                if (isNaN(numA)) numA = -1e9;
+                                if (isNaN(numB)) numB = -1e9;
+                                return sortAsc ? (numA - numB) : (numB - numA);
+                            }
+                            return sortAsc ? rawA.localeCompare(rawB) : rawB.localeCompare(rawA);
+                        });
+                        rows.forEach(function(tr) { tbody.appendChild(tr); });
+                    });
+                });
+            }
+
+            function initSectionNav() {
+                document.querySelectorAll('.pc-nav a[href^="#"]').forEach(function(link) {
+                    link.addEventListener('click', function(e) {
+                        var targetId = (link.getAttribute('href') || '').slice(1);
+                        var target = document.getElementById(targetId);
+                        if (!target) return;
+                        var details = target.tagName === 'DETAILS' ? target : target.closest('details.pc-section');
+                        if (details && !details.open) {
+                            details.open = true;
+                        }
+                    });
+                });
+            }
+
+            decorateLegacyTables();
+            initCohortTable();
+            initSectionNav();
+
+            {% if interactive %}
             function resizeSummaryPlots() {
                 if (typeof Plotly === 'undefined') return;
                 var plots = document.querySelectorAll('.plot .js-plotly-plot');
                 plots.forEach(function(el) {
+                    var det = el.closest('details.pc-section');
+                    if (det && !det.open) return;
                     el.style.width = '100%';
-                    el.style.height = '420px';
+                    el.style.height = '400px';
                     if (el.parentElement && !el.parentElement.classList.contains('plot')) {
-                        el.parentElement.style.height = '420px';
+                        el.parentElement.style.height = '400px';
                     }
                     var plotWrap = el.closest('.plot');
                     var w = plotWrap ? plotWrap.clientWidth : (el.parentElement ? el.parentElement.clientWidth : null);
-                    Plotly.relayout(el, { autosize: true, width: w, height: 420 });
+                    if (w && w > 50) {
+                        Plotly.relayout(el, { autosize: true, width: w, height: 400 });
+                    }
                 });
             }
             window.addEventListener('load', function() {
-                setTimeout(resizeSummaryPlots, 100);
+                setTimeout(resizeSummaryPlots, 80);
             });
             window.addEventListener('resize', function() {
-                setTimeout(resizeSummaryPlots, 150);
+                setTimeout(resizeSummaryPlots, 120);
             });
             document.querySelectorAll('details.pc-section').forEach(function(det) {
                 det.addEventListener('toggle', function() {
                     if (det.open) setTimeout(resizeSummaryPlots, 50);
                 });
             });
+            {% endif %}
         })();
-        {% endif %}
     </script>
 </body>
 </html>
