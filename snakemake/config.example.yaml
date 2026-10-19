@@ -56,11 +56,11 @@ resources:
   prepare_constructs:
     threads: 4
     mem_mb: 16000
-    runtime: 60
+    runtime: 30
   scan_sample:
     threads: 4
-    mem_mb: 8000
-    runtime: 60
+    mem_mb: 4000
+    runtime: 20
   summary_reports:
     threads: 2
     mem_mb: 4000

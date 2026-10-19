@@ -2505,9 +2505,17 @@ class TestDepthNormalisedPlasmidExcess:
         mock_af.__enter__.return_value = mock_af
         mock_af.__exit__.return_value = None
 
-        with patch("pysam.AlignmentFile", return_value=mock_af):
+        with (
+            patch("pysam.AlignmentFile", return_value=mock_af),
+            patch(
+                "plasmicheck.scripts.compare_alignments.subprocess.run",
+                side_effect=OSError("force pysam fallback"),
+            ),
+        ):
             med = compute_bed_median_depth(str(bam_path), str(bed_path))
         assert med == pytest.approx(100.0)
+        for call in mock_af.count_coverage.call_args_list:
+            assert call.kwargs.get("quality_threshold") == 0
 
     @pytest.mark.unit
     def test_compute_bed_median_depth_samtools_bedcov_and_chr_mismatch(
@@ -2552,12 +2560,12 @@ class TestDepthNormalisedPlasmidExcess:
         assert captured_bed_lines == ["11\t100\t200", "16\t300\t500", "3\t500\t600"]
         mock_af.count_coverage.assert_not_called()
 
-        # Verify identical results between samtools bedcov and pysam fallback on real test BAMs
+        # Verify identical results between samtools bedcov and pysam fallback on real covered loci
         if shutil.which("samtools"):
             real_bed = tmp_path / "real_targets.bed"
-            # Mix chr-prefixed, unprefixed, and absent contig names
+            # Mix chr-prefixed, unprefixed, and absent contig names across covered target loci
             real_bed.write_text(
-                "chr1\t629000\t630000\n1\t630000\t634000\n1\t3638000\t3640000\nchr99\t0\t1000\n"
+                "chr11\t128911000\t128912000\n16\t1210000\t1211000\nchr3\t184357000\t184358000\nchr99\t0\t1000\n"
             )
             for bam_rel in (
                 "tests/data/real/contaminated.renamed.bam",
@@ -2571,7 +2579,7 @@ class TestDepthNormalisedPlasmidExcess:
                     ):
                         py_val = compute_bed_median_depth(bam_rel, str(real_bed))
                     assert st_val == pytest.approx(py_val)
-                    assert st_val > 0.0
+                    assert st_val > 200.0
 
 
 class TestFlagVcfVariantsEngine:
@@ -2925,6 +2933,19 @@ class TestFlagVcfVariantsEngine:
                 dp_locus=120.0,
                 r_cohort=0.60,
             )
+            with patch(
+                "plasmicheck.scripts.compare_alignments.compute_bed_median_depth"
+            ) as mock_bed_dp:
+                compare_alignments(
+                    "p.bam",
+                    "h.bam",
+                    str(tmp_path / "APA18-T-zero"),
+                    cdna_positions_file=str(cdna_file),
+                    target_bed="targets.bed",
+                    dp_sample_median=0.0,
+                    sample_bam="s.bam",
+                )
+            mock_bed_dp.assert_not_called()
 
         summary_content = (tmp_path / "APA18-T.summary.tsv").read_text()
         assert "dp_sample_median\t100.000000" in summary_content

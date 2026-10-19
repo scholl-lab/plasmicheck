@@ -154,9 +154,10 @@ class TestConfigFilesAndSchema:
 
         ns = _load_smk_namespace(config=cfg, cwd=tmp_path)
         assert ns["SAMPLES"] == ["sample1", "sample2"]
+        assert ns["get_rule_resource"](cfg, "prepare_constructs", "runtime") == 30
         assert ns["get_rule_resource"](cfg, "scan_sample", "threads") == 4
-        assert ns["get_rule_resource"](cfg, "scan_sample", "mem_mb") == 8000
-        assert ns["get_rule_resource"](cfg, "scan_sample", "runtime") == 60
+        assert ns["get_rule_resource"](cfg, "scan_sample", "mem_mb") == 4000
+        assert ns["get_rule_resource"](cfg, "scan_sample", "runtime") == 20
 
     def test_v042_keys_and_aliases_validate_against_schema(self) -> None:
         schema = yaml.safe_load(SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -360,11 +361,22 @@ class TestResolvePlasmidsAndFlags:
         ns = _load_smk_namespace(config={"samples": {"S1": "s1.bam"}})
         build_pipeline_flags = ns["build_pipeline_flags"]
         build_summary_flags = ns["build_summary_flags"]
-        get_mem_from_threads = ns["get_mem_from_threads"]
+        build_prepare_kwargs = ns["build_prepare_kwargs"]
 
         assert build_pipeline_flags({}) == ""
         assert build_summary_flags({}) == ""
-        assert get_mem_from_threads(None, 8) == 17600
+        assert build_prepare_kwargs(
+            {
+                "extra_args": "--gtf=/path/mane.gtf --padding=1500 --shift_bases=250 --cache-dir=/tmp/c -g -w"
+            }
+        ) == {
+            "cache_dir": "/tmp/c",
+            "padding": 1500,
+            "shift_bases": 250,
+            "generate_shifted": True,
+            "overwrite": True,
+            "gtf_file": "/path/mane.gtf",
+        }
 
         flags_default_unmapped = build_pipeline_flags({"regions_bed": "construct_loci.bed"})
         assert "--regions construct_loci.bed" in flags_default_unmapped
@@ -581,6 +593,8 @@ class TestCohortExecutionAndGuards:
         def fake_extract_cdna(
             plasmid_fa: str, spliced_bam: str, out_txt: str, *args: object, **kwargs: object
         ) -> None:
+            assert kwargs.get("padding") == 750
+            assert kwargs.get("gtf_file") is None
             Path(out_txt).write_text(
                 "cDNA start position in plasmid: 1\ncDNA end position in plasmid: 40\n",
                 encoding="utf-8",
@@ -599,7 +613,7 @@ class TestCohortExecutionAndGuards:
             patch(
                 "plasmicheck.scripts.run_pipeline.spliced_alignment",
                 side_effect=fake_spliced_alignment,
-            ),
+            ) as mock_spliced_prep,
             patch(
                 "plasmicheck.scripts.run_pipeline.extract_human_reference",
                 side_effect=fake_extract_human,
@@ -613,14 +627,24 @@ class TestCohortExecutionAndGuards:
                 str(human_fasta),
                 str(plasmids_txt),
                 cache_dir=str(cache_dir),
-                padding=1000,
+                padding=750,
+                threads=2,
+            )
+            # Re-running with overwrite=True refreshes cached construct/spliced entries
+            prepare_references(
+                str(human_fasta),
+                str(plasmids_txt),
+                cache_dir=str(cache_dir),
+                padding=750,
+                overwrite=True,
                 threads=2,
             )
 
+        assert mock_spliced_prep.call_count == 2
         cache = CacheManager(cache_dir)
         info = cache.info()
-        # Expect human index + plasmid index + spliced alignment + spliced reference index = 4 entries
-        assert info["total_entries"] >= 3
+        # Expect plasmid index + spliced alignment + spliced reference index = 3 entries (no human.mmi copy)
+        assert info["total_entries"] == 3
 
         # Now run first sample scan and verify cached plasmid/spliced artifacts are reused without recomputation
         seq_fq = tmp_path / "sample.fastq"
@@ -653,7 +677,7 @@ class TestCohortExecutionAndGuards:
                 output_folder=str(out_dir),
                 sequencing_files_r1=str(seq_fq),
                 cache_dir=str(cache_dir),
-                padding=1000,
+                padding=750,
                 md5_level="none",
             )
 
@@ -664,14 +688,16 @@ class TestCohortExecutionAndGuards:
         assert [c.args[0] for c in mock_idx_scan.call_args_list] == [str(human_fasta)]
 
     def test_prepare_references_with_gtf_matches_scan_sample_cache_key(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Verify prepare_constructs / prepare_references writes the exact spliced cache key that scan_sample / run_pipeline reads when gtf_file, padding, and shift_bases are set (#133)."""
+        """Verify rule prepare_constructs writes the exact spliced cache key that scan_sample CLI (build_pipeline_flags -> cli.main) reads (#133)."""
         import logging
+        import shlex
+        import sys
         from unittest.mock import patch
 
+        from plasmicheck import cli
         from plasmicheck.cache_manager import CacheManager
-        from plasmicheck.scripts.run_pipeline import prepare_references, run_pipeline
 
         human_fasta = tmp_path / "human.fasta"
         human_fasta.write_text(">chr1\n" + "ACGT" * 50 + "\n", encoding="utf-8")
@@ -700,7 +726,7 @@ class TestCohortExecutionAndGuards:
             "generate_shifted": True,
         }
         ns = _load_smk_namespace(config=cfg)
-        prep_kwargs = ns["build_prepare_kwargs"](cfg)
+        prep_kwargs = ns["PREPARE_KWARGS"]
         assert prep_kwargs == {
             "cache_dir": str(cache_dir),
             "padding": 1500,
@@ -709,6 +735,12 @@ class TestCohortExecutionAndGuards:
             "overwrite": False,
             "gtf_file": str(gtf_file),
         }
+
+        # Extract the exact python3 -c one-liner from rule prepare_constructs in snakemake/plasmicheck.smk
+        smk_text = SMK_PATH.read_text(encoding="utf-8")
+        m_one_liner = re.search(r"python3 -c '([^']+)'", smk_text)
+        assert m_one_liner is not None
+        prep_one_liner = m_one_liner.group(1)
 
         def fake_convert(
             infile: str,
@@ -750,6 +782,19 @@ class TestCohortExecutionAndGuards:
                 encoding="utf-8",
             )
 
+        prep_argv = [
+            "-c",
+            ns["HUMAN_FASTA"],
+            ns["PLASMIDS_FILE"],
+            ns["CACHE_DIR"],
+            str(prep_kwargs["padding"]),
+            "1" if prep_kwargs["overwrite"] else "0",
+            "2",
+            ns["GTF_FILE"] or "",
+            str(prep_kwargs["shift_bases"]),
+            "1" if prep_kwargs["generate_shifted"] else "0",
+        ]
+        monkeypatch.setattr(sys, "argv", prep_argv)
         with (
             patch("plasmicheck.scripts.run_pipeline.quality_control"),
             patch(
@@ -773,12 +818,7 @@ class TestCohortExecutionAndGuards:
                 side_effect=fake_extract_cdna,
             ),
         ):
-            prepare_references(
-                str(human_fasta),
-                str(plasmids_txt),
-                threads=2,
-                **prep_kwargs,
-            )
+            exec(compile(prep_one_liner, str(SMK_PATH), "exec"), {})
 
         mock_spliced_prep.assert_called_once()
         spliced_keys_written = [
@@ -790,9 +830,30 @@ class TestCohortExecutionAndGuards:
         seq_fq.write_text("@r1\nACGT\n+\nIIII\n", encoding="utf-8")
         out_dir = tmp_path / "output"
 
+        scan_argv = [
+            "plasmicheck",
+            "pipeline",
+            "-hf",
+            str(human_fasta),
+            "-pf",
+            str(plasmids_txt),
+            "-sf1",
+            str(seq_fq),
+            "--sample-name",
+            "S1",
+            "-o",
+            str(out_dir),
+            "--threads",
+            "2",
+            *shlex.split(ns["build_pipeline_flags"](cfg)),
+        ]
+        monkeypatch.setattr(sys, "argv", scan_argv)
+
         caplog.set_level(logging.INFO)
         caplog.clear()
         with (
+            patch.object(cli, "setup_logging"),
+            patch.object(cli, "check_requirements"),
             patch("plasmicheck.scripts.run_pipeline.quality_control"),
             patch(
                 "plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta",
@@ -811,25 +872,146 @@ class TestCohortExecutionAndGuards:
             patch("plasmicheck.scripts.run_pipeline.align_reads"),
             patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
             patch("plasmicheck.scripts.run_pipeline.generate_report"),
+            patch("plasmicheck.scripts.run_pipeline.write_md5sum"),
         ):
-            run_pipeline(
-                human_fasta=str(human_fasta),
-                plasmid_files=str(plasmids_txt),
-                output_folder=str(out_dir),
-                sequencing_files_r1=str(seq_fq),
-                cache_dir=str(cache_dir),
-                padding=prep_kwargs["padding"],
-                shift_bases=prep_kwargs["shift_bases"],
-                generate_shifted=prep_kwargs["generate_shifted"],
-                gtf_file=prep_kwargs["gtf_file"],
-                md5_level="none",
-            )
+            cli.main()
 
         mock_spliced_scan.assert_not_called()
         mock_ext_scan.assert_not_called()
         mock_cdna_scan.assert_not_called()
         assert "Cache HIT for spliced alignment" in caplog.text
         assert "Cache MISS for spliced alignment" not in caplog.text
+
+    def test_multi_construct_bam_single_extract_single_bedcov_zero_genome_loads(
+        self, tmp_path: Path
+    ) -> None:
+        """Verify a multi-construct BAM scan extracts the BAM once, calls bedcov once (even when median is 0.0), and performs zero whole-genome index builds or spliced alignments."""
+        from unittest.mock import patch
+
+        from plasmicheck.scripts.run_pipeline import prepare_references, run_pipeline
+
+        human_fasta = tmp_path / "human.fasta"
+        human_fasta.write_text(">chr11\n" + "ACGT" * 50 + "\n", encoding="utf-8")
+        constructs: list[Path] = []
+        for idx, gene in enumerate(("pKCNJ5", "pCACNA1H", "pCLCN2"), start=1):
+            gb = tmp_path / f"{gene}.gb"
+            gb.write_text(
+                f"LOCUS       {gene} 40 bp DNA circular\nORIGIN\n 1 {'acgt' * (9 + idx)}\n//\n",
+                encoding="utf-8",
+            )
+            constructs.append(gb)
+        plasmids_txt = tmp_path / "plasmids.txt"
+        plasmids_txt.write_text("\n".join(str(c) for c in constructs) + "\n", encoding="utf-8")
+
+        bam = tmp_path / "sample.bam"
+        bam.write_bytes(b"BAM" * 64)
+        (tmp_path / "sample.bam.bai").write_bytes(b"BAI")
+        regions_bed = tmp_path / "loci.bed"
+        regions_bed.write_text("chr11\t100\t500\n", encoding="utf-8")
+        target_bed = tmp_path / "targets.bed"
+        target_bed.write_text("chr11\t100\t200\n", encoding="utf-8")
+        cache_dir = tmp_path / "cache"
+
+        def fake_convert(infile: str, outfile: str, *args: object, **kwargs: object) -> None:
+            Path(outfile).write_text(
+                f">{Path(infile).stem}\n" + "ACGT" * 10 + "\n", encoding="utf-8"
+            )
+
+        def fake_create_indexes(fasta: str, *args: object, **kwargs: object) -> None:
+            base = os.path.splitext(fasta)[0]
+            Path(f"{base}.mmi").write_bytes(b"MMI_INDEX")
+            Path(f"{fasta}.fai").write_text("seq\t40\t6\t40\t41\n", encoding="utf-8")
+
+        def fake_spliced(
+            human_idx: str, plasmid_fa: str, out_bam: str, *args: object, **kwargs: object
+        ) -> list[tuple[str, int, int]]:
+            Path(out_bam).write_bytes(b"BAM_DATA")
+            return [("chr11", 100, 200)]
+
+        def fake_extract_human(
+            human_fa: str, regions: object, out_fa: str, *args: object, **kwargs: object
+        ) -> None:
+            Path(out_fa).write_text(">chr11:101-200\n" + "ACGT" * 25 + "\n", encoding="utf-8")
+
+        def fake_extract_cdna(
+            plasmid_fa: str, spliced_bam: str, out_txt: str, *args: object, **kwargs: object
+        ) -> None:
+            Path(out_txt).write_text(
+                "cDNA start position in plasmid: 1\ncDNA end position in plasmid: 40\n",
+                encoding="utf-8",
+            )
+
+        with (
+            patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            patch(
+                "plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta",
+                side_effect=fake_convert,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.create_indexes",
+                side_effect=fake_create_indexes,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.spliced_alignment",
+                side_effect=fake_spliced,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.extract_human_reference",
+                side_effect=fake_extract_human,
+            ),
+            patch(
+                "plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions",
+                side_effect=fake_extract_cdna,
+            ),
+        ):
+            prepare_references(str(human_fasta), str(plasmids_txt), cache_dir=str(cache_dir))
+
+        collate_cmds: list[str] = []
+
+        def fake_run_cmd(cmd: str, *args: object, **kwargs: object) -> None:
+            collate_cmds.append(cmd)
+            if ">" in cmd:
+                target = cmd.split(">")[-1].strip().strip("'\"")
+                Path(target).write_text("@r1\nACGT\n+\nIIII\n", encoding="utf-8")
+
+        with (
+            patch("plasmicheck.scripts.run_pipeline.quality_control"),
+            patch(
+                "plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta",
+                side_effect=fake_convert,
+            ),
+            patch("plasmicheck.scripts.create_indexes.subprocess.run") as mock_idx_subproc,
+            patch("plasmicheck.scripts.run_pipeline.spliced_alignment") as mock_spliced_scan,
+            patch("plasmicheck.scripts.utils.run_command", side_effect=fake_run_cmd),
+            patch(
+                "plasmicheck.scripts.run_pipeline.compute_bed_median_depth", return_value=0.0
+            ) as mock_bed_dp,
+            patch(
+                "plasmicheck.scripts.compare_alignments.compute_bed_median_depth"
+            ) as mock_cmp_bed_dp,
+            patch("plasmicheck.scripts.run_pipeline.pysam.index"),
+            patch("plasmicheck.scripts.run_pipeline.align_reads"),
+            patch("plasmicheck.scripts.run_pipeline.compare_alignments"),
+            patch("plasmicheck.scripts.run_pipeline.generate_report"),
+        ):
+            run_pipeline(
+                human_fasta=str(human_fasta),
+                plasmid_files=str(plasmids_txt),
+                output_folder=str(tmp_path / "output"),
+                sequencing_files_r1=str(bam),
+                cache_dir=str(cache_dir),
+                regions=str(regions_bed),
+                include_unmapped=False,
+                target_bed=str(target_bed),
+                md5_level="none",
+            )
+
+        assert len(collate_cmds) == 1
+        assert "'*'" not in collate_cmds[0] and '"*"' not in collate_cmds[0]
+        mock_bed_dp.assert_called_once_with(str(bam), str(target_bed))
+        mock_cmp_bed_dp.assert_not_called()
+        mock_spliced_scan.assert_not_called()
+        mock_idx_subproc.assert_not_called()
 
     def test_distinct_samples_sharing_bam_basename_do_not_collide(self, tmp_path: Path) -> None:
         """Verify samples: {A: /a/sample.bam, B: /b/sample.bam} write isolated outputs and preserve sample IDs."""

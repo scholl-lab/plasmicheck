@@ -27,15 +27,10 @@ DEFAULT_BAMS_FILE = "data/bams.txt"
 DEFAULT_PLASMIDS_FILE = "data/plasmids.txt"
 
 DEFAULT_RESOURCES: dict[str, dict[str, int]] = {
-    "prepare_constructs": {"threads": 4, "mem_mb": 16000, "runtime": 60},
-    "scan_sample": {"threads": 4, "mem_mb": 8000, "runtime": 60},
+    "prepare_constructs": {"threads": 4, "mem_mb": 16000, "runtime": 30},
+    "scan_sample": {"threads": 4, "mem_mb": 4000, "runtime": 20},
     "summary_reports": {"threads": 2, "mem_mb": 4000, "runtime": 30},
 }
-
-
-def get_mem_from_threads(wildcards: Any, threads: int) -> int:
-    """Calculate default memory allocation (MB) based on thread count."""
-    return int(threads) * 2200
 
 
 def validate_config(cfg: dict[str, Any]) -> None:
@@ -363,7 +358,9 @@ def build_prepare_kwargs(cfg: dict[str, Any]) -> dict[str, Any]:
     }
     extra = cfg.get("extra_args")
     if extra:
-        tokens = shlex.split(str(extra))
+        tokens: list[str] = []
+        for raw in shlex.split(str(extra)):
+            tokens.extend(raw.split("=", 1) if raw.startswith("-") and "=" in raw else [raw])
         idx = 0
         while idx < len(tokens):
             tok = tokens[idx]
@@ -470,8 +467,6 @@ SAMPLES = list(SAMPLE_BAMS.keys())
 # Restrict {sample} to configured IDs so it cannot match prepare_constructs/summary_reports markers.
 SAMPLE_WILDCARD_RE = "|".join(re.escape(s) for s in SAMPLES) or "(?!)"
 PLASMIDS_FILE, CONSTRUCT_FILES = resolve_plasmids(config, OUTPUT_DIR)
-bam_files = list(SAMPLE_BAMS.values())
-plasmid_files = CONSTRUCT_FILES
 
 PIPELINE_FLAGS = build_pipeline_flags(config)
 SUMMARY_FLAGS = build_summary_flags(config)

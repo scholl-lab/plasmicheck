@@ -1034,7 +1034,7 @@ def compute_bed_median_depth(bam_path: str, bed_path: str) -> float:
             except (OSError, subprocess.SubprocessError, ValueError):
                 depths.clear()
                 for contig, s0, e0 in resolved:
-                    cov = af.count_coverage(contig, s0, e0)
+                    cov = af.count_coverage(contig, s0, e0, quality_threshold=0)
                     total_bases = sum(float(np.sum(arr)) for arr in cov)
                     depths.append(total_bases / (e0 - s0))
             finally:
@@ -2003,8 +2003,8 @@ def compare_alignments(
         verdict = "Sample is not contaminated with plasmid DNA"
 
     # Depth-normalised plasmid excess fraction (Issue #126)
-    if dp_sample_median is not None and dp_sample_median > 0:
-        eff_dp_sample_median = float(dp_sample_median)
+    if dp_sample_median is not None:
+        eff_dp_sample_median = max(0.0, float(dp_sample_median))
     elif target_bed is not None and (sample_bam or human_bam):
         eff_dp_sample_median = compute_bed_median_depth(sample_bam or human_bam, target_bed)
     else:

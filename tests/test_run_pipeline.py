@@ -949,7 +949,7 @@ def test_spliced_fasta_index_caching(tmp_path: Path) -> None:
             plasmid_files=str(plasmid),
             sequencing_files_r1=str(seq),
             output_folder=str(output),
-            overwrite=True,
+            overwrite=False,
             md5_level="none",
         )
 
@@ -991,7 +991,7 @@ def test_spliced_fasta_index_caching(tmp_path: Path) -> None:
             plasmid_files=str(plasmid),
             sequencing_files_r1=str(seq),
             output_folder=str(tmp_path / "output_hit"),
-            overwrite=True,
+            overwrite=False,
             md5_level="none",
         )
 
@@ -1158,6 +1158,7 @@ def test_auto_derived_and_explicit_regions_for_indexed_bam(tmp_path: Path) -> No
             plasmid_files=str(plasmid),
             sequencing_files_r1=str(bam),
             output_folder=str(output),
+            include_unmapped=True,
             no_cache=True,
             md5_level="none",
         )
@@ -1170,7 +1171,7 @@ def test_auto_derived_and_explicit_regions_for_indexed_bam(tmp_path: Path) -> No
     for call in mock_align.call_args_list:
         assert call.kwargs["regions"] is None
 
-    # Explicit --regions BED override
+    # Explicit --regions BED override with include_unmapped=False (default)
     captured_cmds.clear()
     bed = tmp_path / "override.bed"
     bed.write_text("chr3\t53500000\t53900000\n")
@@ -1206,6 +1207,7 @@ def test_auto_derived_and_explicit_regions_for_indexed_bam(tmp_path: Path) -> No
     assert len(captured_cmds) == 1
     assert "chr3:53500001-53900000" in captured_cmds[0]
     assert "chr11:128890001-128920000" not in captured_cmds[0]
+    assert "'*'" not in captured_cmds[0] and '"*"' not in captured_cmds[0]
 
 
 @pytest.mark.unit
