@@ -2581,6 +2581,55 @@ class TestDepthNormalisedPlasmidExcess:
                     assert st_val == pytest.approx(py_val)
                     assert st_val > 200.0
 
+    def test_compute_bed_median_depth_seeded_subsample(self, tmp_path: Path) -> None:
+        """Seeded interval subsample (#133 §4) is deterministic, BED-ordered, and tracks the full median."""
+        import random as _random
+        import subprocess
+
+        from plasmicheck.scripts.compare_alignments import compute_bed_median_depth
+
+        rng = _random.Random(0)
+        depth_by_start = {i * 1000: rng.gauss(150.0, 60.0) % 400 + 1 for i in range(4000)}
+        bed_path = tmp_path / "targets.bed"
+        bed_path.write_text("".join(f"chr1\t{s}\t{s + 100}\n" for s in depth_by_start))
+        bam_path = tmp_path / "sample.bam"
+        bam_path.write_text("dummy")
+        mock_af = MagicMock()
+        mock_af.references = ("chr1",)
+        mock_af.__enter__.return_value = mock_af
+        mock_af.__exit__.return_value = None
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            lines = Path(cmd[3]).read_text().splitlines()
+            calls.append(lines)
+            out = "".join(f"{ln}\t{depth_by_start[int(ln.split()[1])] * 100:.0f}\n" for ln in lines)
+            return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+        with (
+            patch("pysam.AlignmentFile", return_value=mock_af),
+            patch("plasmicheck.scripts.compare_alignments.subprocess.run", side_effect=fake_run),
+        ):
+            full = compute_bed_median_depth(str(bam_path), str(bed_path), max_intervals=0)
+            sub_a = compute_bed_median_depth(
+                str(bam_path), str(bed_path), max_intervals=1000, seed=42
+            )
+            sub_b = compute_bed_median_depth(
+                str(bam_path), str(bed_path), max_intervals=1000, seed=42
+            )
+            sub_c = compute_bed_median_depth(
+                str(bam_path), str(bed_path), max_intervals=1000, seed=7
+            )
+
+        assert len(calls[0]) == 4000 and len(calls[1]) == 1000
+        assert (
+            calls[1] == calls[2] and sub_a == sub_b
+        )  # same seed -> identical intervals and median
+        assert calls[3] != calls[1]  # different seed -> different subset
+        starts = [int(ln.split()[1]) for ln in calls[1]]
+        assert starts == sorted(starts)  # kept in BED order
+        assert sub_a == pytest.approx(full, rel=0.05) and sub_c == pytest.approx(full, rel=0.05)
+
 
 class TestFlagVcfVariantsEngine:
     """Tests for Issue #127 VCF / TSV variant flagging engine."""

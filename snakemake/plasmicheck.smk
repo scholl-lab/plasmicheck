@@ -404,6 +404,9 @@ def build_pipeline_flags(cfg: dict[str, Any]) -> str:
 
     if cfg.get("target_bed"):
         flags.append(f"--target-bed {shlex.quote(str(cfg['target_bed']))}")
+        for key in ("target_bed_max_intervals", "target_bed_seed"):
+            if cfg.get(key) is not None:
+                flags.append(f"--{key.replace('_', '-')} {int(cfg[key])}")
     gtf_val = resolve_gtf(cfg)
     if gtf_val:
         flags.append(f"--gtf {shlex.quote(gtf_val)}")

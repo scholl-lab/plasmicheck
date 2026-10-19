@@ -119,6 +119,17 @@ properties:
     default: null
     description: Optional exome capture target BED file for sample median depth normalisation.
 
+  target_bed_max_intervals:
+    type: integer
+    minimum: 0
+    default: 5000
+    description: Seeded random subsample size of target_bed intervals used for the sample median depth (0 = all).
+
+  target_bed_seed:
+    type: integer
+    default: 42
+    description: Random seed for the target_bed interval subsample (deterministic).
+
   gtf_file:
     type:
       - "string"

@@ -1008,7 +1008,7 @@ class TestCohortExecutionAndGuards:
 
         assert len(collate_cmds) == 1
         assert "'*'" not in collate_cmds[0] and '"*"' not in collate_cmds[0]
-        mock_bed_dp.assert_called_once_with(str(bam), str(target_bed))
+        mock_bed_dp.assert_called_once_with(str(bam), str(target_bed), 5000, 42)
         mock_cmp_bed_dp.assert_not_called()
         mock_spliced_scan.assert_not_called()
         mock_idx_subproc.assert_not_called()

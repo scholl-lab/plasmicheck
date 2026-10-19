@@ -38,6 +38,8 @@ include_unmapped: true
 
 # Optional depth normalisation, transcript junction resolution, and variant flagging
 target_bed: null
+target_bed_max_intervals: 5000  # seeded random subsample of target_bed for the median depth (0 = all)
+target_bed_seed: 42
 gtf_file: null
 vcf_file: null
 

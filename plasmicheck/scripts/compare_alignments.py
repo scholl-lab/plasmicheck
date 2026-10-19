@@ -7,6 +7,7 @@ import itertools
 import logging
 import math
 import os
+import random
 import secrets
 import subprocess
 import tempfile
@@ -969,8 +970,24 @@ def compute_f_plasmid(f_excess: float, f_junction: float) -> float:
     return min(1.0, max(0.0, fe, fj))
 
 
-def compute_bed_median_depth(bam_path: str, bed_path: str) -> float:
-    """Compute median per-target mean depth across BED intervals from an indexed BAM."""
+TARGET_BED_MAX_INTERVALS = 5000
+TARGET_BED_SEED = 42
+
+
+def compute_bed_median_depth(
+    bam_path: str,
+    bed_path: str,
+    max_intervals: int = TARGET_BED_MAX_INTERVALS,
+    seed: int = TARGET_BED_SEED,
+) -> float:
+    """Median per-target mean depth from an indexed BAM, via ``samtools bedcov -j``.
+
+    bedcov jumps through the BAM index per interval, so cost scales with the number of intervals,
+    not the BAM. A full exome BED (~216k targets) touches nearly every read, so at most
+    ``max_intervals`` targets (0 = all) are drawn with ``random.Random(seed)`` (deterministic) and
+    kept in BED order. The median's relative standard error is ~1.25 * CV / sqrt(n): ~0.7 % at
+    n = 5000 for typical exome target-depth CV of 0.4.
+    """
     if not os.path.exists(bam_path) or not os.path.exists(bed_path):
         return 0.0
     intervals: list[tuple[str, int, int]] = []
@@ -1011,6 +1028,12 @@ def compute_bed_median_depth(bam_path: str, bed_path: str) -> float:
                 resolved.append((contig, s0, e0))
             if not resolved:
                 return 0.0
+            if 0 < max_intervals < len(resolved):
+                keep = sorted(random.Random(seed).sample(range(len(resolved)), max_intervals))
+                resolved = [resolved[i] for i in keep]
+            logging.info(
+                f"Target-BED median depth: {len(resolved)} intervals (seed={seed}, max={max_intervals})"
+            )
 
             tmp_bed: str | None = None
             try:
@@ -1740,6 +1763,8 @@ def compare_alignments(
     dp_sample_median: float | None = None,
     dp_locus: float | None = None,
     r_cohort: float = 0.60,
+    target_bed_max_intervals: int = TARGET_BED_MAX_INTERVALS,
+    target_bed_seed: int = TARGET_BED_SEED,
     sample_bam: str | None = None,
 ) -> None:
     logging.info("Starting comparison of alignments")
@@ -2006,7 +2031,9 @@ def compare_alignments(
     if dp_sample_median is not None:
         eff_dp_sample_median = max(0.0, float(dp_sample_median))
     elif target_bed is not None and (sample_bam or human_bam):
-        eff_dp_sample_median = compute_bed_median_depth(sample_bam or human_bam, target_bed)
+        eff_dp_sample_median = compute_bed_median_depth(
+            sample_bam or human_bam, target_bed, target_bed_max_intervals, target_bed_seed
+        )
     else:
         eff_dp_sample_median = 0.0
 

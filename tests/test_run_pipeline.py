@@ -1266,7 +1266,7 @@ def test_pipeline_forwards_gtf_vcf_and_depth_options(tmp_path: Path) -> None:
     assert mock_cdna.call_args.kwargs["gtf_file"] == str(gtf)
     assert mock_cache.get_spliced.call_args.kwargs["gtf_md5"] != ""
     assert mock_cache.put_spliced.call_args.kwargs["gtf_md5"] != ""
-    mock_bed_dp.assert_called_once_with(str(bam), str(target_bed))
+    mock_bed_dp.assert_called_once_with(str(bam), str(target_bed), 5000, 42)
 
     cmp_kwargs = mock_compare.call_args.kwargs
     assert cmp_kwargs["vcf_file"] == str(vcf)
