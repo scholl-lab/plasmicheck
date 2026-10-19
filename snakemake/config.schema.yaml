@@ -112,6 +112,48 @@ properties:
     default: true
     description: Include unmapped reads alongside regions_bed during BAM extraction.
 
+  target_bed:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Optional exome capture target BED file for sample median depth normalisation.
+
+  gtf_file:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Optional GTF/MANE annotation file to resolve exon-exon junctions.
+
+  gtf:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Alias for gtf_file.
+
+  mane_gtf:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Alias for gtf_file.
+
+  vcf_file:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Optional VCF/BCF/TSV file to flag variants at construct-insert positions.
+
+  vcf:
+    type:
+      - "string"
+      - "null"
+    default: null
+    description: Alias for vcf_file.
+
   threshold:
     type:
       - "number"
