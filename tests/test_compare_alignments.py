@@ -2509,6 +2509,70 @@ class TestDepthNormalisedPlasmidExcess:
             med = compute_bed_median_depth(str(bam_path), str(bed_path))
         assert med == pytest.approx(100.0)
 
+    @pytest.mark.unit
+    def test_compute_bed_median_depth_samtools_bedcov_and_chr_mismatch(
+        self, tmp_path: Path
+    ) -> None:
+        import shutil
+        import subprocess
+
+        from plasmicheck.scripts.compare_alignments import compute_bed_median_depth
+
+        bed_path = tmp_path / "targets.bed"
+        bed_path.write_text(
+            "# header comment\nchr11\t100\t200\nchr16\t300\t500\nchr3\t500\t600\nchrUnk\t0\t100\n"
+        )
+        bam_path = tmp_path / "sample.bam"
+        bam_path.write_text("dummy")
+
+        mock_af = MagicMock()
+        mock_af.references = ("11", "16", "3")
+        mock_af.__enter__.return_value = mock_af
+        mock_af.__exit__.return_value = None
+
+        captured_bed_lines: list[str] = []
+
+        def fake_run(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            assert cmd[:3] == ["samtools", "bedcov", "-j"]
+            captured_bed_lines.extend(Path(cmd[3]).read_text().splitlines())
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout="11\t100\t200\t8000\n16\t300\t500\t20000\n3\t500\t600\t14000\n",
+                stderr="",
+            )
+
+        with (
+            patch("pysam.AlignmentFile", return_value=mock_af),
+            patch("plasmicheck.scripts.compare_alignments.subprocess.run", side_effect=fake_run),
+        ):
+            med = compute_bed_median_depth(str(bam_path), str(bed_path))
+
+        assert med == pytest.approx(100.0)
+        assert captured_bed_lines == ["11\t100\t200", "16\t300\t500", "3\t500\t600"]
+        mock_af.count_coverage.assert_not_called()
+
+        # Verify identical results between samtools bedcov and pysam fallback on real test BAMs
+        if shutil.which("samtools"):
+            real_bed = tmp_path / "real_targets.bed"
+            # Mix chr-prefixed, unprefixed, and absent contig names
+            real_bed.write_text(
+                "chr1\t629000\t630000\n1\t630000\t634000\n1\t3638000\t3640000\nchr99\t0\t1000\n"
+            )
+            for bam_rel in (
+                "tests/data/real/contaminated.renamed.bam",
+                "tests/data/real/not_contaminated.renamed.bam",
+            ):
+                if Path(bam_rel).exists():
+                    st_val = compute_bed_median_depth(bam_rel, str(real_bed))
+                    with patch(
+                        "plasmicheck.scripts.compare_alignments.subprocess.run",
+                        side_effect=OSError("force pysam fallback"),
+                    ):
+                        py_val = compute_bed_median_depth(bam_rel, str(real_bed))
+                    assert st_val == pytest.approx(py_val)
+                    assert st_val > 0.0
+
 
 class TestFlagVcfVariantsEngine:
     """Tests for Issue #127 VCF / TSV variant flagging engine."""

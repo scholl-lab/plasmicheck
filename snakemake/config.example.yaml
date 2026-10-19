@@ -44,6 +44,8 @@ vcf_file: null
 # Optional reporting and verdict settings
 threshold: 0.8
 padding: 1000
+shift_bases: 500
+generate_shifted: false
 static_report: false
 archive_output: false
 overwrite: false

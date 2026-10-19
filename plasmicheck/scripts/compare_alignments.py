@@ -9,6 +9,7 @@ import math
 import os
 import secrets
 import subprocess
+import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import IO, Any
@@ -998,6 +999,7 @@ def compute_bed_median_depth(bam_path: str, bed_path: str) -> float:
     try:
         with pysam.AlignmentFile(bam_path, "rb") as af:
             refs = set(getattr(af, "references", ()) or ())
+            resolved: list[tuple[str, int, int]] = []
             for chrom, s0, e0 in intervals:
                 contig = chrom
                 if refs and contig not in refs:
@@ -1006,9 +1008,39 @@ def compute_bed_median_depth(bam_path: str, bed_path: str) -> float:
                         contig = alt_contig
                     else:
                         continue
-                cov = af.count_coverage(contig, s0, e0)
-                total_bases = sum(float(np.sum(arr)) for arr in cov)
-                depths.append(total_bases / (e0 - s0))
+                resolved.append((contig, s0, e0))
+            if not resolved:
+                return 0.0
+
+            tmp_bed: str | None = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".bed", delete=False) as tf:
+                    tmp_bed = tf.name
+                    tf.writelines(f"{contig}\t{s0}\t{e0}\n" for contig, s0, e0 in resolved)
+                proc = subprocess.run(
+                    ["samtools", "bedcov", "-j", tmp_bed, bam_path],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                for out_line in proc.stdout.splitlines():
+                    cols = out_line.strip().split("\t")
+                    if len(cols) >= 4:
+                        span = int(cols[2]) - int(cols[1])
+                        if span > 0:
+                            depths.append(float(cols[-1]) / span)
+                if len(depths) != len(resolved):
+                    raise ValueError("Incomplete samtools bedcov output")
+            except (OSError, subprocess.SubprocessError, ValueError):
+                depths.clear()
+                for contig, s0, e0 in resolved:
+                    cov = af.count_coverage(contig, s0, e0)
+                    total_bases = sum(float(np.sum(arr)) for arr in cov)
+                    depths.append(total_bases / (e0 - s0))
+            finally:
+                if tmp_bed:
+                    with contextlib.suppress(OSError):
+                        os.remove(tmp_bed)
     except Exception:
         return 0.0
     return float(np.median(depths)) if depths else 0.0

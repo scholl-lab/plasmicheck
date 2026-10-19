@@ -73,6 +73,18 @@ def validate_config(cfg: dict[str, Any]) -> None:
     ):
         raise ValueError("'padding' must be a non-negative integer.")
 
+    shift_bases_val = cfg.get("shift_bases")
+    if shift_bases_val is not None and (
+        isinstance(shift_bases_val, bool)
+        or not isinstance(shift_bases_val, int)
+        or shift_bases_val < 0
+    ):
+        raise ValueError("'shift_bases' must be a non-negative integer.")
+
+    generate_shifted_val = cfg.get("generate_shifted")
+    if generate_shifted_val is not None and not isinstance(generate_shifted_val, bool):
+        raise ValueError("'generate_shifted' must be a boolean.")
+
     resources_val = cfg.get("resources")
     if resources_val is not None:
         if not isinstance(resources_val, dict):
@@ -333,6 +345,51 @@ def get_rule_resource(cfg: dict[str, Any], rule_name: str, key: str) -> int:
     return int(rule_cfg.get(key, defaults[key]))
 
 
+def resolve_gtf(cfg: dict[str, Any]) -> str | None:
+    """Resolve optional GTF/MANE annotation path from config or aliases."""
+    gtf_val = cfg.get("gtf_file") or cfg.get("gtf") or cfg.get("mane_gtf")
+    return str(gtf_val) if gtf_val else None
+
+
+def build_prepare_kwargs(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Build keyword arguments for prepare_references matching scan_sample pipeline flags."""
+    kwargs: dict[str, Any] = {
+        "cache_dir": str(cfg.get("cache_dir") or os.path.expanduser("~/.plasmicheck/cache")),
+        "padding": int(cfg["padding"]) if cfg.get("padding") is not None else 1000,
+        "shift_bases": int(cfg["shift_bases"]) if cfg.get("shift_bases") is not None else 500,
+        "generate_shifted": bool(cfg.get("generate_shifted", False)),
+        "overwrite": bool(cfg.get("overwrite", False)),
+        "gtf_file": resolve_gtf(cfg),
+    }
+    extra = cfg.get("extra_args")
+    if extra:
+        tokens = shlex.split(str(extra))
+        idx = 0
+        while idx < len(tokens):
+            tok = tokens[idx]
+            if tok == "--gtf" and idx + 1 < len(tokens):
+                kwargs["gtf_file"] = tokens[idx + 1]
+                idx += 2
+            elif tok in ("-d", "--padding") and idx + 1 < len(tokens):
+                kwargs["padding"] = int(tokens[idx + 1])
+                idx += 2
+            elif tok in ("-sb", "--shift_bases") and idx + 1 < len(tokens):
+                kwargs["shift_bases"] = int(tokens[idx + 1])
+                idx += 2
+            elif tok == "--cache-dir" and idx + 1 < len(tokens):
+                kwargs["cache_dir"] = tokens[idx + 1]
+                idx += 2
+            elif tok in ("-g", "--generate_shifted"):
+                kwargs["generate_shifted"] = True
+                idx += 1
+            elif tok in ("-w", "--overwrite"):
+                kwargs["overwrite"] = True
+                idx += 1
+            else:
+                idx += 1
+    return kwargs
+
+
 def build_pipeline_flags(cfg: dict[str, Any]) -> str:
     """Build optional CLI flags for 'plasmicheck pipeline' from config."""
     flags: list[str] = []
@@ -350,9 +407,9 @@ def build_pipeline_flags(cfg: dict[str, Any]) -> str:
 
     if cfg.get("target_bed"):
         flags.append(f"--target-bed {shlex.quote(str(cfg['target_bed']))}")
-    gtf_val = cfg.get("gtf_file") or cfg.get("gtf") or cfg.get("mane_gtf")
+    gtf_val = resolve_gtf(cfg)
     if gtf_val:
-        flags.append(f"--gtf {shlex.quote(str(gtf_val))}")
+        flags.append(f"--gtf {shlex.quote(gtf_val)}")
     vcf_val = cfg.get("vcf_file") or cfg.get("vcf")
     if vcf_val:
         flags.append(f"--vcf {shlex.quote(str(vcf_val))}")
@@ -360,6 +417,10 @@ def build_pipeline_flags(cfg: dict[str, Any]) -> str:
         flags.append(f"--threshold {shlex.quote(str(cfg['threshold']))}")
     if cfg.get("padding") is not None:
         flags.append(f"--padding {shlex.quote(str(cfg['padding']))}")
+    if cfg.get("shift_bases") is not None:
+        flags.append(f"--shift_bases {shlex.quote(str(cfg['shift_bases']))}")
+    if cfg.get("generate_shifted"):
+        flags.append("--generate_shifted")
     if cfg.get("static_report"):
         flags.append("--static-report")
     if cfg.get("archive_output"):
@@ -394,12 +455,14 @@ def build_summary_flags(cfg: dict[str, Any]) -> str:
 config = globals().get("config", {})
 validate_config(config)
 
+PREPARE_KWARGS = build_prepare_kwargs(config)
 HUMAN_FASTA = str(config.get("human_fasta", DEFAULT_HUMAN_FASTA))
 OUTPUT_DIR = str(config.get("output_dir", "output"))
 SUMMARY_DIR = str(config.get("summary_dir", os.path.join(OUTPUT_DIR, "summary")))
 LOG_DIR = str(config.get("log_dir", "logs"))
-CACHE_DIR = str(config.get("cache_dir", os.path.expanduser("~/.plasmicheck/cache")))
+CACHE_DIR = str(PREPARE_KWARGS["cache_dir"])
 CONDA_ENV = str(config.get("conda_env", "plasmicheck"))
+GTF_FILE = PREPARE_KWARGS["gtf_file"]
 
 SAMPLE_BAMS = resolve_samples(config)
 SAMPLES = list(SAMPLE_BAMS.keys())
@@ -439,8 +502,11 @@ rule prepare_constructs:
         done=f"{LOG_DIR}/prepare_constructs.done",
     params:
         cache_dir=CACHE_DIR,
-        padding=int(config["padding"]) if config.get("padding") is not None else 1000,
-        overwrite="1" if config.get("overwrite") else "0",
+        padding=PREPARE_KWARGS["padding"],
+        shift_bases=PREPARE_KWARGS["shift_bases"],
+        generate_shifted="1" if PREPARE_KWARGS["generate_shifted"] else "0",
+        overwrite="1" if PREPARE_KWARGS["overwrite"] else "0",
+        gtf_file=GTF_FILE or "",
     threads: get_rule_resource(config, "prepare_constructs", "threads")
     resources:
         mem_mb=get_rule_resource(config, "prepare_constructs", "mem_mb"),
@@ -451,13 +517,16 @@ rule prepare_constructs:
     shell:
         r"""
         mkdir -p "$(dirname {output.done:q})" {params.cache_dir:q}
-        python3 -c 'import sys; from plasmicheck.scripts.run_pipeline import prepare_references; prepare_references(sys.argv[1], sys.argv[2], cache_dir=sys.argv[3], padding=int(sys.argv[4]), overwrite=sys.argv[5] == "1", threads=int(sys.argv[6]))' \
+        python3 -c 'import sys; from plasmicheck.scripts.run_pipeline import prepare_references; prepare_references(sys.argv[1], sys.argv[2], cache_dir=sys.argv[3], padding=int(sys.argv[4]), overwrite=sys.argv[5] == "1", threads=int(sys.argv[6]), gtf_file=sys.argv[7] or None, shift_bases=int(sys.argv[8]), generate_shifted=sys.argv[9] == "1")' \
             {input.human_fasta:q} \
             {input.plasmids_file:q} \
             {params.cache_dir:q} \
             {params.padding} \
             {params.overwrite} \
-            {threads}
+            {threads} \
+            {params.gtf_file:q} \
+            {params.shift_bases} \
+            {params.generate_shifted}
         touch {output.done:q}
         """
 

@@ -170,6 +170,19 @@ properties:
     default: 1000
     description: Genomic padding (bp) around spliced alignment spans.
 
+  shift_bases:
+    type:
+      - "integer"
+      - "null"
+    minimum: 0
+    default: 500
+    description: Number of bases to shift in the shifted plasmid reference.
+
+  generate_shifted:
+    type: boolean
+    default: false
+    description: Generate a shifted plasmid reference sequence during FASTA conversion.
+
   static_report:
     type: boolean
     default: false
