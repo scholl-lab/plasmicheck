@@ -36,5 +36,6 @@ snakemake -s snakemake/plasmicheck.smk \
 - **`samples`:** Sample sheet TSV (`sample\tbam` or `corrected_id` with `bam_folder`), mapping `{sample_id: bam_path}`, list of BAM paths, or newline-delimited BAM list file (fallback: `data/bams.txt`).
 - **`plasmids_file` / `constructs`:** Path to newline-delimited construct list (fallback: `data/plasmids.txt`) or explicit list of construct files (`.gb`, `.xdna`, `.dna`, `.fasta`).
 - **`human_fasta`:** Path to the human reference genome FASTA.
-- **Optional flags forwarded to `plasmicheck pipeline`:** `regions_bed`, `include_unmapped` (default `true`), `threshold`, `padding`, `static_report`, `archive_output`, `overwrite`, `extra_args`.
+- **Optional flags forwarded to `plasmicheck pipeline`:** `regions_bed`, `include_unmapped` (default `true`), `target_bed`, `gtf_file` (aliases: `gtf`, `mane_gtf`), `vcf_file` (alias: `vcf`), `threshold`, `padding`, `static_report`, `archive_output`, `overwrite`, `extra_args`.
+- **Optional flags forwarded to `plasmicheck summary_reports`:** `threshold`, `static_report`, `substring_to_remove`, `vcf_file` (alias: `vcf`).
 - **`resources`:** Per-rule overrides (`prepare_constructs`, `scan_sample`, `summary_reports`) for `threads`, `mem_mb`, and `runtime` (minutes, max `120`).

@@ -36,6 +36,11 @@ conda_env: "plasmicheck"
 regions_bed: null
 include_unmapped: true
 
+# Optional depth normalisation, transcript junction resolution, and variant flagging
+target_bed: null
+gtf_file: null
+vcf_file: null
+
 # Optional reporting and verdict settings
 threshold: 0.8
 padding: 1000

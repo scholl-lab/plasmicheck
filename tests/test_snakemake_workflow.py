@@ -53,6 +53,75 @@ def _load_smk_namespace(
     return ns
 
 
+def _validate_against_schema(
+    value: Any, node: dict[str, Any], root: dict[str, Any] | None = None
+) -> None:
+    """Validate a config value against the JSON Schema Draft 2020-12 rules in config.schema.yaml."""
+    if root is None:
+        root = node
+    if "$ref" in node:
+        ref_name = str(node["$ref"]).removeprefix("#/$defs/")
+        node = root["$defs"][ref_name]
+    if "oneOf" in node:
+        for branch in node["oneOf"]:
+            try:
+                _validate_against_schema(value, branch, root)
+                return
+            except ValueError:
+                continue
+        raise ValueError(f"Value {value!r} did not match any oneOf branch in {node!r}")
+
+    allowed_types = node.get("type")
+    if allowed_types is not None:
+        types = [allowed_types] if isinstance(allowed_types, str) else list(allowed_types)
+        type_ok = False
+        for t in types:
+            if (
+                (t == "null" and value is None)
+                or (t == "boolean" and isinstance(value, bool))
+                or (t == "integer" and isinstance(value, int) and not isinstance(value, bool))
+                or (
+                    t == "number"
+                    and isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                )
+                or (t == "string" and isinstance(value, str))
+                or (t == "array" and isinstance(value, list))
+                or (t == "object" and isinstance(value, dict))
+            ):
+                type_ok = True
+        if not type_ok:
+            raise ValueError(f"Expected type {types} for {value!r}")
+
+    if isinstance(value, str) and "minLength" in node and len(value) < int(node["minLength"]):
+        raise ValueError(f"String {value!r} shorter than minLength {node['minLength']}")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in node and value < node["minimum"]:
+            raise ValueError(f"Value {value} < minimum {node['minimum']}")
+        if "exclusiveMinimum" in node and value <= node["exclusiveMinimum"]:
+            raise ValueError(f"Value {value} <= exclusiveMinimum {node['exclusiveMinimum']}")
+        if "maximum" in node and value > node["maximum"]:
+            raise ValueError(f"Value {value} > maximum {node['maximum']}")
+    if isinstance(value, list):
+        if "minItems" in node and len(value) < int(node["minItems"]):
+            raise ValueError(f"Array shorter than minItems {node['minItems']}")
+        if "items" in node:
+            for item in value:
+                _validate_against_schema(item, node["items"], root)
+    if isinstance(value, dict):
+        if "minProperties" in node and len(value) < int(node["minProperties"]):
+            raise ValueError(f"Object has fewer than minProperties {node['minProperties']}")
+        props = node.get("properties", {})
+        addl = node.get("additionalProperties", True)
+        for k, v in value.items():
+            if k in props:
+                _validate_against_schema(v, props[k], root)
+            elif addl is False:
+                raise ValueError(f"Additional property not allowed: {k!r}")
+            elif isinstance(addl, dict):
+                _validate_against_schema(v, addl, root)
+
+
 @pytest.mark.unit
 class TestConfigFilesAndSchema:
     def test_files_exist(self) -> None:
@@ -78,6 +147,7 @@ class TestConfigFilesAndSchema:
 
         schema_props = set(schema["properties"].keys())
         assert set(cfg.keys()).issubset(schema_props)
+        _validate_against_schema(cfg, schema)
 
         rule_res_schema = schema["$defs"]["rule_resources"]["properties"]
         assert rule_res_schema["runtime"]["maximum"] == 120
@@ -87,6 +157,44 @@ class TestConfigFilesAndSchema:
         assert ns["get_rule_resource"](cfg, "scan_sample", "threads") == 4
         assert ns["get_rule_resource"](cfg, "scan_sample", "mem_mb") == 8000
         assert ns["get_rule_resource"](cfg, "scan_sample", "runtime") == 60
+
+    def test_v042_keys_and_aliases_validate_against_schema(self) -> None:
+        schema = yaml.safe_load(SCHEMA_PATH.read_text(encoding="utf-8"))
+        props = schema["properties"]
+
+        for key in ("target_bed", "gtf_file", "gtf", "mane_gtf", "vcf_file", "vcf"):
+            assert key in props, f"Missing {key!r} in config.schema.yaml"
+            assert props[key]["type"] == ["string", "null"]
+            assert props[key]["default"] is None
+            assert isinstance(props[key].get("description"), str) and props[key]["description"]
+
+        canonical_cfg = {
+            "human_fasta": "reference/GRCh38.fa",
+            "samples": {"S1": "data/s1.bam"},
+            "constructs": ["data/p1.gb"],
+            "target_bed": "config/exome_targets.bed",
+            "gtf_file": "reference/MANE.GRCh38.v1.3.refseq_genomic.gtf.gz",
+            "vcf_file": "results/variants/cohort.vcf.gz",
+        }
+        _validate_against_schema(canonical_cfg, schema)
+
+        for alias_key, alias_val in (
+            ("gtf", "reference/genes.gtf"),
+            ("mane_gtf", "reference/mane.gtf.gz"),
+            ("vcf", "results/variants/calls.bcf"),
+        ):
+            alias_cfg = {
+                "samples": {"S1": "data/s1.bam"},
+                "constructs": ["data/p1.gb"],
+                alias_key: alias_val,
+            }
+            _validate_against_schema(alias_cfg, schema)
+
+        with pytest.raises(ValueError, match="Additional property not allowed"):
+            _validate_against_schema({"samples": {"S1": "s1.bam"}, "undeclared_key": "x"}, schema)
+
+        with pytest.raises(ValueError, match="Expected type"):
+            _validate_against_schema({"samples": {"S1": "s1.bam"}, "target_bed": 123}, schema)
 
     def test_validate_config_rejects_invalid_values(self, tmp_path: Path) -> None:
         bams = tmp_path / "bams.txt"
@@ -257,6 +365,9 @@ class TestResolvePlasmidsAndFlags:
                 "cache_dir": "/tmp/pc_cache",
                 "regions_bed": "loci.bed",
                 "include_unmapped": True,
+                "target_bed": "exome_targets.bed",
+                "gtf_file": "mane.gtf.gz",
+                "vcf_file": "cohort.vcf.gz",
                 "threshold": 0.75,
                 "padding": 500,
                 "static_report": True,
@@ -268,6 +379,9 @@ class TestResolvePlasmidsAndFlags:
             "--cache-dir /tmp/pc_cache",
             "--regions loci.bed",
             "--include-unmapped",
+            "--target-bed exome_targets.bed",
+            "--gtf mane.gtf.gz",
+            "--vcf cohort.vcf.gz",
             "--threshold 0.75",
             "--padding 500",
             "--static-report",
@@ -276,21 +390,28 @@ class TestResolvePlasmidsAndFlags:
         ):
             assert expected in full_flags
 
+        assert "--gtf alias.gtf" in build_pipeline_flags({"gtf": "alias.gtf"})
+        assert "--gtf mane_alias.gtf" in build_pipeline_flags({"mane_gtf": "mane_alias.gtf"})
+        assert "--vcf alias.vcf.gz" in build_pipeline_flags({"vcf": "alias.vcf.gz"})
+
         summary_flags = build_summary_flags(
             {
                 "threshold": 0.75,
                 "static_report": True,
                 "substring_to_remove": ".merged.dedup.bqsr",
+                "vcf_file": "cohort.vcf.gz",
             }
         )
         assert "--threshold 0.75" in summary_flags
         assert "--static-report" in summary_flags
         assert "--substring_to_remove .merged.dedup.bqsr" in summary_flags
+        assert "--vcf cohort.vcf.gz" in summary_flags
+        assert "--vcf alias.vcf.gz" in build_summary_flags({"vcf": "alias.vcf.gz"})
 
     def test_generated_pipeline_flags_execute_in_cli(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Verify flags emitted by build_pipeline_flags are accepted and forwarded by plasmicheck.cli.main."""
+        """Verify flags emitted by build_pipeline_flags and build_summary_flags are accepted and forwarded by plasmicheck.cli.main."""
         import shlex
         import sys
         from unittest.mock import patch
@@ -300,12 +421,19 @@ class TestResolvePlasmidsAndFlags:
         ns = _load_smk_namespace(config={"samples": {"S1": "s1.bam"}})
         bed_file = tmp_path / "construct_loci.bed"
         bed_file.write_text("chr1\t100\t500\n", encoding="utf-8")
+        target_bed = tmp_path / "exome_targets.bed"
+        target_bed.write_text("chr1\t0\t1000\n", encoding="utf-8")
+        gtf_file = tmp_path / "mane.gtf.gz"
+        vcf_file = tmp_path / "cohort.vcf.gz"
 
         flags_str = ns["build_pipeline_flags"](
             {
                 "cache_dir": str(tmp_path / "cache"),
                 "regions_bed": str(bed_file),
                 "include_unmapped": True,
+                "target_bed": str(target_bed),
+                "gtf_file": str(gtf_file),
+                "vcf_file": str(vcf_file),
                 "threshold": 0.75,
                 "padding": 500,
                 "static_report": True,
@@ -340,8 +468,32 @@ class TestResolvePlasmidsAndFlags:
         kwargs = mock_run_pipeline.call_args.kwargs
         assert kwargs.get("regions") == str(bed_file) or kwargs.get("regions_bed") == str(bed_file)
         assert kwargs["include_unmapped"] is True
+        assert kwargs["target_bed"] == str(target_bed)
+        assert kwargs["gtf_file"] == str(gtf_file)
+        assert kwargs["vcf_file"] == str(vcf_file)
         assert kwargs["sample_name"] == "APA01"
         assert kwargs["cache_dir"] == str(tmp_path / "cache")
+
+        summary_flags_str = ns["build_summary_flags"]({"vcf_file": str(vcf_file)})
+        summary_argv = [
+            "plasmicheck",
+            "summary_reports",
+            "-i",
+            str(tmp_path / "manifest.txt"),
+            "-o",
+            str(tmp_path / "summary"),
+            *shlex.split(summary_flags_str),
+        ]
+        monkeypatch.setattr(sys, "argv", summary_argv)
+        with (
+            patch.object(cli, "setup_logging"),
+            patch.object(cli, "check_requirements"),
+            patch("plasmicheck.scripts.generate_summary_reports.main") as mock_summary_reports,
+        ):
+            cli.main()
+
+        mock_summary_reports.assert_called_once()
+        assert mock_summary_reports.call_args.kwargs["vcf_file"] == str(vcf_file)
 
     def test_bed_restricted_bam_extraction_command(self, tmp_path: Path) -> None:
         """Verify _bam_to_fastq_cmd restricts BAM extraction to BED regions and optional unmapped reads."""
