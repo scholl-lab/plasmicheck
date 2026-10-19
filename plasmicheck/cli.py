@@ -256,6 +256,20 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         help="Optional exome target BED for sample median depth",
     )
     parser_compare.add_argument(
+        "--target-bed-max-intervals",
+        dest="target_bed_max_intervals",
+        type=int,
+        default=5000,
+        help="Seeded random subsample size of --target-bed intervals for the median depth (0 = all)",
+    )
+    parser_compare.add_argument(
+        "--target-bed-seed",
+        dest="target_bed_seed",
+        type=int,
+        default=42,
+        help="Random seed for the --target-bed interval subsample",
+    )
+    parser_compare.add_argument(
         "--dp-sample-median",
         dest="dp_sample_median",
         type=float,
@@ -477,6 +491,20 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         help="Optional exome target BED for sample median depth",
     )
     parser_pipeline.add_argument(
+        "--target-bed-max-intervals",
+        dest="target_bed_max_intervals",
+        type=int,
+        default=5000,
+        help="Seeded random subsample size of --target-bed intervals for the median depth (0 = all)",
+    )
+    parser_pipeline.add_argument(
+        "--target-bed-seed",
+        dest="target_bed_seed",
+        type=int,
+        default=42,
+        help="Random seed for the --target-bed interval subsample",
+    )
+    parser_pipeline.add_argument(
         "--dp-sample-median",
         dest="dp_sample_median",
         type=float,
@@ -664,6 +692,8 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             anonymize=args.anonymize,
             vcf_file=args.vcf_file,
             target_bed=args.target_bed,
+            target_bed_max_intervals=args.target_bed_max_intervals,
+            target_bed_seed=args.target_bed_seed,
             dp_sample_median=args.dp_sample_median,
             dp_locus=args.dp_locus,
             r_cohort=args.r_cohort,
@@ -725,6 +755,8 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             gtf_file=args.gtf_file,
             vcf_file=args.vcf_file,
             target_bed=args.target_bed,
+            target_bed_max_intervals=args.target_bed_max_intervals,
+            target_bed_seed=args.target_bed_seed,
             dp_sample_median=args.dp_sample_median,
             dp_locus=args.dp_locus,
             r_cohort=args.r_cohort,

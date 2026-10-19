@@ -150,7 +150,7 @@ plasmicheck report \
 
 ### Snakemake Cohort Workflow (SLURM)
 
-[`snakemake/plasmicheck.smk`](snakemake/plasmicheck.smk) screens a cohort of BAMs against all plasmid constructs in a 3-rule DAG (`prepare_constructs` → `scan_sample` → `summary_reports`) with one job per sample BAM (avoiding the `N_samples × N_plasmids` cross-product) and `<2 h` per-job walltime. See [`snakemake/config.example.yaml`](snakemake/config.example.yaml), [`snakemake/config.schema.yaml`](snakemake/config.schema.yaml), and [`snakemake/README.md`](snakemake/README.md):
+[`snakemake/plasmicheck.smk`](snakemake/plasmicheck.smk) screens a cohort of BAMs against all plasmid constructs in a 3-rule DAG (`prepare_constructs` → `scan_sample` → `summary_reports`) with one job per sample BAM (avoiding the `N_samples × N_plasmids` cross-product), shared content-addressed construct and spliced-alignment caching (forwarding `gtf_file`, `padding`, `shift_bases`, and `generate_shifted`), `samtools bedcov` target-BED depth normalization (`target_bed`), and `<2 h` per-job walltime. See [`snakemake/config.example.yaml`](snakemake/config.example.yaml), [`snakemake/config.schema.yaml`](snakemake/config.schema.yaml), and [`snakemake/README.md`](snakemake/README.md):
 
 ```bash
 snakemake -s snakemake/plasmicheck.smk \

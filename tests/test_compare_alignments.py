@@ -2505,9 +2505,130 @@ class TestDepthNormalisedPlasmidExcess:
         mock_af.__enter__.return_value = mock_af
         mock_af.__exit__.return_value = None
 
-        with patch("pysam.AlignmentFile", return_value=mock_af):
+        with (
+            patch("pysam.AlignmentFile", return_value=mock_af),
+            patch(
+                "plasmicheck.scripts.compare_alignments.subprocess.run",
+                side_effect=OSError("force pysam fallback"),
+            ),
+        ):
             med = compute_bed_median_depth(str(bam_path), str(bed_path))
         assert med == pytest.approx(100.0)
+        for call in mock_af.count_coverage.call_args_list:
+            assert call.kwargs.get("quality_threshold") == 0
+
+    @pytest.mark.unit
+    def test_compute_bed_median_depth_samtools_bedcov_and_chr_mismatch(
+        self, tmp_path: Path
+    ) -> None:
+        import shutil
+        import subprocess
+
+        from plasmicheck.scripts.compare_alignments import compute_bed_median_depth
+
+        bed_path = tmp_path / "targets.bed"
+        bed_path.write_text(
+            "# header comment\nchr11\t100\t200\nchr16\t300\t500\nchr3\t500\t600\nchrUnk\t0\t100\n"
+        )
+        bam_path = tmp_path / "sample.bam"
+        bam_path.write_text("dummy")
+
+        mock_af = MagicMock()
+        mock_af.references = ("11", "16", "3")
+        mock_af.__enter__.return_value = mock_af
+        mock_af.__exit__.return_value = None
+
+        captured_bed_lines: list[str] = []
+
+        def fake_run(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            assert cmd[:3] == ["samtools", "bedcov", "-j"]
+            captured_bed_lines.extend(Path(cmd[3]).read_text().splitlines())
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout="11\t100\t200\t8000\n16\t300\t500\t20000\n3\t500\t600\t14000\n",
+                stderr="",
+            )
+
+        with (
+            patch("pysam.AlignmentFile", return_value=mock_af),
+            patch("plasmicheck.scripts.compare_alignments.subprocess.run", side_effect=fake_run),
+        ):
+            med = compute_bed_median_depth(str(bam_path), str(bed_path))
+
+        assert med == pytest.approx(100.0)
+        assert captured_bed_lines == ["11\t100\t200", "16\t300\t500", "3\t500\t600"]
+        mock_af.count_coverage.assert_not_called()
+
+        # Verify identical results between samtools bedcov and pysam fallback on real covered loci
+        if shutil.which("samtools"):
+            real_bed = tmp_path / "real_targets.bed"
+            # Mix chr-prefixed, unprefixed, and absent contig names across covered target loci
+            real_bed.write_text(
+                "chr11\t128911000\t128912000\n16\t1210000\t1211000\nchr3\t184357000\t184358000\nchr99\t0\t1000\n"
+            )
+            for bam_rel in (
+                "tests/data/real/contaminated.renamed.bam",
+                "tests/data/real/not_contaminated.renamed.bam",
+            ):
+                if Path(bam_rel).exists():
+                    st_val = compute_bed_median_depth(bam_rel, str(real_bed))
+                    with patch(
+                        "plasmicheck.scripts.compare_alignments.subprocess.run",
+                        side_effect=OSError("force pysam fallback"),
+                    ):
+                        py_val = compute_bed_median_depth(bam_rel, str(real_bed))
+                    assert st_val == pytest.approx(py_val)
+                    assert st_val > 200.0
+
+    def test_compute_bed_median_depth_seeded_subsample(self, tmp_path: Path) -> None:
+        """Seeded interval subsample (#133 §4) is deterministic, BED-ordered, and tracks the full median."""
+        import random as _random
+        import subprocess
+
+        from plasmicheck.scripts.compare_alignments import compute_bed_median_depth
+
+        rng = _random.Random(0)
+        depth_by_start = {i * 1000: rng.gauss(150.0, 60.0) % 400 + 1 for i in range(4000)}
+        bed_path = tmp_path / "targets.bed"
+        bed_path.write_text("".join(f"chr1\t{s}\t{s + 100}\n" for s in depth_by_start))
+        bam_path = tmp_path / "sample.bam"
+        bam_path.write_text("dummy")
+        mock_af = MagicMock()
+        mock_af.references = ("chr1",)
+        mock_af.__enter__.return_value = mock_af
+        mock_af.__exit__.return_value = None
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            lines = Path(cmd[3]).read_text().splitlines()
+            calls.append(lines)
+            out = "".join(f"{ln}\t{depth_by_start[int(ln.split()[1])] * 100:.0f}\n" for ln in lines)
+            return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+        with (
+            patch("pysam.AlignmentFile", return_value=mock_af),
+            patch("plasmicheck.scripts.compare_alignments.subprocess.run", side_effect=fake_run),
+        ):
+            full = compute_bed_median_depth(str(bam_path), str(bed_path), max_intervals=0)
+            sub_a = compute_bed_median_depth(
+                str(bam_path), str(bed_path), max_intervals=1000, seed=42
+            )
+            sub_b = compute_bed_median_depth(
+                str(bam_path), str(bed_path), max_intervals=1000, seed=42
+            )
+            sub_c = compute_bed_median_depth(
+                str(bam_path), str(bed_path), max_intervals=1000, seed=7
+            )
+
+        assert len(calls[0]) == 4000 and len(calls[1]) == 1000
+        assert (
+            calls[1] == calls[2] and sub_a == sub_b
+        )  # same seed -> identical intervals and median
+        assert calls[3] != calls[1]  # different seed -> different subset
+        starts = [int(ln.split()[1]) for ln in calls[1]]
+        assert starts == sorted(starts)  # kept in BED order
+        assert sub_a == pytest.approx(full, rel=0.05) and sub_c == pytest.approx(full, rel=0.05)
 
 
 class TestFlagVcfVariantsEngine:
@@ -2861,6 +2982,19 @@ class TestFlagVcfVariantsEngine:
                 dp_locus=120.0,
                 r_cohort=0.60,
             )
+            with patch(
+                "plasmicheck.scripts.compare_alignments.compute_bed_median_depth"
+            ) as mock_bed_dp:
+                compare_alignments(
+                    "p.bam",
+                    "h.bam",
+                    str(tmp_path / "APA18-T-zero"),
+                    cdna_positions_file=str(cdna_file),
+                    target_bed="targets.bed",
+                    dp_sample_median=0.0,
+                    sample_bam="s.bam",
+                )
+            mock_bed_dp.assert_not_called()
 
         summary_content = (tmp_path / "APA18-T.summary.tsv").read_text()
         assert "dp_sample_median\t100.000000" in summary_content

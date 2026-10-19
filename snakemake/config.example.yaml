@@ -38,12 +38,16 @@ include_unmapped: true
 
 # Optional depth normalisation, transcript junction resolution, and variant flagging
 target_bed: null
+target_bed_max_intervals: 5000  # seeded random subsample of target_bed for the median depth (0 = all)
+target_bed_seed: 42
 gtf_file: null
 vcf_file: null
 
 # Optional reporting and verdict settings
 threshold: 0.8
 padding: 1000
+shift_bases: 500
+generate_shifted: false
 static_report: false
 archive_output: false
 overwrite: false
@@ -54,11 +58,11 @@ resources:
   prepare_constructs:
     threads: 4
     mem_mb: 16000
-    runtime: 60
+    runtime: 30
   scan_sample:
     threads: 4
-    mem_mb: 8000
-    runtime: 60
+    mem_mb: 4000
+    runtime: 20
   summary_reports:
     threads: 2
     mem_mb: 4000

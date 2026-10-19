@@ -119,6 +119,17 @@ properties:
     default: null
     description: Optional exome capture target BED file for sample median depth normalisation.
 
+  target_bed_max_intervals:
+    type: integer
+    minimum: 0
+    default: 5000
+    description: Seeded random subsample size of target_bed intervals used for the sample median depth (0 = all).
+
+  target_bed_seed:
+    type: integer
+    default: 42
+    description: Random seed for the target_bed interval subsample (deterministic).
+
   gtf_file:
     type:
       - "string"
@@ -169,6 +180,19 @@ properties:
     minimum: 0
     default: 1000
     description: Genomic padding (bp) around spliced alignment spans.
+
+  shift_bases:
+    type:
+      - "integer"
+      - "null"
+    minimum: 0
+    default: 500
+    description: Number of bases to shift in the shifted plasmid reference.
+
+  generate_shifted:
+    type: boolean
+    default: false
+    description: Generate a shifted plasmid reference sequence during FASTA conversion.
 
   static_report:
     type: boolean

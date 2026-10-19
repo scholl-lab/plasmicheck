@@ -24,7 +24,12 @@ from ..output_paths import OutputPaths
 from ..thread_config import allocate_threads, detect_cpu_count
 from . import utils as _utils
 from .align_reads import align_reads, bam_to_fastq_cmd, has_bam_index
-from .compare_alignments import compare_alignments, compute_bed_median_depth
+from .compare_alignments import (
+    TARGET_BED_MAX_INTERVALS,
+    TARGET_BED_SEED,
+    compare_alignments,
+    compute_bed_median_depth,
+)
 from .convert_plasmidfile_to_fasta import convert_plasmidfile_to_fasta
 from .create_indexes import create_indexes
 from .generate_report import DEFAULT_THRESHOLD
@@ -512,7 +517,7 @@ def _prepare_plasmid_in_dir(
     staged_index = p_dir / f"{file_basename}.mmi"
     staged_fai = p_dir / f"{file_basename}.fasta.fai"
     cached_index = None
-    if cache:
+    if cache and not overwrite:
         try:
             cached_index = cache.get_index(str(staged_fasta))
         except (OSError, PermissionError) as e:
@@ -541,9 +546,10 @@ def _prepare_plasmid_in_dir(
         try:
             plasmid_md5 = get_md5(str(staged_fasta))
             human_md5 = get_md5(human_fasta)
-            cached_spliced = cache.get_spliced(
-                plasmid_md5, human_md5, padding=padding, gtf_md5=gtf_md5
-            )
+            if not overwrite:
+                cached_spliced = cache.get_spliced(
+                    plasmid_md5, human_md5, padding=padding, gtf_md5=gtf_md5
+                )
         except (OSError, PermissionError) as e:
             logging.warning(f"Cache read error: {e}")
 
@@ -567,18 +573,13 @@ def _prepare_plasmid_in_dir(
         extract_human_reference(human_fasta, spanned_regions, str(staged_spliced_fasta))
 
         logging.info("Extracting cDNA positions from spliced alignment...")
-        if gtf_file is not None:
-            extract_plasmid_cdna_positions(
-                str(staged_fasta),
-                str(staged_spliced_bam),
-                str(staged_cdna),
-                padding=padding,
-                gtf_file=gtf_file,
-            )
-        else:
-            extract_plasmid_cdna_positions(
-                str(staged_fasta), str(staged_spliced_bam), str(staged_cdna)
-            )
+        extract_plasmid_cdna_positions(
+            str(staged_fasta),
+            str(staged_spliced_bam),
+            str(staged_cdna),
+            padding=padding,
+            gtf_file=gtf_file,
+        )
 
         if cache:
             try:
@@ -598,7 +599,7 @@ def _prepare_plasmid_in_dir(
     staged_spliced_index = p_dir / "spliced_reference.mmi"
     staged_spliced_fai = p_dir / "spliced_reference.fasta.fai"
     cached_spliced_idx = None
-    if cache:
+    if cache and not overwrite:
         try:
             cached_spliced_idx = cache.get_index(str(staged_spliced_fasta))
         except (OSError, PermissionError) as e:
@@ -657,10 +658,6 @@ def prepare_references(
         os.path.splitext(os.path.basename(human_fasta))[0] + ".mmi",
     )
     create_indexes(human_fasta, overwrite, threads=mm2_threads)
-    human_fai_path = f"{human_fasta}.fai"
-    if os.path.exists(human_index_path) and os.path.exists(human_fai_path):
-        with contextlib.suppress(OSError, PermissionError):
-            cache.put_index(human_fasta, human_index_path, human_fai_path)
 
     md5_cache: dict[str, str] = {}
 
@@ -734,6 +731,8 @@ def run_pipeline(
     dp_locus: float | None = None,
     r_cohort: float = 0.60,
     regions_bed: str | None = None,
+    target_bed_max_intervals: int = TARGET_BED_MAX_INTERVALS,
+    target_bed_seed: int = TARGET_BED_SEED,
     sample_name: str | None = None,
 ) -> None:
     if sequencing_files_r1 is None:
@@ -915,7 +914,7 @@ def run_pipeline(
                             f"Pre-collating paired reads from BAM once for {sequencing_file}..."
                         )
                         collate_cmd = (
-                            f"{bam_to_fastq_cmd(sequencing_file, sam_threads, eff_regions)} "
+                            f"{bam_to_fastq_cmd(sequencing_file, sam_threads, eff_regions, include_unmapped=include_unmapped)} "
                             f"> {quote(sample_temp_fastq)}"
                         )
                         _cmd_runner = (
@@ -931,7 +930,9 @@ def run_pipeline(
                     and target_bed is not None
                     and sequencing_file.endswith(".bam")
                 ):
-                    sample_median_dp = compute_bed_median_depth(sequencing_file, target_bed)
+                    sample_median_dp = compute_bed_median_depth(
+                        sequencing_file, target_bed, target_bed_max_intervals, target_bed_seed
+                    )
 
                 align_input = sample_temp_fastq if sample_temp_fastq else sequencing_file
                 align_regions = eff_regions if not sample_temp_fastq else None
@@ -1115,6 +1116,8 @@ def run_pipeline(
                             anonymize_key=anonymize_key,
                             vcf_file=vcf_file,
                             target_bed=target_bed,
+                            target_bed_max_intervals=target_bed_max_intervals,
+                            target_bed_seed=target_bed_seed,
                             dp_sample_median=sample_median_dp,
                             dp_locus=dp_locus,
                             r_cohort=r_cohort,
