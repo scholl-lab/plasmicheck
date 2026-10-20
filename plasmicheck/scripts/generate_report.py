@@ -841,14 +841,10 @@ def _build_igv_context(
 
         # Build 100% full-BAM depth array (prefer C count_coverage when indexed, fallback to diff_depth)
         try:
-            from .coverage_metrics import get_depth_array
+            from .coverage_metrics import DEPTH_PRIMARY_READS, get_depth_array
 
             depth_arr = get_depth_array(
-                str(bam_path),
-                seq_name,
-                0,
-                seq_len,
-                exclude_flags="UNMAP,SECONDARY,SUPPLEMENTARY,DUP",
+                str(bam_path), seq_name, 0, seq_len, exclude_flags=DEPTH_PRIMARY_READS
             )
             if len(depth_arr) != seq_len:
                 depth_arr = np.cumsum(diff_depth[:-1])
