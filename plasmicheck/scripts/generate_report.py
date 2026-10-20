@@ -843,16 +843,12 @@ def _build_igv_context(
         try:
             from .coverage_metrics import get_depth_array
 
-            def _primary_cb(read: Any) -> bool:
-                return not (
-                    read.is_unmapped
-                    or read.is_secondary
-                    or read.is_supplementary
-                    or read.is_duplicate
-                )
-
             depth_arr = get_depth_array(
-                str(bam_path), seq_name, 0, seq_len, read_callback=_primary_cb
+                str(bam_path),
+                seq_name,
+                0,
+                seq_len,
+                exclude_flags="UNMAP,SECONDARY,SUPPLEMENTARY,DUP",
             )
             if len(depth_arr) != seq_len:
                 depth_arr = np.cumsum(diff_depth[:-1])
