@@ -936,8 +936,13 @@ def compute_f_junction(
     is_unclear: bool = False,
     read_len: int = 101,
     min_overlap: int = 15,
+    n_junctions: int = 1,
 ) -> float:
-    """Compute splice-junction and ratio-based plasmid fraction estimate."""
+    """Compute splice-junction and ratio-based plasmid fraction estimate.
+
+    ``spliced_junction_reads`` is summed over all ``n_junctions`` junctions, while
+    ``dp_locus`` is a per-base depth, so the read count is averaged per junction.
+    """
     scale = read_len / max(1, read_len - 2 * min_overlap)
     if (
         math.isfinite(dp_locus)
@@ -945,7 +950,8 @@ def compute_f_junction(
         and dp_locus > 0
         and spliced_junction_reads > 0
     ):
-        f_junc_dp = min(1.0, max(0.0, (spliced_junction_reads * scale) / dp_locus))
+        per_junction = spliced_junction_reads / max(1, n_junctions)
+        f_junc_dp = min(1.0, max(0.0, (per_junction * scale) / dp_locus))
     else:
         f_junc_dp = 0.0
 
@@ -1229,6 +1235,7 @@ def load_summary_rows_for_flagging(summary_tsv_paths: list[str]) -> list[dict[st
                 "verdict": kv.get("Verdict", ""),
                 "ratio": _safe_float(kv.get("Ratio"), 0.0),
                 "spliced_reads": _safe_int(kv.get("SpliceJunctionReads"), 0),
+                "n_junctions": _safe_int(kv.get("SpliceJunctionCount"), 1),
                 "f_plasmid": _safe_float(kv.get("f_plasmid"), 0.0),
                 "f_excess": _safe_float(kv.get("f_excess"), 0.0),
                 "f_junction": _safe_float(kv.get("f_junction"), 0.0),
@@ -1486,6 +1493,7 @@ def flag_vcf_variants(
                 ratio,
                 is_contaminated=is_contaminated,
                 is_unclear=is_unclear,
+                n_junctions=_safe_int(sr.get("n_junctions") or sr.get("SpliceJunctionCount"), 1),
             )
             f_plasmid = compute_f_plasmid(f_excess, f_junc)
 
@@ -2051,6 +2059,7 @@ def compare_alignments(
         is_contaminated=(verdict_category == "Contaminated"),
         is_unclear=(verdict_category == "Unclear"),
         read_len=eff_read_len,
+        n_junctions=j_count,
     )
     f_plasmid = compute_f_plasmid(f_excess, f_junction)
 
