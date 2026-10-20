@@ -7,6 +7,7 @@ coverage statistics (mean, median, breadth, uniformity) from BAM alignments.
 from __future__ import annotations
 
 import logging
+import subprocess
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -21,43 +22,49 @@ if TYPE_CHECKING:
 _cfg = get_config()
 
 
+# samtools depth -G flag sets: DEPTH_ALL_READS matches its default; DEPTH_PRIMARY_READS also drops supplementary.
+DEPTH_ALL_READS = "UNMAP,SECONDARY,QCFAIL,DUP"
+DEPTH_PRIMARY_READS = "UNMAP,SECONDARY,QCFAIL,DUP,SUPPLEMENTARY"
+
+
 def get_depth_array(
-    bam_path: str, contig: str, start: int, end: int, read_callback: Any = "all"
+    bam_path: str, contig: str, start: int, end: int, exclude_flags: str = DEPTH_ALL_READS
 ) -> npt.NDArray[Any]:
-    """Extract per-base depth array for a genomic region.
+    """Extract per-base depth for the half-open region [start, end) with ``samtools depth``.
 
-    Args:
-        bam_path: Path to BAM alignment file
-        contig: Reference contig name
-        start: 0-based inclusive start position
-        end: 0-based exclusive end position (half-open interval)
-        read_callback: Filter callback or "all"/"nofilter" passed to pysam.count_coverage
-
-    Returns:
-        Numpy array of per-base depths. Empty array if start >= end.
-
-    Note:
-        Uses pysam half-open interval convention [start, end).
-        Insert region boundaries from cDNA_positions.txt are inclusive,
-        so caller must pass (insert_start, insert_end + 1).
+    Reads with any of ``exclude_flags`` are skipped; base and mapping quality are not
+    filtered, deletions and reference skips do not count, ``N`` bases do (samtools
+    convention). Insert region boundaries from cDNA_positions.txt are inclusive, so
+    callers pass (insert_start, insert_end + 1).
     """
     if start >= end:
         return np.array([])
 
-    with pysam.AlignmentFile(bam_path, "rb") as bam:
-        # count_coverage returns tuple of 4 arrays (A, C, G, T counts)
-        cov = bam.count_coverage(
-            contig=contig,
-            start=start,
-            stop=end,
-            quality_threshold=0,  # Include all bases (match alignment behavior)
-            read_callback=read_callback,
+    proc = subprocess.run(
+        [
+            "samtools",
+            "depth",
+            "-a",
+            "-Q",
+            "0",
+            "-q",
+            "0",
+            "-G",
+            exclude_flags,
+            "-r",
+            f"{{{contig}}}:{start + 1}-{end}",
+            bam_path,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    depth: npt.NDArray[Any] = np.zeros(end - start, dtype=np.int64)
+    cols = proc.stdout.split()
+    if cols:
+        depth[np.array(cols[1::3], dtype=np.int64) - 1 - start] = np.array(
+            cols[2::3], dtype=np.int64
         )
-        # Sum A, C, G, T counts to get total depth per position
-        depth: npt.NDArray[Any] = (
-            np.array(cov[0]) + np.array(cov[1]) + np.array(cov[2]) + np.array(cov[3])
-        )
-
     return depth
 
 

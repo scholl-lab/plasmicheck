@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import csv
 import hashlib
-import itertools
 import logging
 import math
 import os
@@ -11,6 +10,7 @@ import random
 import secrets
 import subprocess
 import tempfile
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import IO, Any
@@ -21,6 +21,7 @@ import pysam
 from plasmicheck.config import get_config
 
 from .coverage_metrics import (
+    DEPTH_PRIMARY_READS,
     compute_coverage_stats,
     compute_region_coverage_metrics,
     get_depth_array,
@@ -286,6 +287,10 @@ def _compute_junction_positions(
     return positions
 
 
+_CLIP_OPS = frozenset({4, 5})
+_INDEL_SKIP_CLIP_OPS = frozenset({1, 2, 3, 4, 5})
+
+
 def _scan_plasmid_bam(
     plasmid_bam: str,
     insert_region: tuple[int, int] | InsertRegionData,
@@ -324,11 +329,19 @@ def _scan_plasmid_bam(
             raise ValueError("The INSERT_REGION covers the entire reference sequence.")
 
         junc_positions = _compute_junction_positions(insert_region, plasmid_length)
+        # Sorted (duplicates kept) so each read only visits the junctions it can touch.
+        junc_sorted = sorted(junc_positions)
         vi_anchor = 10
         boundaries: list[int] = [
             insert_start,
             (insert_end + 1) % plasmid_length if plasmid_length > 0 else insert_end + 1,
         ]
+        vi_boundaries = [
+            b
+            for b in boundaries
+            if plasmid_length > 0 and vi_anchor <= b <= plasmid_length - vi_anchor
+        ]
+        a = min_junction_anchor
 
         for read in bamfile.fetch():
             if read.is_unmapped:
@@ -340,12 +353,12 @@ def _scan_plasmid_bam(
                 continue
 
             cigartuples = read.cigartuples
+            nm = int(read.get_tag("NM")) if read.has_tag("NM") else 0
 
             # 1. Coverage outside insert (read_end is 0-based exclusive; insert_end is 0-based inclusive)
             if is_wrapped:
                 # Backbone is half-open [insert_end + 1, insert_start)
                 outside = max(0, min(read_end, insert_start) - max(read_start, insert_end + 1))
-                inside = (read_end - read_start) - outside
                 total_aligned_bases_outside_insert += outside
             else:
                 # Insert is half-open [insert_start, insert_end + 1)
@@ -368,25 +381,15 @@ def _scan_plasmid_bam(
                     primary_read_count += 1
 
             # 2. Vector-Insert Junction reads (NM <= 2, anchor >= 10 on both sides)
-            if (
-                is_primary_usable
-                and cigartuples is not None
-                and (int(read.get_tag("NM")) if read.has_tag("NM") else 0) <= 2
-                and plasmid_length > 0
-            ):
-                for b in boundaries:
-                    if vi_anchor <= b <= plasmid_length - vi_anchor:
-                        if hasattr(read, "get_overlap") and callable(read.get_overlap):
-                            if (
-                                read.get_overlap(b - vi_anchor, b + vi_anchor) == 2 * vi_anchor
-                                and read_start <= b - vi_anchor
-                                and read_end >= b + vi_anchor
-                            ):
-                                vector_insert_junction_reads += 1
-                                break
-                        elif read_start <= b - vi_anchor and read_end >= b + vi_anchor:
-                            vector_insert_junction_reads += 1
-                            break
+            if is_primary_usable and cigartuples is not None and nm <= 2:
+                for b in vi_boundaries:
+                    if (
+                        read_start <= b - vi_anchor
+                        and read_end >= b + vi_anchor
+                        and read.get_overlap(b - vi_anchor, b + vi_anchor) == 2 * vi_anchor
+                    ):
+                        vector_insert_junction_reads += 1
+                        break
 
             # 3. Mismatches near insert boundaries (nearest boundary check)
             near_boundary = False
@@ -405,82 +408,60 @@ def _scan_plasmid_bam(
                     break
 
             if near_boundary and cigartuples is not None:
-                has_mismatch_or_clip = any(op in {1, 2, 3, 4, 5} for op, _ in cigartuples) or (
-                    read.has_tag("NM") and int(read.get_tag("NM")) > 0
-                )
-                if has_mismatch_or_clip:
+                if nm > 0 or any(op in _INDEL_SKIP_CLIP_OPS for op, _ in cigartuples):
                     mismatches_near_insert["with_mismatches_or_clipping"] += 1
                 else:
                     mismatches_near_insert["without_mismatches_or_clipping"] += 1
 
+            if not (junc_sorted and is_primary_usable and cigartuples is not None):
+                continue
+
             # 4. Direct exon-exon splice-junction spanning reads and events
-            if (
-                junc_positions
-                and is_primary_usable
-                and cigartuples is not None
-                and not any(op in {4, 5} for op, ln in cigartuples if ln > 6)
-                and (int(read.get_tag("NM")) if read.has_tag("NM") else 0) <= 2
-            ):
-                spanned = False
-                for jp in junc_positions:
-                    if read_start + min_junction_anchor <= jp <= read_end - min_junction_anchor:
-                        spanned = True
-                        covered_junctions.add(jp)
-                        if hasattr(read, "get_overlap") and callable(read.get_overlap):
-                            if (
-                                read.get_overlap(jp - min_junction_anchor, jp + min_junction_anchor)
-                                == 2 * min_junction_anchor
-                            ):
-                                splice_junction_events += 1
-                        else:
-                            splice_junction_events += 1
-                if spanned:
-                    splice_junction_reads += 1
+            lo = bisect_left(junc_sorted, read_start + a)
+            hi = bisect_right(junc_sorted, read_end - a)
+            if lo < hi and nm <= 2 and not any(op in _CLIP_OPS for op, ln in cigartuples if ln > 6):
+                splice_junction_reads += 1
+                for jp in junc_sorted[lo:hi]:
+                    covered_junctions.add(jp)
+                    if read.get_overlap(jp - a, jp + a) == 2 * a:
+                        splice_junction_events += 1
 
             # 5. Exon-intron boundary clipped reads
-            if junc_positions and is_primary_usable and cigartuples is not None:
-                leading_clip = 0
-                if cigartuples[0][0] == 4:
-                    leading_clip = cigartuples[0][1]
-                elif len(cigartuples) > 1 and cigartuples[0][0] == 5 and cigartuples[1][0] == 4:
-                    leading_clip = cigartuples[1][1]
+            leading_clip = 0
+            if cigartuples[0][0] == 4:
+                leading_clip = cigartuples[0][1]
+            elif len(cigartuples) > 1 and cigartuples[0][0] == 5 and cigartuples[1][0] == 4:
+                leading_clip = cigartuples[1][1]
 
-                trailing_clip = 0
-                if cigartuples[-1][0] == 4:
-                    trailing_clip = cigartuples[-1][1]
-                elif len(cigartuples) > 1 and cigartuples[-1][0] == 5 and cigartuples[-2][0] == 4:
-                    trailing_clip = cigartuples[-2][1]
+            trailing_clip = 0
+            if cigartuples[-1][0] == 4:
+                trailing_clip = cigartuples[-1][1]
+            elif len(cigartuples) > 1 and cigartuples[-1][0] == 5 and cigartuples[-2][0] == 4:
+                trailing_clip = cigartuples[-2][1]
 
-                has_overlap_fn = hasattr(read, "get_overlap") and callable(read.get_overlap)
-                if leading_clip >= min_junction_anchor:
-                    for jp in junc_positions:
-                        anchor_start = max(read_start, jp)
-                        if abs(read_start - jp) <= 2 and (
-                            read_end - anchor_start >= min_junction_anchor
-                            and (
-                                not has_overlap_fn
-                                or read.get_overlap(
-                                    anchor_start, anchor_start + min_junction_anchor
-                                )
-                                == min_junction_anchor
-                            )
-                        ):
-                            exon_intron_boundary_reads += 1
-                            break
+            if leading_clip >= a:
+                lo = bisect_left(junc_sorted, read_start - 2)
+                hi = bisect_right(junc_sorted, read_start + 2)
+                for jp in junc_sorted[lo:hi]:
+                    anchor_start = max(read_start, jp)
+                    if (
+                        read_end - anchor_start >= a
+                        and read.get_overlap(anchor_start, anchor_start + a) == a
+                    ):
+                        exon_intron_boundary_reads += 1
+                        break
 
-                if trailing_clip >= min_junction_anchor:
-                    for jp in junc_positions:
-                        anchor_end = min(read_end, jp)
-                        if abs(read_end - jp) <= 2 and (
-                            anchor_end - read_start >= min_junction_anchor
-                            and (
-                                not has_overlap_fn
-                                or read.get_overlap(anchor_end - min_junction_anchor, anchor_end)
-                                == min_junction_anchor
-                            )
-                        ):
-                            exon_intron_boundary_reads += 1
-                            break
+            if trailing_clip >= a:
+                lo = bisect_left(junc_sorted, read_end - 2)
+                hi = bisect_right(junc_sorted, read_end + 2)
+                for jp in junc_sorted[lo:hi]:
+                    anchor_end = min(read_end, jp)
+                    if (
+                        anchor_end - read_start >= a
+                        and read.get_overlap(anchor_end - a, anchor_end) == a
+                    ):
+                        exon_intron_boundary_reads += 1
+                        break
 
     mean_read_length = total_query_length / primary_read_count if primary_read_count > 0 else 0.0
     coverage_outside_insert: float = (
@@ -528,8 +509,17 @@ def _namesort_bam(input_bam: str, output_bam: str, threads: int = SAMTOOLS_THREA
 def _iter_reads_by_name(bam_path: str) -> Iterator[tuple[str, list[Any]]]:
     """Yield ``(query_name, [reads])`` groups from a name-sorted BAM."""
     with pysam.AlignmentFile(bam_path, "rb") as bam:
-        for name, group in itertools.groupby(bam.fetch(until_eof=True), key=lambda r: r.query_name):
-            yield name, list(group)
+        name = ""
+        group: list[Any] = []
+        for read in bam.fetch(until_eof=True):
+            qname = read.query_name or ""
+            if group and qname != name:
+                yield name, group
+                group = []
+            name = qname
+            group.append(read)
+        if group:
+            yield name, group
 
 
 def _mate_key(read: Any) -> int | None:
@@ -560,18 +550,24 @@ def _is_pair(*args: Any) -> bool:
     return len(reads) == 2 and {_mate_key(r) for r in reads} == {1, 2}
 
 
-def _primary_reads(reads: list[Any]) -> list[Any]:
-    """Return primary records sorted by read1 then read2, or first record as fallback."""
+def _primary_reads_keyed(reads: list[Any]) -> tuple[list[Any], list[int | None], bool]:
+    """Return (primary records read1-first, their mate keys, is_pair), computing each mate key once."""
     primary = [
         r
         for r in reads
         if not getattr(r, "is_secondary", False) and not getattr(r, "is_supplementary", False)
     ] or reads[:1]
-    if _is_pair(primary):
-        primary.sort(
-            key=lambda r: (not getattr(r, "is_read1", False), getattr(r, "is_read2", False))
-        )
-    return primary
+    keys = [_mate_key(r) for r in primary]
+    is_pair = len(keys) == 2 and keys[0] != keys[1] and {keys[0], keys[1]} == {1, 2}
+    if is_pair and keys[0] == 2:
+        primary.reverse()
+        keys.reverse()
+    return primary, keys, is_pair
+
+
+def _primary_reads(reads: list[Any]) -> list[Any]:
+    """Return primary records sorted by read1 then read2, or first record as fallback."""
+    return _primary_reads_keyed(reads)[0]
 
 
 def _best_read(reads: list[Any]) -> Any:
@@ -585,11 +581,12 @@ def _scores(
     span_origin: bool = False,
     mate_bonus: int = MATE_BONUS,
     plasmid_length: int | None = None,
+    is_pair: bool | None = None,
 ) -> list[int]:
     """Calculate alignment scores for a read group, awarding mate bonus for concordant pairs."""
     plen = plasmid_length if plasmid_length is not None else length
     scores = [calculate_alignment_score(r, plen) for r in reads]
-    if not _is_pair(reads):
+    if not (_is_pair(reads) if is_pair is None else is_pair):
         return scores
 
     a, b = reads[0], reads[1]
@@ -663,9 +660,10 @@ def _is_concordant_bridge_pair(
     p_reads: list[Any],
     insert_region: tuple[int, int] | InsertRegionData,
     plasmid_length: int,
+    is_pair: bool | None = None,
 ) -> bool:
     """Return True if pair has one mate strictly in insert and other strictly in backbone, with span <= 1000."""
-    if not _is_pair(p_reads) or plasmid_length <= 0:
+    if not (_is_pair(p_reads) if is_pair is None else is_pair) or plasmid_length <= 0:
         return False
     a, b = p_reads[0], p_reads[1]
     if getattr(a, "is_unmapped", False) or getattr(b, "is_unmapped", False):
@@ -801,22 +799,22 @@ def _streaming_compare(
             # Both BAMs have this read — compare scores
             assert p_item is not None
             assert h_item is not None
-            p_reads = _primary_reads(p_item[1])
-            h_reads = _primary_reads(h_item[1])
+            p_reads, p_keys, p_pair = _primary_reads_keyed(p_item[1])
+            h_reads, h_keys, h_pair = _primary_reads_keyed(h_item[1])
             p_read = p_reads[0]
             h_read = h_reads[0]
-            p_scores = _scores(p_reads, length=plasmid_length, span_origin=True)
-            h_scores = _scores(h_reads, length=0)
+            p_scores = _scores(p_reads, length=plasmid_length, span_origin=True, is_pair=p_pair)
+            h_scores = _scores(h_reads, length=0, is_pair=h_pair)
             ps = sum(p_scores)
             hs = sum(h_scores)
             if (
                 ps != hs
                 and len(p_reads) == len(h_reads)
                 and len(p_reads) in {1, 2}
-                and (len(p_reads) == 1 or (_is_pair(p_reads) and _is_pair(h_reads)))
+                and (len(p_reads) == 1 or (p_pair and h_pair))
                 and all(
-                    _mate_key(pr) is not None
-                    and _mate_key(pr) == _mate_key(hr)
+                    pk is not None
+                    and pk == hk
                     and pr.cigartuples
                     and hr.cigartuples
                     and pr.cigartuples
@@ -826,8 +824,8 @@ def _streaming_compare(
                     and 40 <= pr.mapping_quality <= 60
                     and 40 <= hr.mapping_quality <= 60
                     and p_score - pr.mapping_quality == h_score - hr.mapping_quality
-                    for pr, hr, p_score, h_score in zip(
-                        p_reads, h_reads, p_scores, h_scores, strict=True
+                    for pr, hr, pk, hk, p_score, h_score in zip(
+                        p_reads, h_reads, p_keys, h_keys, p_scores, h_scores, strict=True
                     )
                 )
             ):
@@ -852,7 +850,9 @@ def _streaming_compare(
                 assigned == "Plasmid"
                 and insert_region is not None
                 and plasmid_length > 0
-                and _is_concordant_bridge_pair(p_reads, insert_region, plasmid_length)
+                and _is_concordant_bridge_pair(
+                    p_reads, insert_region, plasmid_length, is_pair=p_pair
+                )
             ):
                 assigned_counts.bridge_pairs += 1
 
@@ -866,9 +866,9 @@ def _streaming_compare(
             # Plasmid-only read
             assert p_item is not None
             assert p_name is not None
-            p_reads = _primary_reads(p_item[1])
+            p_reads, _, p_pair = _primary_reads_keyed(p_item[1])
             p_read = p_reads[0]
-            ps = sum(_scores(p_reads, length=plasmid_length, span_origin=True))
+            ps = sum(_scores(p_reads, length=plasmid_length, span_origin=True, is_pair=p_pair))
             rep_p_read = next(
                 (
                     r
@@ -889,7 +889,9 @@ def _streaming_compare(
                 assigned == "Plasmid"
                 and insert_region is not None
                 and plasmid_length > 0
-                and _is_concordant_bridge_pair(p_reads, insert_region, plasmid_length)
+                and _is_concordant_bridge_pair(
+                    p_reads, insert_region, plasmid_length, is_pair=p_pair
+                )
             ):
                 assigned_counts.bridge_pairs += 1
 
@@ -901,9 +903,9 @@ def _streaming_compare(
         else:
             # Human-only read
             assert h_item is not None
-            h_reads = _primary_reads(h_item[1])
+            h_reads, _, h_pair = _primary_reads_keyed(h_item[1])
             h_read = h_reads[0]
-            hs = sum(_scores(h_reads, length=0))
+            hs = sum(_scores(h_reads, length=0, is_pair=h_pair))
             assigned = _assign(0, max(hs, 0), score_margin=score_margin)
             assigned_counts[assigned] += 1
             _write_assignment(
@@ -1976,30 +1978,25 @@ def compare_alignments(
             with pysam.AlignmentFile(plasmid_bam, "rb") as bam:
                 c_name = bam.get_reference_name(0)
 
-            def primary_cb(r: pysam.AlignedSegment) -> bool:
-                return not (
-                    r.is_unmapped
-                    or r.is_secondary
-                    or r.is_supplementary
-                    or getattr(r, "is_duplicate", False)
-                    or getattr(r, "is_qcfail", False)
-                )
-
             ins_s, ins_e = insert_region[0], insert_region[1]
             if ins_s > ins_e:
                 prim_depth = np.concatenate(
                     [
                         get_depth_array(
-                            plasmid_bam, c_name, ins_s, plasmid_length, read_callback=primary_cb
+                            plasmid_bam,
+                            c_name,
+                            ins_s,
+                            plasmid_length,
+                            exclude_flags=DEPTH_PRIMARY_READS,
                         ),
                         get_depth_array(
-                            plasmid_bam, c_name, 0, ins_e + 1, read_callback=primary_cb
+                            plasmid_bam, c_name, 0, ins_e + 1, exclude_flags=DEPTH_PRIMARY_READS
                         ),
                     ]
                 )
             else:
                 prim_depth = get_depth_array(
-                    plasmid_bam, c_name, ins_s, ins_e + 1, read_callback=primary_cb
+                    plasmid_bam, c_name, ins_s, ins_e + 1, exclude_flags=DEPTH_PRIMARY_READS
                 )
             if len(prim_depth) > 0:
                 d_insert = float(np.mean(prim_depth))

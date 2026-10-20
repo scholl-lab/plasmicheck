@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pysam
 import pytest
 
 from plasmicheck.scripts.coverage_metrics import (
+    DEPTH_PRIMARY_READS,
     compute_coverage_stats,
     compute_region_coverage_metrics,
     get_depth_array,
@@ -19,47 +22,43 @@ from plasmicheck.scripts.coverage_metrics import (
 # ============================================================================
 
 
-@pytest.mark.unit
-def test_get_depth_array_calls_count_coverage_correctly() -> None:
-    """Test that count_coverage is called with correct parameters."""
-    mock_bam = MagicMock()
-    mock_bam.__enter__ = MagicMock(return_value=mock_bam)
-    mock_bam.__exit__ = MagicMock(return_value=None)
-    mock_bam.count_coverage.return_value = (
-        np.array([1, 2, 3]),
-        np.array([4, 5, 6]),
-        np.array([7, 8, 9]),
-        np.array([10, 11, 12]),
+def _write_depth_bam(path: Path) -> str:
+    """Tiny sorted, indexed BAM: N base, deletion, supplementary, duplicate and secondary reads."""
+    header = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": "p", "LN": 50}]}
+    records = [  # (name, flag, start, cigar, seq)
+        ("r1", 0, 0, [(0, 10)], "ACGTNACGTA"),
+        ("dup", 1024, 0, [(0, 10)], "ACGTAACGTA"),
+        ("sup", 2048, 0, [(0, 10)], "ACGTAACGTA"),
+        ("sec", 256, 0, [(0, 10)], "ACGTAACGTA"),
+        ("del", 0, 10, [(0, 5), (2, 2), (0, 5)], "ACGTAACGTA"),
+    ]
+    out = str(path / "d.bam")
+    with pysam.AlignmentFile(out, "wb", header=header) as bam:
+        for name, flag, start, cigar, seq in records:
+            r = pysam.AlignedSegment(bam.header)
+            r.query_name, r.flag, r.reference_id, r.reference_start = name, flag, 0, start
+            r.cigartuples, r.query_sequence, r.mapping_quality = cigar, seq, 60
+            r.query_qualities = pysam.qualitystring_to_array("I" * len(seq))
+            bam.write(r)
+    pysam.index(out)
+    return out
+
+
+@pytest.mark.integration
+def test_get_depth_array_samtools_semantics(tmp_path: Path) -> None:
+    """N bases count, deletions do not; flags filter dup/secondary (and supplementary for primary)."""
+    bam = _write_depth_bam(tmp_path)
+    expected_all = np.zeros(25, dtype=np.int64)
+    expected_all[0:10] = 2  # r1 (incl. its N base) + supplementary
+    expected_all[10:15] = expected_all[17:22] = 1  # deletion at 15-16 is not covered
+    np.testing.assert_array_equal(get_depth_array(bam, "p", 0, 25), expected_all)
+
+    expected_primary = expected_all.copy()
+    expected_primary[0:10] = 1
+    np.testing.assert_array_equal(
+        get_depth_array(bam, "p", 0, 25, exclude_flags=DEPTH_PRIMARY_READS), expected_primary
     )
-
-    with patch("plasmicheck.scripts.coverage_metrics.pysam.AlignmentFile", return_value=mock_bam):
-        result = get_depth_array("/path/to/bam", "chr1", 100, 200)
-
-    mock_bam.count_coverage.assert_called_once_with(
-        contig="chr1", start=100, stop=200, quality_threshold=0, read_callback="all"
-    )
-    # Sum of arrays: [1+4+7+10, 2+5+8+11, 3+6+9+12] = [22, 26, 30]
-    np.testing.assert_array_equal(result, np.array([22, 26, 30]))
-
-
-@pytest.mark.unit
-def test_get_depth_array_sums_acgt_correctly() -> None:
-    """Test that A, C, G, T arrays are summed correctly."""
-    mock_bam = MagicMock()
-    mock_bam.__enter__ = MagicMock(return_value=mock_bam)
-    mock_bam.__exit__ = MagicMock(return_value=None)
-    mock_bam.count_coverage.return_value = (
-        np.array([10, 0, 5]),
-        np.array([0, 20, 0]),
-        np.array([5, 0, 10]),
-        np.array([0, 15, 0]),
-    )
-
-    with patch("plasmicheck.scripts.coverage_metrics.pysam.AlignmentFile", return_value=mock_bam):
-        result = get_depth_array("/path/to/bam", "plasmid", 0, 3)
-
-    # Position 0: 10+0+5+0=15, Position 1: 0+20+0+15=35, Position 2: 5+0+10+0=15
-    np.testing.assert_array_equal(result, np.array([15, 35, 15]))
+    np.testing.assert_array_equal(get_depth_array(bam, "p", 12, 18), expected_all[12:18])
 
 
 @pytest.mark.unit
