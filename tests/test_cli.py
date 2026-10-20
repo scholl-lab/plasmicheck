@@ -214,6 +214,7 @@ def test_pipeline_forwards_run_options(
         target_bed=None,
         target_bed_max_intervals=5000,
         target_bed_seed=42,
+        minimap2_threads=None,
         dp_sample_median=None,
         dp_locus=None,
         r_cohort=0.60,

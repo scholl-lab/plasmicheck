@@ -698,6 +698,11 @@ def prepare_references(
             prepared.add(plasmid_file)
 
 
+def concurrent_minimap2_threads(total_threads: int, minimap2_threads: int | None) -> int:
+    """minimap2 threads for each of the two concurrent alignments (minimap2 is the CPU-bound step)."""
+    return minimap2_threads if minimap2_threads is not None else max(1, total_threads // 2)
+
+
 def run_pipeline(
     human_fasta: str,
     plasmid_files: str,
@@ -734,6 +739,7 @@ def run_pipeline(
     target_bed_max_intervals: int = TARGET_BED_MAX_INTERVALS,
     target_bed_seed: int = TARGET_BED_SEED,
     sample_name: str | None = None,
+    minimap2_threads: int | None = None,
 ) -> None:
     if sequencing_files_r1 is None:
         raise ValueError("-sf1 (sequencing_files_r1) is required.")
@@ -801,6 +807,10 @@ def run_pipeline(
         total_threads, thread_source = detect_cpu_count()
 
     mm2_threads, sam_threads = allocate_threads(total_threads)
+    if minimap2_threads is not None:
+        if minimap2_threads < 1:
+            raise ValueError(f"minimap2_threads must be >= 1, got {minimap2_threads}")
+        mm2_threads = minimap2_threads
     sort_memory = get_config().get("alignment", {}).get("samtools_sort_memory", "2G")
 
     logging.info(f"Using {total_threads} threads ({thread_source})")
@@ -1026,7 +1036,7 @@ def run_pipeline(
                         ):
                             from concurrent.futures import ThreadPoolExecutor
 
-                            half_mm2 = max(1, mm2_threads // 2)
+                            half_mm2 = concurrent_minimap2_threads(total_threads, minimap2_threads)
                             half_sam = max(1, sam_threads // 2)
                             with ThreadPoolExecutor(max_workers=2) as pool:
                                 f1 = pool.submit(

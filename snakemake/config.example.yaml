@@ -40,6 +40,7 @@ include_unmapped: true
 target_bed: null
 target_bed_max_intervals: 5000  # seeded random subsample of target_bed for the median depth (0 = all)
 target_bed_seed: 42
+minimap2_threads: null  # per alignment; null = half of scan_sample threads (plasmid + spliced-human run concurrently)
 gtf_file: null
 vcf_file: null
 

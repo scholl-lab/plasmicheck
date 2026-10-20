@@ -130,6 +130,14 @@ properties:
     default: 42
     description: Random seed for the target_bed interval subsample (deterministic).
 
+  minimap2_threads:
+    type:
+      - "integer"
+      - "null"
+    minimum: 1
+    default: null
+    description: minimap2 threads per alignment in scan_sample (null = half of the rule's threads when the two alignments run concurrently).
+
   gtf_file:
     type:
       - "string"
