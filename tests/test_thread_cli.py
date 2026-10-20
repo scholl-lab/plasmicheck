@@ -100,6 +100,87 @@ def test_pipeline_threads_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.unit
+def test_concurrent_minimap2_threads() -> None:
+    """Concurrent plasmid/human alignments split --threads; --minimap2-threads overrides."""
+    from plasmicheck.scripts.run_pipeline import concurrent_minimap2_threads
+
+    assert concurrent_minimap2_threads(4, None) == 2
+    assert concurrent_minimap2_threads(5, None) == 2
+    assert concurrent_minimap2_threads(16, None) == 8
+    assert concurrent_minimap2_threads(4, 3) == 3
+
+
+def test_pipeline_minimap2_threads_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--minimap2-threads sets minimap2 threads per alignment; samtools keeps its allocation."""
+    # Mock all pipeline dependencies
+    mock_align_reads = MagicMock()
+    mock_quality_control = MagicMock()
+    mock_convert = MagicMock()
+    mock_create_indexes = MagicMock()
+    mock_spliced_alignment = MagicMock(return_value=[])
+    mock_extract_human_reference = MagicMock()
+    mock_extract_cdna = MagicMock()
+    mock_compare_alignments = MagicMock()
+    mock_generate_report = MagicMock()
+    mock_write_md5sum = MagicMock()
+    mock_detect_format = MagicMock(return_value="genbank")
+
+    # Patch all the imports
+    with (
+        patch("plasmicheck.scripts.run_pipeline.align_reads", mock_align_reads),
+        patch("plasmicheck.scripts.run_pipeline.quality_control", mock_quality_control),
+        patch(
+            "plasmicheck.scripts.run_pipeline.convert_plasmidfile_to_fasta",
+            mock_convert,
+        ),
+        patch("plasmicheck.scripts.run_pipeline.create_indexes", mock_create_indexes),
+        patch(
+            "plasmicheck.scripts.run_pipeline.spliced_alignment",
+            mock_spliced_alignment,
+        ),
+        patch(
+            "plasmicheck.scripts.run_pipeline.extract_human_reference",
+            mock_extract_human_reference,
+        ),
+        patch(
+            "plasmicheck.scripts.run_pipeline.extract_plasmid_cdna_positions",
+            mock_extract_cdna,
+        ),
+        patch(
+            "plasmicheck.scripts.run_pipeline.compare_alignments",
+            mock_compare_alignments,
+        ),
+        patch("plasmicheck.scripts.run_pipeline.generate_report", mock_generate_report),
+        patch("plasmicheck.scripts.run_pipeline.write_md5sum", mock_write_md5sum),
+        patch("plasmicheck.scripts.run_pipeline.os.makedirs"),
+        patch("plasmicheck.scripts.run_pipeline.os.path.exists", return_value=False),
+        patch("plasmicheck.scripts.format_detection.detect_format", mock_detect_format),
+    ):
+        from plasmicheck.scripts.run_pipeline import run_pipeline
+
+        # Call run_pipeline with threads=8
+        run_pipeline(
+            human_fasta="test.fasta",
+            plasmid_files="test_plasmid.gb",
+            output_folder="test_output",
+            sequencing_files_r1="test_reads.fastq",
+            threads=8,
+            minimap2_threads=5,
+        )
+
+        # Verify align_reads was called with correct thread allocation
+        _, sam_threads = allocate_threads(8)
+        assert mock_align_reads.call_count == 2  # plasmid + human alignments
+
+        # Check that both align_reads calls got the right thread parameters
+        for call_args in mock_align_reads.call_args_list:
+            kwargs = call_args.kwargs
+            assert kwargs["minimap2_threads"] == 5
+            assert kwargs["samtools_threads"] == sam_threads
+            assert kwargs["samtools_sort_memory"] == "2G"  # from config
+
+
+@pytest.mark.unit
 def test_pipeline_threads_autodetect(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test run_pipeline without --threads (auto-detection)."""
     # Mock detect_cpu_count to return predictable value

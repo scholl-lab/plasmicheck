@@ -441,6 +441,14 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
         help="Total thread count for alignment (default: auto-detect via SLURM/cgroup/os)",
     )
     parser_pipeline.add_argument(
+        "--minimap2-threads",
+        dest="minimap2_threads",
+        type=int,
+        default=None,
+        help="minimap2 threads per alignment; the plasmid and spliced-human alignments run concurrently "
+        "when --threads >= 4 (default: half of --threads when concurrent, else ~80%% of --threads)",
+    )
+    parser_pipeline.add_argument(
         "--cache-dir",
         type=str,
         default=None,
@@ -757,6 +765,7 @@ def main(default_threshold: float = DEFAULT_THRESHOLD) -> None:
             target_bed=args.target_bed,
             target_bed_max_intervals=args.target_bed_max_intervals,
             target_bed_seed=args.target_bed_seed,
+            minimap2_threads=args.minimap2_threads,
             dp_sample_median=args.dp_sample_median,
             dp_locus=args.dp_locus,
             r_cohort=args.r_cohort,

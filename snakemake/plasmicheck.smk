@@ -407,6 +407,8 @@ def build_pipeline_flags(cfg: dict[str, Any]) -> str:
         for key in ("target_bed_max_intervals", "target_bed_seed"):
             if cfg.get(key) is not None:
                 flags.append(f"--{key.replace('_', '-')} {int(cfg[key])}")
+    if cfg.get("minimap2_threads") is not None:
+        flags.append(f"--minimap2-threads {int(cfg['minimap2_threads'])}")
     gtf_val = resolve_gtf(cfg)
     if gtf_val:
         flags.append(f"--gtf {shlex.quote(gtf_val)}")
