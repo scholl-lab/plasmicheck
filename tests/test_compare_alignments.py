@@ -2480,6 +2480,14 @@ class TestDepthNormalisedPlasmidExcess:
         )
         assert fj_unclear == pytest.approx(0.5 * (3.0 / 4.0))
 
+        # Reads summed over 33 junctions are averaged per junction (APA10-N CACNA1H:
+        # 1044 reads, dp_locus 477 -> ~0.094, not capped at 1.0)
+        fj_multi = compute_f_junction(
+            1044.0, 477.0, plasmid_ratio=0.1, is_contaminated=False, n_junctions=33
+        )
+        assert fj_multi == pytest.approx(1044 / 33 * (101 / 71) / 477)
+        assert fj_multi < 0.1
+
         assert compute_f_plasmid(0.2, 0.75) == pytest.approx(0.75)
         assert compute_f_plasmid(1.5, 0.3) == pytest.approx(1.0)
 
