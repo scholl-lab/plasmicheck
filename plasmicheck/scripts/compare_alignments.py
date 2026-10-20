@@ -1235,6 +1235,7 @@ def load_summary_rows_for_flagging(summary_tsv_paths: list[str]) -> list[dict[st
                 "verdict": kv.get("Verdict", ""),
                 "ratio": _safe_float(kv.get("Ratio"), 0.0),
                 "spliced_reads": _safe_int(kv.get("SpliceJunctionReads"), 0),
+                "n_junctions": _safe_int(kv.get("SpliceJunctionCount"), 1),
                 "f_plasmid": _safe_float(kv.get("f_plasmid"), 0.0),
                 "f_excess": _safe_float(kv.get("f_excess"), 0.0),
                 "f_junction": _safe_float(kv.get("f_junction"), 0.0),
@@ -1492,7 +1493,7 @@ def flag_vcf_variants(
                 ratio,
                 is_contaminated=is_contaminated,
                 is_unclear=is_unclear,
-                n_junctions=_safe_int(sr.get("SpliceJunctionCount"), 1),
+                n_junctions=_safe_int(sr.get("n_junctions") or sr.get("SpliceJunctionCount"), 1),
             )
             f_plasmid = compute_f_plasmid(f_excess, f_junc)
 
